@@ -330,7 +330,6 @@ MODULE_DEVICE_TABLE(of, mpr121_of_match);
 static struct i2c_driver mpr_touchkey_driver = {
 	.driver = {
 		.name	= "mpr121",
-		.owner	= THIS_MODULE,
 		.pm	= &mpr121_touchkey_pm_ops,
 		.of_match_table	= mpr121_of_match,
 	},
