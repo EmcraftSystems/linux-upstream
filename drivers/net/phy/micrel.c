@@ -267,12 +267,6 @@ static int kszphy_config_init(struct phy_device *phydev)
 
 	type = priv->type;
 
-	if (type->has_broadcast_disable)
-		kszphy_broadcast_disable(phydev);
-
-	if (type->has_nand_tree_disable)
-		kszphy_nand_tree_disable(phydev);
-
 	if (priv->rmii_ref_clk_sel) {
 		ret = kszphy_rmii_clk_sel(phydev, priv->rmii_ref_clk_sel_val);
 		if (ret) {
@@ -280,6 +274,12 @@ static int kszphy_config_init(struct phy_device *phydev)
 			return ret;
 		}
 	}
+
+	if (type->has_broadcast_disable)
+		kszphy_broadcast_disable(phydev);
+
+	if (type->has_nand_tree_disable)
+		kszphy_nand_tree_disable(phydev);
 
 	if (priv->led_mode >= 0)
 		kszphy_setup_led(phydev, type->led_mode_reg, priv->led_mode);
