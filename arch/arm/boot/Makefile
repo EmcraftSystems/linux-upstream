@@ -51,9 +51,15 @@ $(obj)/Image: vmlinux FORCE
 $(obj)/compressed/vmlinux: $(obj)/Image FORCE
 	$(Q)$(MAKE) $(build)=$(obj)/compressed $@
 
+ifeq ($(CONFIG_KERNEL_COMPRESS_NONE),y)
+$(obj)/zImage: FORCE
+	@$(kecho) 'Kernel configured for no compression (CONFIG_COMPRESS_NONE=y)'
+	@false
+else
 $(obj)/zImage:	$(obj)/compressed/vmlinux FORCE
 	$(call if_changed,objcopy)
 	@$(kecho) '  Kernel: $@ is ready'
+endif
 
 endif
 
@@ -75,10 +81,16 @@ if [ $(words $(UIMAGE_LOADADDR)) -ne 1 ]; then \
 	false; \
 fi
 
+ifeq ($(CONFIG_KERNEL_COMPRESS_NONE),y)
+$(obj)/uImage:	$(obj)/Image FORCE
+	$(call if_changed,uimage)
+	@echo '  Image $@ is ready'
+else
 $(obj)/uImage:	$(obj)/zImage FORCE
 	@$(check_for_multiple_loadaddr)
 	$(call if_changed,uimage)
 	@$(kecho) '  Image $@ is ready'
+endif
 
 $(obj)/bootp/bootp: $(obj)/zImage initrd FORCE
 	$(Q)$(MAKE) $(build)=$(obj)/bootp $@
