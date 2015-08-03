@@ -1,0 +1,4 @@
+4 FFFC102C 0 # wakeup_on_int
+1 FFFC0019 7 # pmu transition[9]
+4 FFFC0008 1 # timeout_5
+1 FFFC0000 1 # sleep

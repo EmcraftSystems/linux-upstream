@@ -1,0 +1,14 @@
+: ${MAKEPROTO:=../../tools/make-proto.pl}
+perl ${MAKEPROTO} -m no-doxygen,multiline-auto,group-by-filename \
+     -o smd_proto.h \
+     delba.c \
+     driver.c \
+     ie.c \
+     mib.c \
+     scan.c \
+     transaction.c \
+     util.c \
+     p2p.c \
+     rx.c \
+     tx.c \
+     debugfs.c

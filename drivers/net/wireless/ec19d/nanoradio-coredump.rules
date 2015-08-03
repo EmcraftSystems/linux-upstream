@@ -1,0 +1,1 @@
+ENV{NRX_EVENT}=="core",RUN+="/bin/cp -p $sys/$devpath/$env{NRX_CORENAME} /tmp"

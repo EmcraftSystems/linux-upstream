@@ -265,6 +265,11 @@ config MWL8K
 	  To compile this driver as a module, choose M here: the module
 	  will be called mwl8k.  If unsure, say N.
 
+config EC19D
+	tristate "Econais EC19D SDIO Wireless support"
+	depends on MAC80211 && MMC
+
+
 source "drivers/net/wireless/ath/Kconfig"
 source "drivers/net/wireless/b43/Kconfig"
 source "drivers/net/wireless/b43legacy/Kconfig"
