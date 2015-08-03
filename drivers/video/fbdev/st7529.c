@@ -1,0 +1,310 @@
+/*
+ * Copyright 2015 EmCraft Systems
+ *
+ * Sergei Miroshnichenko <sergeimir@emcraft.com>
+ *
+ * Frame buffer driver for Sitronix ST7529 LCD controller
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#include <linux/module.h>
+#include <linux/platform_device.h>
+#include <linux/fb.h>
+#include <linux/kthread.h>
+#include <linux/spi/spi.h>
+#include <linux/delay.h>
+#include <linux/gpio.h>
+#include <linux/of.h>
+#include <linux/of_gpio.h>
+
+#define DRIVER_NAME	"lcd_st7529"
+
+#define RAM_WIDTH	256
+#define RAM_HEIGHT	144
+
+#define GSET(gpio)	gpio_direction_output(gpio, 1);
+#define GUNSET(gpio)	gpio_direction_output(gpio, 0);
+
+struct mfb_info
+{
+	struct spi_device	*spi;
+	unsigned char		*buffer;
+	struct task_struct	*task;
+	int			width;
+	int			height;
+	int			nres_gpio;
+	int			a0_gpio;
+};
+
+static struct fb_info *fb_info;
+
+static struct fb_ops st7529_ops = {
+	.owner		= THIS_MODULE,
+	.fb_fillrect	= cfb_fillrect,
+	.fb_copyarea	= cfb_copyarea,
+	.fb_imageblit	= cfb_imageblit,
+};
+
+static int st7529_data(unsigned char *buf, int size)
+{
+	int err = 0;
+	struct mfb_info *mfbi = fb_info->par;
+
+	if (size) {
+		GSET(mfbi->a0_gpio);
+		err = spi_write(mfbi->spi, buf, size);
+	}
+
+	if (err)
+		dev_err(&mfbi->spi->dev, "Failed to write data: %d\n", err);
+
+	return err;
+}
+
+static int st7529_command(unsigned char cmd, int args_cnt, ...)
+{
+	struct mfb_info *mfbi = fb_info->par;
+	unsigned char buf[1 + args_cnt];
+	int err;
+
+	buf[0] = cmd;
+	GUNSET(mfbi->a0_gpio);
+	err = spi_write(mfbi->spi, buf, 1);
+
+	if (!err && args_cnt) {
+		va_list ap;
+		int i;
+		va_start(ap, args_cnt);
+
+		for (i = 0; i < args_cnt; ++i) {
+			buf[i] = va_arg(ap, unsigned int);
+
+			if (err)
+				break;
+		}
+
+		va_end(ap);
+
+		err = st7529_data(buf, args_cnt);
+	}
+
+	if (err)
+		dev_err(&mfbi->spi->dev, "Failed to write command: %d\n", err);
+
+	return err;
+}
+
+static void st7529_hw_init(struct mfb_info *mfbi)
+{
+	GUNSET(mfbi->nres_gpio);
+	msleep(150);
+	GSET(mfbi->nres_gpio);
+	msleep(150);
+
+	st7529_command(0x30, 0);		/* Ext = 0 */
+	st7529_command(0x94, 0);		/* Sleep out */
+	st7529_command(0xD1, 0);		/* OSC on */
+	st7529_command(0x20, 1, 0x8);		/* Power Control Set: Booster must be on first */
+	msleep(2);
+	st7529_command(0x20, 1, 0xB);		/* Power Control Set: Booster, Regulator, Follower on */
+	st7529_command(0x81, 2, 0x38, 0x04);	/* Electronic Control: Vop=? */
+	st7529_command(0xCA, 3, 0, 0x23, 0);	/* Display control: CL = X1, Duty = 144, FR Inverse-Set Value */
+	st7529_command(0xA6, 0);		/* Normal display (0 is black) */
+	st7529_command(0xBB, 1, 0x2);		/* Common Scan Direction: 79->0, 80->159 */
+	st7529_command(0xBC, 3, 0, 0, 2);	/* Address Scan Direction: Column Normal; Arrangement: (P1,P2,P3), gray-scale 3B3P mode */
+	st7529_command(0x31, 0);		/* Ext = 1 */
+	st7529_command(0x32, 3, 0, 1, 2);	/* Analog Circuit Set: OSC Frequency = 12.7kHz, Booster Efficiency = 6kHz, Bias = 1/12 */
+	st7529_command(0x34, 0);		/* Software Initial */
+	st7529_command(0x20, 16,		/* Gray 1 set */
+		       0x0,  0x2,  0x4,  0x6,
+		       0x8,  0xA,  0xC,  0xE,
+		       0x10, 0x12, 0x14, 0x16,
+		       0x18, 0x1A, 0x1C, 0x1F);
+	st7529_command(0x21, 16,		/* Gray 2 set */
+		       0x0,  0x2,  0x4,  0x6,
+		       0x8,  0xA,  0xC,  0xE,
+		       0x10, 0x12, 0x14, 0x16,
+		       0x18, 0x1A, 0x1C, 0x1F);
+	st7529_command(0x30, 0);		/* Ext = 0 */
+	st7529_command(0xAF, 0);		/* Display On */
+}
+
+static int st7529_task(void *param)
+{
+	struct mfb_info *mfbi = (struct mfb_info*)param;
+
+	while (!kthread_should_stop()) {
+		st7529_command(0x30, 0);				/* Ext = 0 */
+		st7529_command(0x15, 2, 0, (mfbi->width / 3) - 1);	/* Column Address Set */
+		st7529_command(0x75, 2, RAM_HEIGHT - mfbi->height, 144);/* Line Address Set */
+		st7529_command(0x5C, 0);				/* Writing to Memory */
+		st7529_data(mfbi->buffer, mfbi->width * mfbi->height);
+		schedule_timeout_interruptible(msecs_to_jiffies(1000));
+	}
+
+	return 0;
+}
+
+static int st7529_probe(struct spi_device *spi)
+{
+	int err = 0;
+	struct mfb_info *mfbi;
+	int xres = 240, yres = 128, bits_per_pixel = 8, grayscale = 1;
+	int nres_gpio, a0_gpio;
+	struct device_node *node = spi->dev.of_node;
+
+	dev_dbg(&spi->dev, "%s\n", __func__);
+
+	if (NULL == node) {
+		dev_err(&spi->dev, "No device info\n");
+		return -ENODEV;
+	}
+
+	if (of_property_read_u32(node, "xres", &xres))
+		dev_warn(&spi->dev, "x-resolution is not set, taking default (%d)\n", xres);
+	if (of_property_read_u32(node, "yres", &yres))
+		dev_warn(&spi->dev, "y-resolution is not set, taking default (%d)\n", yres);
+	if (of_property_read_u32(node, "bits_per_pixel", &bits_per_pixel))
+		dev_warn(&spi->dev, "color depth is not set, taking default (%d)\n", bits_per_pixel);
+	if (of_property_read_u32(node, "grayscale", &grayscale))
+		dev_warn(&spi->dev, "grayscale is not set, taking default (%d)\n", grayscale);
+
+	nres_gpio = of_get_named_gpio(node, "nres-gpios", 0);
+	if (!gpio_is_valid(nres_gpio)) {
+		err = nres_gpio;
+		dev_err(&spi->dev, "Failed to parse nReset GPIO: %d\n", err);
+		return err;
+	}
+
+	a0_gpio = of_get_named_gpio(node, "a0-gpios", 0);
+	if (!gpio_is_valid(a0_gpio)) {
+		err = a0_gpio;
+		dev_err(&spi->dev, "Failed to parse A0 GPIO: %d\n", err);
+		return err;
+	}
+
+	err = devm_gpio_request_one(&spi->dev, nres_gpio,
+				    GPIOF_OUT_INIT_HIGH, "lcd_nreset");
+	if (err) {
+		dev_err(&spi->dev, "Failed to request LCD nReset GPIO (%d): %d\n", nres_gpio, err);
+		return err;
+	}
+
+	err = devm_gpio_request_one(&spi->dev, a0_gpio,
+				    GPIOF_OUT_INIT_HIGH, "lcd_a0");
+	if (err) {
+		dev_err(&spi->dev, "Failed to request LCD A0 GPIO (%d): %d\n", a0_gpio, err);
+		return err;
+	}
+
+	fb_info = framebuffer_alloc(sizeof(struct mfb_info), &spi->dev);
+	if (NULL == fb_info) {
+		dev_err(&spi->dev, "Failed to allocate framebuffer info\n");
+		return -ENOMEM;
+	}
+
+	fb_info->screen_size = xres * yres;
+	fb_info->screen_base = kzalloc(fb_info->screen_size, GFP_KERNEL);
+	if (NULL == fb_info->screen_base) {
+		dev_err(&spi->dev, "Failed to allocate framebuffer\n");
+		err = -ENOMEM;
+		goto failed_alloc_framebuffer;
+	}
+
+	strcpy(fb_info->fix.id, DRIVER_NAME);
+
+	fb_info->fbops			= &st7529_ops;
+	fb_info->var.xres		= xres;
+	fb_info->var.yres		= yres;
+	fb_info->var.bits_per_pixel	= bits_per_pixel;
+	fb_info->var.grayscale		= grayscale;
+	fb_info->var.xres_virtual	= fb_info->var.xres;
+	fb_info->var.yres_virtual	= fb_info->var.yres;
+	fb_info->var.vmode		= FB_VMODE_NONINTERLACED;
+	fb_info->var.red.length		= 8;
+	fb_info->var.green.length	= 8;
+	fb_info->var.blue.length	= 8;
+	fb_info->var.transp.length	= 8;
+	fb_info->fix.type		= FB_TYPE_PACKED_PIXELS;
+	fb_info->fix.visual		= FB_VISUAL_TRUECOLOR;
+	fb_info->fix.accel		= FB_ACCEL_NONE;
+	fb_info->fix.line_length	= fb_info->var.xres * fb_info->var.bits_per_pixel / 8;
+	fb_info->fix.smem_start		= virt_to_phys(fb_info->screen_base);
+	fb_info->fix.smem_len		= fb_info->screen_size;
+
+	mfbi				= fb_info->par;
+	mfbi->spi			= spi;
+	mfbi->buffer			= fb_info->screen_base;
+	mfbi->width			= fb_info->var.xres;
+	mfbi->height			= fb_info->var.yres;
+	mfbi->nres_gpio			= nres_gpio;
+	mfbi->a0_gpio			= a0_gpio;
+
+	st7529_hw_init(mfbi);
+
+	err = register_framebuffer(fb_info);
+	if (err < 0) {
+		dev_err(&spi->dev, "Failed to register framebuffer\n");
+		goto failed_install_fb;
+	}
+
+	mfbi->task = kthread_run(st7529_task, mfbi, "st7529");
+
+	return 0;
+
+failed_install_fb:
+	kfree(fb_info->screen_base);
+failed_alloc_framebuffer:
+	framebuffer_release(fb_info);
+
+	return err;
+}
+
+static int st7529_remove(struct spi_device *spi)
+{
+	struct mfb_info *mfbi = fb_info->par;
+
+	kthread_stop(mfbi->task);
+	unregister_framebuffer(fb_info);
+	kfree(fb_info->screen_base);
+	framebuffer_release(fb_info);
+
+	return 0;
+}
+
+static const struct of_device_id st7529_of_match[] = {
+	{ .compatible = "emcraft,st7529", },
+	{},
+};
+
+MODULE_DEVICE_TABLE(of, st7529_of_match);
+
+static struct spi_driver st7529_driver = {
+	.driver = {
+		.name		= DRIVER_NAME,
+		.owner		= THIS_MODULE,
+		.of_match_table = st7529_of_match,
+	},
+	.probe		= st7529_probe,
+	.remove		= st7529_remove,
+};
+
+module_spi_driver(st7529_driver);
+
+MODULE_AUTHOR("EmCraft Systems");
+MODULE_DESCRIPTION("Sitronix ST7529 framebuffer driver");
+MODULE_LICENSE("GPL");
+

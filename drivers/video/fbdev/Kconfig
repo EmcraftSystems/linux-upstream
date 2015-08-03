@@ -1968,6 +1968,12 @@ config FB_FSL_DCU
 	---help---
 	  Framebuffer driver for the Freescale SoC DCU
 
+config FB_ST7529
+	tristate "Sitronix ST7529 framebuffer support"
+	depends on FB && SPI
+	---help---
+	  Framebuffer driver for the Sitronix ST7529 LCD controller
+
 config FB_W100
 	tristate "W100 frame buffer support"
 	depends on FB && ARCH_PXA
