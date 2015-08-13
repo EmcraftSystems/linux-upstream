@@ -120,6 +120,8 @@
 #define ESDHC_FLAG_ERR004536		BIT(7)
 /* The IP supports HS200 mode */
 #define ESDHC_FLAG_HS200		BIT(8)
+/* Fix multiblock reads on i.MX53 */
+#define ESDHC_FLAG_MULTIBLOCK_ACMD12	BIT(9)
 
 struct esdhc_soc_data {
 	u32 flags;
@@ -154,6 +156,10 @@ static struct esdhc_soc_data usdhc_imx6sl_data = {
 static struct esdhc_soc_data usdhc_imx6sx_data = {
 	.flags = ESDHC_FLAG_USDHC | ESDHC_FLAG_STD_TUNING
 			| ESDHC_FLAG_HAVE_CAP1 | ESDHC_FLAG_HS200,
+};
+
+static struct esdhc_soc_data esdhc_vf610_data = {
+	.flags = ESDHC_FLAG_MULTIBLK_NO_INT | ESDHC_FLAG_MULTIBLOCK_ACMD12,
 };
 
 struct pltfm_imx_data {
@@ -199,6 +205,7 @@ static const struct of_device_id imx_esdhc_dt_ids[] = {
 	{ .compatible = "fsl,imx6sx-usdhc", .data = &usdhc_imx6sx_data, },
 	{ .compatible = "fsl,imx6sl-usdhc", .data = &usdhc_imx6sl_data, },
 	{ .compatible = "fsl,imx6q-usdhc", .data = &usdhc_imx6q_data, },
+	{ .compatible = "fsl,vf610-esdhc", .data = &esdhc_vf610_data, },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, imx_esdhc_dt_ids);
@@ -221,6 +228,11 @@ static inline int is_imx6q_usdhc(struct pltfm_imx_data *data)
 static inline int esdhc_is_usdhc(struct pltfm_imx_data *data)
 {
 	return !!(data->socdata->flags & ESDHC_FLAG_USDHC);
+}
+
+static inline int is_vf610_esdhc(struct pltfm_imx_data *data)
+{
+	return data->socdata == &esdhc_vf610_data;
 }
 
 static inline void esdhc_clrset_le(struct sdhci_host *host, u32 mask, u32 val, int reg)
@@ -808,7 +820,7 @@ static void esdhc_set_uhs_signaling(struct sdhci_host *host, unsigned timing)
 			v = boarddata->delay_line <<
 				ESDHC_DLL_OVERRIDE_VAL_SHIFT |
 				(1 << ESDHC_DLL_OVERRIDE_EN_SHIFT);
-			if (is_imx53_esdhc(imx_data))
+			if (is_imx53_esdhc(imx_data) || is_vf610_esdhc(imx_data))
 				v <<= 1;
 			writel(v, host->ioaddr + ESDHC_DLL_CTRL);
 		}
@@ -1099,6 +1111,9 @@ static int sdhci_esdhc_imx_probe(struct platform_device *pdev)
 
 	if (imx_data->socdata->flags & ESDHC_FLAG_ERR004536)
 		host->quirks |= SDHCI_QUIRK_BROKEN_ADMA;
+
+	if (imx_data->socdata->flags & ESDHC_FLAG_MULTIBLOCK_ACMD12)
+		host->quirks |= SDHCI_QUIRK_MULTIBLOCK_READ_ACMD12;
 
 	if (of_id)
 		err = sdhci_esdhc_imx_probe_dt(pdev, host, imx_data);
