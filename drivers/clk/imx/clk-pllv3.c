@@ -41,6 +41,8 @@
 struct clk_pllv3 {
 	struct clk_hw	hw;
 	void __iomem	*base;
+	void __iomem	*num;
+	void __iomem	*denom;
 	bool		powerup_set;
 	u32		powerdown;
 	u32		div_mask;
@@ -103,17 +105,28 @@ static unsigned long clk_pllv3_recalc_rate(struct clk_hw *hw,
 {
 	struct clk_pllv3 *pll = to_clk_pllv3(hw);
 	u32 div = (readl_relaxed(pll->base) >> pll->div_shift)  & pll->div_mask;
+	u32 num = pll->num ? readl_relaxed(pll->num) : 0;
+	u32 denom = pll->denom ? readl_relaxed(pll->denom) : 1;
 
-	return (div == 1) ? parent_rate * 22 : parent_rate * 20;
+	unsigned long clock = parent_rate * ((div == 1) ? 22 : 20);
+	unsigned long overclock = (parent_rate * num) / denom;
+
+	return clock + overclock;
 }
 
 static long clk_pllv3_round_rate(struct clk_hw *hw, unsigned long rate,
 				 unsigned long *prate)
 {
+	struct clk_pllv3 *pll = to_clk_pllv3(hw);
 	unsigned long parent_rate = *prate;
+	u32 num = pll->num ? readl_relaxed(pll->num) : 0;
+	u32 denom = pll->denom ? readl_relaxed(pll->denom) : 1;
+	unsigned long overclock = (parent_rate * num) / denom;
 
-	return (rate >= parent_rate * 22) ? parent_rate * 22 :
-					    parent_rate * 20;
+	unsigned long min = parent_rate * 20 + overclock;
+	unsigned long max = parent_rate * 22 + overclock;
+
+	return (rate >= max) ? max : min;
 }
 
 static int clk_pllv3_set_rate(struct clk_hw *hw, unsigned long rate,
@@ -121,10 +134,13 @@ static int clk_pllv3_set_rate(struct clk_hw *hw, unsigned long rate,
 {
 	struct clk_pllv3 *pll = to_clk_pllv3(hw);
 	u32 val, div;
+	u32 num = pll->num ? readl_relaxed(pll->num) : 0;
+	u32 denom = pll->denom ? readl_relaxed(pll->denom) : 1;
+	unsigned long overclock = (parent_rate * num) / denom;
 
-	if (rate == parent_rate * 22)
+	if (rate == (parent_rate * 22 + overclock))
 		div = 1;
-	else if (rate == parent_rate * 20)
+	else if (rate == (parent_rate * 20 + overclock))
 		div = 0;
 	else
 		return -EINVAL;
@@ -283,8 +299,9 @@ static const struct clk_ops clk_pllv3_enet_ops = {
 	.recalc_rate	= clk_pllv3_enet_recalc_rate,
 };
 
-struct clk *imx_clk_pllv3(enum imx_pllv3_type type, const char *name,
+struct clk *imx_clk_pllv3_num(enum imx_pllv3_type type, const char *name,
 			  const char *parent_name, void __iomem *base,
+			  void __iomem *num, void __iomem *denom,
 			  u32 div_mask)
 {
 	struct clk_pllv3 *pll;
@@ -320,6 +337,8 @@ struct clk *imx_clk_pllv3(enum imx_pllv3_type type, const char *name,
 		ops = &clk_pllv3_ops;
 	}
 	pll->base = base;
+	pll->num = num;
+	pll->denom = denom;
 	pll->div_mask = div_mask;
 
 	init.name = name;
@@ -335,4 +354,11 @@ struct clk *imx_clk_pllv3(enum imx_pllv3_type type, const char *name,
 		kfree(pll);
 
 	return clk;
+}
+
+struct clk *imx_clk_pllv3(enum imx_pllv3_type type, const char *name,
+			  const char *parent_name, void __iomem *base,
+			  u32 div_mask)
+{
+	return imx_clk_pllv3_num(type, name, parent_name, base, NULL, NULL, div_mask);
 }

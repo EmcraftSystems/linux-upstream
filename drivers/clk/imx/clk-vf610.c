@@ -59,6 +59,8 @@
 #define PFD_PLL2_BASE		(anatop_base + 0x100)
 #define PFD_PLL3_BASE		(anatop_base + 0xf0)
 #define PLL1_CTRL		(anatop_base + 0x270)
+#define PLL1_NUM		(anatop_base + 0x290)
+#define PLL1_DENOM		(anatop_base + 0x2A0)
 #define PLL2_CTRL		(anatop_base + 0x30)
 #define PLL3_CTRL		(anatop_base + 0x10)
 #define PLL4_CTRL		(anatop_base + 0x70)
@@ -171,7 +173,7 @@ static void __init vf610_clocks_init(struct device_node *ccm_node)
 	clk[VF610_CLK_PLL6_BYPASS_SRC] = imx_clk_mux("pll6_bypass_src", PLL6_CTRL, 14, 1, pll_bypass_src_sels, ARRAY_SIZE(pll_bypass_src_sels));
 	clk[VF610_CLK_PLL7_BYPASS_SRC] = imx_clk_mux("pll7_bypass_src", PLL7_CTRL, 14, 1, pll_bypass_src_sels, ARRAY_SIZE(pll_bypass_src_sels));
 
-	clk[VF610_CLK_PLL1] = imx_clk_pllv3(IMX_PLLV3_GENERIC, "pll1", "pll1_bypass_src", PLL1_CTRL, 0x1);
+	clk[VF610_CLK_PLL1] = imx_clk_pllv3_num(IMX_PLLV3_GENERIC, "pll1", "pll1_bypass_src", PLL1_CTRL, PLL1_NUM, PLL1_DENOM, 0x1);
 	clk[VF610_CLK_PLL2] = imx_clk_pllv3(IMX_PLLV3_GENERIC, "pll2", "pll2_bypass_src", PLL2_CTRL, 0x1);
 	clk[VF610_CLK_PLL3] = imx_clk_pllv3(IMX_PLLV3_USB_VF610,     "pll3", "pll3_bypass_src", PLL3_CTRL, 0x2);
 	clk[VF610_CLK_PLL4] = imx_clk_pllv3(IMX_PLLV3_AV,      "pll4", "pll4_bypass_src", PLL4_CTRL, 0x7f);
