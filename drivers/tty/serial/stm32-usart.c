@@ -692,8 +692,8 @@ static struct console stm32_console = {
 static struct uart_driver stm32_usart_driver = {
 	.driver_name	= DRIVER_NAME,
 	.dev_name	= STM32_SERIAL_NAME,
-	.major		= 0,
-	.minor		= 0,
+	.major		= TTY_MAJOR,
+	.minor		= 64,
 	.nr		= STM32_MAX_PORTS,
 	.cons		= STM32_SERIAL_CONSOLE,
 };
