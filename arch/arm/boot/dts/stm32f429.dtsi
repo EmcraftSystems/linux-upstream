@@ -46,6 +46,7 @@
  */
 
 #include "armv7-m.dtsi"
+#include <dt-bindings/mfd/stm32f4-rcc.h>
 
 / {
 	clocks {
@@ -169,9 +170,15 @@
 			status = "disabled";
 		};
 
+		rst: reset@40023800 {
+			#reset-cells = <1>;
+			compatible = "st,stm32-rcc";
+			reg = <0x40023800 0x400>;
+		};
+
 		rcc: rcc@40023810 {
 			#clock-cells = <2>;
-			compatible = "st,stm32f42xx-rcc", "st,stm32-rcc";
+			compatible = "st,stm32f42xx-rcc";
 			reg = <0x40023800 0x400>;
 			clocks = <&clk_hse>;
 		};
