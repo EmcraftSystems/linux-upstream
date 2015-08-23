@@ -1,0 +1,18 @@
+* STmicro STM32F2xx, STM32F4xx, STM32F7xx ethernet controller
+
+This device is a platform glue layer for stmmac.
+Please see stmmac.txt for the other unchanged properties.
+
+Required properties:
+ - compatible:  Should contain "st,stm32-dwmac"
+
+Examples:
+
+mac: ethernet@40010000 {
+	compatible = "stm,stm32-dwmac", "snps,dwmac-3.611", "snps,dwmac";
+	reg = <0x40028000 0x2000>;
+	interrupts = <61>;
+	interrupt-names = "macirq";
+	clocks = <&rcc 0 25>, <&rcc 0 26>, <&rcc 0 27>;
+	clock-names = "stmmaceth", "stm32_mac_tx", "stm32_mac_rx";
+}

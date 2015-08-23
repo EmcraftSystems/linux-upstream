@@ -58,6 +58,14 @@ config DWMAC_LPC18XX
 	---help---
 	  Support for NXP LPC18xx/43xx DWMAC Ethernet.
 
+config DWMAC_STM32
+	tristate "STM32 DWMAC support"
+	default ARCH_STM32
+	depends on OF
+	select MFD_SYSCON
+	---help---
+	  Support for STM32 DWMAC Ethernet.
+
 config DWMAC_MESON
 	tristate "Amlogic Meson dwmac support"
 	default ARCH_MESON
