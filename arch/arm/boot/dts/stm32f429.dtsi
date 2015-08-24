@@ -195,6 +195,8 @@
 			interrupt-names = "macirq";
 			clocks = <&rcc 0 25>, <&rcc 0 26>, <&rcc 0 27>;
 			clock-names = "stmmaceth", "stm32_mac_tx", "stm32_mac_rx";
+			resets = <&rst STM32F4_AHB1_RESET(ETHMAC)>;
+			reset-names = "stmmaceth";
 			status = "disabled";
 		};
 	};
