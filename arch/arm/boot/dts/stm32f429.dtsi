@@ -47,13 +47,161 @@
 
 #include "armv7-m.dtsi"
 #include <dt-bindings/mfd/stm32f4-rcc.h>
+#include <dt-bindings/pinctrl/pinctrl-stm32.h>
 
 / {
+	aliases {
+		gpio0 = &gpioa;
+		gpio1 = &gpiob;
+		gpio2 = &gpioc;
+		gpio3 = &gpiod;
+		gpio4 = &gpioe;
+		gpio5 = &gpiof;
+		gpio6 = &gpiog;
+		gpio7 = &gpioh;
+		gpio8 = &gpioi;
+		gpio9 = &gpioj;
+		gpio10 = &gpiok;
+	};
+
 	clocks {
 		clk_hse: clk-hse {
 			#clock-cells = <0>;
 			compatible = "fixed-clock";
 			clock-frequency = <8000000>;
+		};
+	};
+
+	pin-controller {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "st,stm32-pinctrl";
+		ranges = <0 0x40020000 0x3000>;
+
+		gpioa: gpio@40020000 {
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x0 0x400>;
+			resets = <&rst STM32F4_AHB1_RESET(GPIOA)>;
+			st,bank-name = "GPIOA";
+		};
+		gpiob: gpio@40020400 {
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x400 0x400>;
+			resets = <&rst STM32F4_AHB1_RESET(GPIOB)>;
+			st,bank-name = "GPIOB";
+		};
+		gpioc: gpio@40020800 {
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x800 0x400>;
+			resets = <&rst STM32F4_AHB1_RESET(GPIOC)>;
+			st,bank-name = "GPIOC";
+		};
+		gpiod: gpio@40020C00 {
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0xC00 0x400>;
+			resets = <&rst STM32F4_AHB1_RESET(GPIOD)>;
+			st,bank-name = "GPIOD";
+		};
+		gpioe: gpio@40021000 {
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x1000 0x400>;
+			resets = <&rst STM32F4_AHB1_RESET(GPIOE)>;
+			st,bank-name = "GPIOE";
+		};
+		gpiof: gpio@40021400 {
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x1400 0x400>;
+			resets = <&rst STM32F4_AHB1_RESET(GPIOF)>;
+			st,bank-name = "GPIOF";
+		};
+		gpiog: gpio@40021800 {
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x1800 0x400>;
+			resets = <&rst STM32F4_AHB1_RESET(GPIOG)>;
+			st,bank-name = "GPIOG";
+		};
+		gpioh: gpio@40021C00 {
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x1C00 0x400>;
+			resets = <&rst STM32F4_AHB1_RESET(GPIOH)>;
+			st,bank-name = "GPIOH";
+		};
+		gpioi: gpio@40022000 {
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x2000 0x400>;
+			resets = <&rst STM32F4_AHB1_RESET(GPIOI)>;
+			st,bank-name = "GPIOI";
+		};
+		gpioj: gpio@40022400 {
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x2400 0x400>;
+			resets = <&rst STM32F4_AHB1_RESET(GPIOJ)>;
+			st,bank-name = "GPIOJ";
+		};
+		gpiok: gpio@40022800 {
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x2800 0x400>;
+			resets = <&rst STM32F4_AHB1_RESET(GPIOK)>;
+			st,bank-name = "GPIOK";
+		};
+
+		usart1 {
+			pinctrl_usart1: usart1-0 {
+				st,pins {
+					tx = <&gpioa 9 ALT7 NO_PULL PUSH_PULL LOW_SPEED>;
+					rx = <&gpioa 10 ALT7 NO_PULL PUSH_PULL LOW_SPEED>;
+				};
+			};
+		};
+
+		mac {
+			pinctrl_mac_mii: mac_mii {
+				st,pins {
+					rx_clk = <&gpioa 1 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					mdio = <&gpioa 2  ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					rx_dv = <&gpioa 7 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					pps_out = <&gpiob 5 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					txd3 = <&gpiob 8 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					mdc = <&gpioc 1 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					txd2 = <&gpioc 2 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					tx_clk = <&gpioc 3 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					rxd0 = <&gpioc 4 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					rxd1 = <&gpioc 5 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					tx_en = <&gpiog 11 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					txd0 = <&gpiog 13 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					txd1 = <&gpiog 14 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					crc = <&gpioh 2 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					col = <&gpioh 3 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					rxd2 = <&gpioh 6 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					rxd3 = <&gpioh 7 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					rx_er = <&gpioi 10 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+				};
+			};
+
+			pinctrl_mac_rmii: mac_rmii {
+				st,pins {
+					ref_clk = <&gpioa 1 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					mdio = <&gpioa 2 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					crs_dv = <&gpioa 7 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					mdc = <&gpioc 1 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					rxd0 = <&gpioc 4 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					rxd1 = <&gpioc 5 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					tx_en = <&gpiog 11 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					txd0 = <&gpiog 13 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+					txd1 = <&gpiog 14 ALT11 NO_PULL PUSH_PULL HIGH_SPEED>;
+				};
+			};
 		};
 	};
 
