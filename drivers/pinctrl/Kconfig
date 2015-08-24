@@ -151,6 +151,16 @@ config PINCTRL_ST
 	select PINCONF
 	select GPIOLIB_IRQCHIP
 
+config PINCTRL_STM32
+	bool "STMicroelectronics STM32 pinctrl driver"
+	depends on OF
+	depends on ARCH_STM32 || COMPILE_TEST
+	select PINMUX
+	select PINCONF
+	select GPIOLIB_IRQCHIP
+	help
+	  This selects the device tree based generic pinctrl driver for STM32.
+
 config PINCTRL_TEGRA
 	bool
 	select PINMUX
