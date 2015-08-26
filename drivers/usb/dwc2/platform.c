@@ -42,6 +42,7 @@
 #include <linux/of_device.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
+#include <linux/clk.h>
 
 #include <linux/usb/of.h>
 
@@ -131,6 +132,10 @@ static int dwc2_driver_remove(struct platform_device *dev)
 		dwc2_hcd_remove(hsotg);
 	if (hsotg->gadget_enabled)
 		s3c_hsotg_remove(hsotg);
+	if (hsotg->ulpi_clk)
+		clk_disable_unprepare(hsotg->ulpi_clk);
+	if (hsotg->core_clk)
+		clk_disable_unprepare(hsotg->core_clk);
 
 	return 0;
 }
@@ -219,6 +224,13 @@ static int dwc2_driver_probe(struct platform_device *dev)
 
 	dev_dbg(&dev->dev, "mapped PA %08lx to VA %p\n",
 		(unsigned long)res->start, hsotg->regs);
+
+	hsotg->core_clk = devm_clk_get(&dev->dev, "core_clk");
+	if (hsotg->core_clk)
+		clk_prepare_enable(hsotg->core_clk);
+	hsotg->ulpi_clk = devm_clk_get(&dev->dev, "ulpi_clk");
+	if (hsotg->ulpi_clk)
+		clk_prepare_enable(hsotg->ulpi_clk);
 
 	hsotg->dr_mode = of_usb_get_dr_mode(dev->dev.of_node);
 

@@ -232,6 +232,38 @@
 				};
 			};
 		};
+
+		usb_hs {
+			pinctrl_usb_hs: usb_hs-0 {
+				st,pins {
+					clk = <&gpioa 5 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+					stp = <&gpioc 0 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+					nxt = <&gpioh 4 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+					dir = <&gpioi 11 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+
+					data0 = <&gpioa 3 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+					data1 = <&gpiob 0 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+					data2 = <&gpiob 1 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+					data3 = <&gpiob 10 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+					data4 = <&gpiob 11 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+					data5 = <&gpiob 12 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+					data6 = <&gpiob 13 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+					data7 = <&gpiob 5 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+				};
+			};
+		};
 	};
 
 	soc {
@@ -376,6 +408,15 @@
 				      "stm32_mac_rx";
 			resets = <&rst STM32F4_AHB1_RESET(ETHMAC)>;
 			reset-names = "stmmaceth";
+			status = "disabled";
+		};
+
+		usb_hs: usb@40040000 {
+			compatible = "snps,dwc2";
+			reg = <0x40040000 0x40000>;
+			interrupts = <77>;
+			clocks = <&rcc 0 29>, <&rcc 0 30>;
+			clock-names = "core_clk", "ulpi_clk";
 			status = "disabled";
 		};
 	};
