@@ -19,6 +19,7 @@
 #include <linux/pinctrl/pinconf.h>
 #include <linux/platform_device.h>
 #include <linux/reset.h>
+#include <linux/clk.h>
 #include "core.h"
 
 #define STM32_GPIO_MODER	0x00
@@ -609,6 +610,7 @@ static int stm32_gpiolib_register_bank(struct stm32_pinctrl *info,
 	struct device *dev = info->dev;
 	struct resource res;
 	struct reset_control *rstc;
+	struct clk *clk;
 	int bank_num = of_alias_get_id(np, "gpio");
 	int err;
 
@@ -631,6 +633,10 @@ static int stm32_gpiolib_register_bank(struct stm32_pinctrl *info,
 
 	of_property_read_string(np, "st,bank-name", &range->name);
 	bank->gpio_chip.label = range->name;
+
+	clk = of_clk_get(np, 0);
+	if (!IS_ERR(clk))
+		clk_prepare_enable(clk);
 
 	range->id = bank_num;
 	range->pin_base = range->base = range->id * STM32_GPIO_PINS_PER_BANK;
