@@ -1577,7 +1577,6 @@ config THUMB2_KERNEL
 	default y if CPU_THUMBONLY
 	select AEABI
 	select ARM_ASM_UNIFIED
-	select ARM_UNWIND
 	help
 	  By enabling this option, the kernel will be compiled in
 	  Thumb-2 mode. A compiler/assembler that understand the unified
