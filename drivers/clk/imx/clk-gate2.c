@@ -50,7 +50,8 @@ static int clk_gate2_enable(struct clk_hw *hw)
 		goto out;
 
 	reg = readl(gate->reg);
-	reg |= 3 << gate->bit_idx;
+	reg &= ~(3 << gate->bit_idx);
+	reg |= 2 << gate->bit_idx;
 	writel(reg, gate->reg);
 
 out:
@@ -86,7 +87,7 @@ static int clk_gate2_reg_is_enabled(void __iomem *reg, u8 bit_idx)
 {
 	u32 val = readl(reg);
 
-	if (((val >> bit_idx) & 1) == 1)
+	if (((val >> bit_idx) & 3) != 0)
 		return 1;
 
 	return 0;
