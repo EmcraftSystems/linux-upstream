@@ -706,13 +706,7 @@ EXPORT_SYMBOL(phy_detach);
 int phy_suspend(struct phy_device *phydev)
 {
 	struct phy_driver *phydrv = to_phy_driver(phydev->dev.driver);
-	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
 	int ret = 0;
-
-	/* If the device has WOL enabled, we cannot suspend the PHY */
-	phy_ethtool_get_wol(phydev, &wol);
-	if (wol.wolopts)
-		return -EBUSY;
 
 	if (phydrv->suspend)
 		ret = phydrv->suspend(phydev);
@@ -1168,6 +1162,12 @@ static int gen10g_config_init(struct phy_device *phydev)
 int genphy_suspend(struct phy_device *phydev)
 {
 	int value;
+	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
+
+	/* If the device has WOL enabled, we cannot suspend the PHY */
+	phy_ethtool_get_wol(phydev, &wol);
+	if (wol.wolopts)
+		return -EBUSY;
 
 	mutex_lock(&phydev->lock);
 
