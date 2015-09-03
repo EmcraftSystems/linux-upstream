@@ -89,6 +89,7 @@ ifeq ($(CONFIG_SUSPEND),y)
 AFLAGS_suspend-imx6.o :=-Wa,-march=armv7-a
 obj-$(CONFIG_SOC_IMX6) += suspend-imx6.o
 obj-$(CONFIG_SOC_IMX53) += suspend-imx53.o
+obj-$(CONFIG_SOC_VF610) += suspend-vf610.o
 endif
 obj-$(CONFIG_SOC_IMX6) += pm-imx6.o
 
@@ -96,7 +97,8 @@ obj-$(CONFIG_SOC_IMX50) += mach-imx50.o
 obj-$(CONFIG_SOC_IMX51) += mach-imx51.o
 obj-$(CONFIG_SOC_IMX53) += mach-imx53.o
 
-obj-$(CONFIG_SOC_VF610) += mach-vf610.o
+vf610-pm-$(CONFIG_PM) += pm-vf610.o
+obj-$(CONFIG_SOC_VF610) += mach-vf610.o $(vf610-pm-y)
 
 obj-$(CONFIG_SOC_LS1021A) += mach-ls1021a.o
 
