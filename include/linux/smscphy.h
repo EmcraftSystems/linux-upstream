@@ -1,8 +1,8 @@
 #ifndef __LINUX_SMSCPHY_H__
 #define __LINUX_SMSCPHY_H__
 
-#define MII_LAN8742A_ID		0x0007c130
-#define MII_LAN8742A_ID_MASK	0xfffffff0
+#define MII_LAN8742_ID		0x0007c130
+#define MII_LAN8742_ID_MASK	0xfffffff0
 
 #define MII_LAN83C185_MMD_CONTROL	13	/* MMD Access Control Register */
 #define MII_LAN83C185_MMD_ACCESS	14	/* MMD Access Address/Data Register */
@@ -21,6 +21,7 @@
 #define MII_LAN83C185_ISF_INT5	(1<<5)		/* Remote Fault Detected */
 #define MII_LAN83C185_ISF_INT6	(1<<6)		/* Auto-Negotiation complete */
 #define MII_LAN83C185_ISF_INT7	(1<<7)		/* ENERGYON */
+#define MII_LAN83C185_ISF_INT8	(1<<8)		/* Wake on LAN */
 
 #define MII_LAN83C185_ISF_INT_ALL (0x0e)
 
@@ -28,13 +29,13 @@
 	(MII_LAN83C185_ISF_INT6 | MII_LAN83C185_ISF_INT4 | \
 	 MII_LAN83C185_ISF_INT7)
 
-#define MII_LAN83C185_EDPWRDOWN	(1 << 13)	/* EDPWRDOWN */
-#define MII_LAN83C185_ENERGYON	(1 << 1)	/* ENERGYON */
+#define MII_LAN83C185_EDPWRDOWN			(1 << 13)	/* EDPWRDOWN */
+#define MII_LAN83C185_ENERGYON			(1 << 1)	/* ENERGYON */
 
-#define MII_LAN83C185_MODE_MASK		0xE0
-#define MII_LAN83C185_MODE_POWERDOWN	0xC0	/* Power Down mode */
-#define MII_LAN83C185_MODE_ALL		0xE0	/* All capable mode */
-#define MII_LAN83C185_MODE_PHYADDR_1	0x1	/* Set to 1: Address 0 is a broadcast */
+#define MII_LAN83C185_MODE_MASK			0xE0
+#define MII_LAN83C185_MODE_POWERDOWN		0xC0		/* Power Down mode */
+#define MII_LAN83C185_MODE_ALL			0xE0		/* All capable mode */
+#define MII_LAN83C185_MODE_PHYADDR_1		0x1		/* Set to 1: Address 0 is a broadcast */
 
 #define MII_LAN83C185_TDR_ENABLE		(0x8000)	/* TDR Enable */
 #define MII_LAN83C185_TDR_STATUS		(0x0100)	/* TDR Channel Status */
@@ -54,11 +55,21 @@
 #define MII_LAN83C185_SCS_DISABLE_AUTO_MDIX	(0x8000)	/* Disable Auto-MDIX */
 #define MII_LAN83C185_SCS_MDIX			(0x2000)	/* TX receives, RX transmits */
 
-#define MMD_LAN8742A_TDR_MATCH_THR_REG	11			/* TDR Match Threshold Register address*/
-#define MMD_LAN8742A_TDR_MATCH_THR_VAL	(0x09 | (0x12 << 5))	/* TDR Match Threshold Register value */
+#define MMD_LAN8742_TDR_MATCH_THR_REG		11		/* TDR Match Threshold Register address*/
+#define MMD_LAN8742_TDR_MATCH_THR_VAL	(0x09 | (0x12 << 5))	/* TDR Match Threshold Register value */
 
-#define MMD_LAN8742A_TDR_OPEN_THR_REG	12			/* TDR Short/Open Threshold Register address */
-#define MMD_LAN8742A_TDR_OPEN_THR_VAL	(0x12 | (0x09 << 5))	/* TDR Short/Open Threshold Register value*/
+#define MMD_LAN8742_TDR_OPEN_THR_REG		12		/* TDR Short/Open Threshold Register address */
+#define MMD_LAN8742_TDR_OPEN_THR_VAL	(0x12 | (0x09 << 5))	/* TDR Short/Open Threshold Register value*/
+
+#define MMD_LAN8742_WUCSR_REG			32784		/* Wakeup Control and Status Register */
+#define MMD_LAN8742_WUCS_INTERFACE_DISABLE	(1 << 15)	/* RMII Interface Disabled */
+#define MMD_LAN8742_WUCS_WOL_CONFIGURED		(1 << 8)	/* WoL Configured */
+#define MMD_LAN8742_WUCS_MAGIC_RECEIVED		(1 << 5)	/* Magic Packet Received */
+#define MMD_LAN8742_WUCS_MAGIC_ENABLED		(1 << 1)	/* Wake On Magic Packet Enabled */
+
+#define MMD_LAN8742_MAC_RECEIVE_ADDR_A		32865		/* MAC Receive Address A Register */
+#define MMD_LAN8742_MAC_RECEIVE_ADDR_B		32866		/* MAC Receive Address A Register */
+#define MMD_LAN8742_MAC_RECEIVE_ADDR_C		32867		/* MAC Receive Address A Register */
 
 enum {
 	SMSC_CABLE_TYPE__DEFAULT = 0,
