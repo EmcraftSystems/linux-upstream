@@ -2692,6 +2692,9 @@ int sdhci_suspend_host(struct sdhci_host *host)
 		sdhci_writel(host, 0, SDHCI_SIGNAL_ENABLE);
 		free_irq(host->irq, host);
 	} else {
+		if (host->runtime_suspended) {
+			pm_generic_runtime_resume(host->mmc->parent);
+		}
 		sdhci_enable_irq_wakeups(host);
 		enable_irq_wake(host->irq);
 	}
