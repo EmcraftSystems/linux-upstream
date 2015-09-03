@@ -43,9 +43,11 @@
 
 #define SPI_MCR		0x00
 #define SPI_MCR_MASTER		(1 << 31)
+#define SPI_MCR_PCSSE		(1 << 25)
 #define SPI_MCR_PCSIS		(0x3F << 16)
-#define SPI_MCR_CLR_TXF	(1 << 11)
-#define SPI_MCR_CLR_RXF	(1 << 10)
+#define SPI_MCR_CLR_TXF		(1 << 11)
+#define SPI_MCR_CLR_RXF		(1 << 10)
+#define SPI_MCR_HALT		(1 << 0)
 
 #define SPI_TCR			0x08
 #define SPI_TCR_GET_TCNT(x)	(((x) & 0xffff0000) >> 16)
@@ -70,6 +72,8 @@
 #define SPI_SR			0x2c
 #define SPI_SR_EOQF		0x10000000
 #define SPI_SR_TCFQF		0x80000000
+#define SPI_SR_TFFF		(1 << 25)
+#define SPI_SR_TXCTR(x)		(((x) >> 12) & 0xf)
 
 #define SPI_RSER		0x30
 #define SPI_RSER_EOQFE		0x10000000
@@ -520,15 +524,24 @@ static irqreturn_t dspi_interrupt(int irq, void *dev_id)
 	struct fsl_dspi *dspi = (struct fsl_dspi *)dev_id;
 	struct spi_message *msg = dspi->cur_msg;
 	enum dspi_trans_mode trans_mode;
-	u32 spi_sr, spi_tcr;
+	u32 spi_sr, spi_tcr, spi_mcr;
 	u32 spi_tcnt, tcnt_diff;
 	int tx_word;
+	int is_master;
 
 	regmap_read(dspi->regmap, SPI_SR, &spi_sr);
 	regmap_write(dspi->regmap, SPI_SR, spi_sr);
+	regmap_read(dspi->regmap, SPI_MCR, &spi_mcr);
 
+	is_master = (spi_mcr & SPI_MCR_MASTER);
 
-	if (spi_sr & (SPI_SR_EOQF | SPI_SR_TCFQF)) {
+	if (!is_master && (spi_sr &  SPI_SR_TFFF)) {
+		int i;
+		for (i = SPI_SR_TXCTR(spi_sr); i < DSPI_FIFO_SIZE; ++i)
+			regmap_write(dspi->regmap, SPI_PUSHR_SLAVE, 0xFF);
+	}
+
+	if (is_master && (spi_sr & (SPI_SR_EOQF | SPI_SR_TCFQF))) {
 		tx_word = is_double_byte_mode(dspi);
 
 		regmap_read(dspi->regmap, SPI_TCR, &spi_tcr);
@@ -611,10 +624,39 @@ static int dspi_suspend(struct device *dev)
 	struct spi_master *master = dev_get_drvdata(dev);
 	struct fsl_dspi *dspi = spi_master_get_devdata(master);
 
-	spi_master_suspend(master);
-	clk_disable_unprepare(dspi->clk);
+	if (device_may_wakeup(&dspi->pdev->dev)) {
+		u32 ctar = SPI_CTAR_FMSZ(8 - 1)
+			| SPI_CTAR_CPOL(1)
+			| SPI_CTAR_CPHA(1);
+		u32 mcr, rser, tcr;
+		int i;
 
-	pinctrl_pm_select_sleep_state(dev);
+		dev_info(&dspi->pdev->dev, "Switch to slave mode\n");
+
+		regmap_read(dspi->regmap, SPI_MCR, &mcr);
+		mcr |= SPI_MCR_CLR_TXF | SPI_MCR_CLR_RXF;
+		regmap_write(dspi->regmap, SPI_MCR, mcr);
+
+		mcr &= ~(SPI_MCR_MASTER | SPI_MCR_HALT);
+		mcr |= (SPI_MCR_PCSIS | SPI_MCR_PCSSE);
+		regmap_write(dspi->regmap, SPI_MCR, mcr);
+
+		regmap_write(dspi->regmap, SPI_CTAR0_SLAVE, ctar);
+
+		for (i = 0; i < DSPI_FIFO_SIZE; ++i)
+			regmap_write(dspi->regmap, SPI_PUSHR_SLAVE, 0xFF);
+
+		regmap_read(dspi->regmap, SPI_RSER, &rser);
+		rser |= (SPI_RSER_EOQFE | SPI_RSER_TCFQE);
+		regmap_write(dspi->regmap, SPI_RSER, rser);
+
+		enable_irq_wake(dspi->irq);
+	} else {
+		spi_master_suspend(master);
+		clk_disable_unprepare(dspi->clk);
+
+		pinctrl_pm_select_sleep_state(dev);
+	}
 
 	return 0;
 }
@@ -624,10 +666,25 @@ static int dspi_resume(struct device *dev)
 	struct spi_master *master = dev_get_drvdata(dev);
 	struct fsl_dspi *dspi = spi_master_get_devdata(master);
 
-	pinctrl_pm_select_default_state(dev);
+	if (device_may_wakeup(&dspi->pdev->dev)) {
+		u32 mcr;
 
-	clk_prepare_enable(dspi->clk);
-	spi_master_resume(master);
+		dev_info(&dspi->pdev->dev, "Switch to master mode\n");
+
+		regmap_read(dspi->regmap, SPI_MCR, &mcr);
+		mcr |= SPI_MCR_CLR_TXF | SPI_MCR_CLR_RXF;
+		regmap_write(dspi->regmap, SPI_MCR, mcr);
+
+		mcr |= (SPI_MCR_MASTER | SPI_MCR_HALT);
+		regmap_write(dspi->regmap, SPI_MCR, mcr);
+
+		disable_irq_wake(dspi->irq);
+	} else {
+		pinctrl_pm_select_default_state(dev);
+
+		clk_prepare_enable(dspi->clk);
+		spi_master_resume(master);
+	}
 
 	return 0;
 }
@@ -738,6 +795,9 @@ static int dspi_probe(struct platform_device *pdev)
 		goto out_clk_put;
 	}
 
+	device_set_wakeup_capable(&pdev->dev, 1);
+	device_wakeup_disable(&pdev->dev);
+
 	return ret;
 
 out_clk_put:
@@ -765,7 +825,7 @@ static struct platform_driver fsl_dspi_driver = {
 	.driver.name    = DRIVER_NAME,
 	.driver.of_match_table = fsl_dspi_dt_ids,
 	.driver.owner   = THIS_MODULE,
-	.driver.pm = &dspi_pm,
+	.driver.pm	= &dspi_pm,
 	.probe          = dspi_probe,
 	.remove		= dspi_remove,
 };
