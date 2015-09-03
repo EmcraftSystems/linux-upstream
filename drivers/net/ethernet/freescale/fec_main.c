@@ -1976,9 +1976,22 @@ static int fec_enet_mii_init(struct platform_device *pdev)
 	static struct mii_bus *fec0_mii_bus;
 	struct net_device *ndev = platform_get_drvdata(pdev);
 	struct fec_enet_private *fep = netdev_priv(ndev);
-	struct device_node *node;
+	struct device_node *node = pdev->dev.of_node;
+	struct device_node *mdio_node;
 	int err = -ENXIO, i;
 	u32 mii_speed, holdtime;
+
+	fep->osc_en_gpio = of_get_named_gpio(node, "osc-en-gpios", 0);
+
+	if (gpio_is_valid(fep->osc_en_gpio)) {
+		err = devm_gpio_request_one(&pdev->dev, fep->osc_en_gpio,
+					    GPIOF_OUT_INIT_HIGH, "osc_en_gpio");
+		msleep(1);
+		if (err) {
+			dev_err(&pdev->dev, "failed to get osc_en_gpio: %d\n", err);
+			fep->osc_en_gpio = -1;
+		}
+	}
 
 	/*
 	 * The i.MX28 dual fec interfaces are not equal.
@@ -2068,10 +2081,10 @@ static int fec_enet_mii_init(struct platform_device *pdev)
 	for (i = 0; i < PHY_MAX_ADDR; i++)
 		fep->mii_bus->irq[i] = PHY_POLL;
 
-	node = of_get_child_by_name(pdev->dev.of_node, "mdio");
-	if (node) {
-		err = of_mdiobus_register(fep->mii_bus, node);
-		of_node_put(node);
+	mdio_node = of_get_child_by_name(node, "mdio");
+	if (mdio_node) {
+		err = of_mdiobus_register(fep->mii_bus, mdio_node);
+		of_node_put(mdio_node);
 	} else {
 		err = mdiobus_register(fep->mii_bus);
 	}
@@ -2575,11 +2588,15 @@ fec_enet_get_wol(struct net_device *ndev, struct ethtool_wolinfo *wol)
 {
 	struct fec_enet_private *fep = netdev_priv(ndev);
 
-	if (fep->wol_flag & FEC_WOL_HAS_MAGIC_PACKET) {
-		wol->supported = WAKE_MAGIC;
-		wol->wolopts = fep->wol_flag & FEC_WOL_FLAG_ENABLE ? WAKE_MAGIC : 0;
-	} else {
-		wol->supported = wol->wolopts = 0;
+	phy_ethtool_get_wol(fep->phy_dev, wol);
+
+	if (!(wol->supported & WAKE_MAGIC)) {
+		if (fep->wol_flag & FEC_WOL_HAS_MAGIC_PACKET) {
+			wol->supported = WAKE_MAGIC;
+			wol->wolopts = fep->wol_flag & FEC_WOL_FLAG_ENABLE ? WAKE_MAGIC : 0;
+		} else {
+			wol->supported = wol->wolopts = 0;
+		}
 	}
 }
 
@@ -2587,6 +2604,9 @@ static int
 fec_enet_set_wol(struct net_device *ndev, struct ethtool_wolinfo *wol)
 {
 	struct fec_enet_private *fep = netdev_priv(ndev);
+
+	if (0 == phy_ethtool_set_wol(fep->phy_dev, wol))
+		return 0;
 
 	if (!(fep->wol_flag & FEC_WOL_HAS_MAGIC_PACKET))
 		return -EINVAL;
@@ -3533,6 +3553,7 @@ static int __maybe_unused fec_suspend(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct fec_enet_private *fep = netdev_priv(ndev);
+	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
 
 	rtnl_lock();
 	if (netif_running(ndev)) {
@@ -3544,14 +3565,23 @@ static int __maybe_unused fec_suspend(struct device *dev)
 		netif_device_detach(ndev);
 		netif_tx_unlock_bh(ndev);
 		fec_stop(ndev);
-		fec_enet_clk_enable(ndev, false);
-		if (!(fep->wol_flag & FEC_WOL_FLAG_ENABLE))
+		if (!(fep->wol_flag & FEC_WOL_FLAG_ENABLE)) {
+			fec_enet_clk_enable(ndev, false);
 			pinctrl_pm_select_sleep_state(&fep->pdev->dev);
+		}
 	}
 	rtnl_unlock();
 
-	if (fep->reg_phy && !(fep->wol_flag & FEC_WOL_FLAG_ENABLE))
-		regulator_disable(fep->reg_phy);
+	if (!(fep->wol_flag & FEC_WOL_FLAG_ENABLE)) {
+		if (fep->reg_phy)
+			regulator_disable(fep->reg_phy);
+
+		/* If the device has WOL enabled, do not turn off oscillator */
+		phy_ethtool_get_wol(fep->phy_dev, &wol);
+		if (!wol.wolopts && gpio_is_valid(fep->osc_en_gpio))
+			gpio_set_value(fep->osc_en_gpio, 0);
+	}
+
 
 	/* SOC supply clock to phy, when clock is disabled, phy link down
 	 * SOC control phy regulator, when regulator is disabled, phy link down
@@ -3569,6 +3599,11 @@ static int __maybe_unused fec_resume(struct device *dev)
 	struct fec_platform_data *pdata = fep->pdev->dev.platform_data;
 	int ret;
 	int val;
+
+	if (gpio_is_valid(fep->osc_en_gpio)) {
+		gpio_set_value(fep->osc_en_gpio, 1);
+		msleep(1);
+	}
 
 	if (fep->reg_phy && !(fep->wol_flag & FEC_WOL_FLAG_ENABLE)) {
 		ret = regulator_enable(fep->reg_phy);
