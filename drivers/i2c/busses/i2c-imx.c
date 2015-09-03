@@ -85,6 +85,7 @@
 #define IMX_I2C_I2CR	0x02	/* i2c control */
 #define IMX_I2C_I2SR	0x03	/* i2c status */
 #define IMX_I2C_I2DR	0x04	/* i2c transfer data */
+#define IMX_I2C_IBIC	0x05	/* i2c interrupt config */
 
 #define IMX_I2C_REGSHIFT	2
 #define VF610_I2C_REGSHIFT	0
@@ -209,6 +210,8 @@ struct imx_i2c_struct {
 	const struct imx_i2c_hwdata	*hwdata;
 
 	struct imx_i2c_dma	*dma;
+	int			slave_address;
+	int			irq;
 };
 
 static const struct imx_i2c_hwdata imx1_i2c_hwdata  = {
@@ -974,6 +977,7 @@ static int i2c_imx_probe(struct platform_device *pdev)
 	struct imx_i2c_struct *i2c_imx;
 	struct resource *res;
 	struct imxi2c_platform_data *pdata = dev_get_platdata(&pdev->dev);
+	struct device_node *node = pdev->dev.of_node;
 	void __iomem *base;
 	int irq, ret;
 	dma_addr_t phy_addr;
@@ -1010,6 +1014,7 @@ static int i2c_imx_probe(struct platform_device *pdev)
 	i2c_imx->adapter.nr		= pdev->id;
 	i2c_imx->adapter.dev.of_node	= pdev->dev.of_node;
 	i2c_imx->base			= base;
+	i2c_imx->irq			= irq;
 
 	/* Get I2C clock */
 	i2c_imx->clk = devm_clk_get(&pdev->dev, NULL);
@@ -1056,6 +1061,11 @@ static int i2c_imx_probe(struct platform_device *pdev)
 		goto clk_disable;
 	}
 
+	if (!of_property_read_u32(node, "slave-address", &i2c_imx->slave_address)) {
+		dev_dbg(&i2c_imx->adapter.dev, "set slave address to 0x%x\n", i2c_imx->slave_address);
+		imx_i2c_write_reg(i2c_imx->slave_address << 1, i2c_imx, IMX_I2C_IADR);
+	}
+
 	/* Set up platform driver data */
 	platform_set_drvdata(pdev, i2c_imx);
 	clk_disable_unprepare(i2c_imx->clk);
@@ -1068,6 +1078,9 @@ static int i2c_imx_probe(struct platform_device *pdev)
 
 	/* Init DMA config if supported */
 	i2c_imx_dma_request(i2c_imx, phy_addr);
+
+	device_set_wakeup_capable(&i2c_imx->adapter.dev, 1);
+	device_wakeup_disable(&i2c_imx->adapter.dev);
 
 	return 0;   /* Return OK */
 
@@ -1096,11 +1109,69 @@ static int i2c_imx_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM
+static int i2c_imx_suspend(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct imx_i2c_struct *i2c_imx = platform_get_drvdata(pdev);
+	unsigned int temp;
+
+	if (device_may_wakeup(&i2c_imx->adapter.dev)) {
+		dev_dbg(&i2c_imx->adapter.dev, "Switch to slave mode\n");
+
+		clk_prepare_enable(i2c_imx->clk);
+
+		i2c_imx_set_clk(i2c_imx);
+		imx_i2c_write_reg(i2c_imx->ifdr, i2c_imx, IMX_I2C_IFDR);
+
+		temp = imx_i2c_read_reg(i2c_imx, IMX_I2C_I2CR);
+		temp &= ~(I2CR_IEN | I2CR_MSTA | I2CR_MTX);
+		temp |= (I2CR_IIEN);
+		imx_i2c_write_reg(temp, i2c_imx, IMX_I2C_I2CR);
+
+		enable_irq_wake(i2c_imx->irq);
+	} else {
+		disable_irq(i2c_imx->irq);
+	}
+
+	return 0;
+}
+
+static int i2c_imx_resume(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct imx_i2c_struct *i2c_imx = platform_get_drvdata(pdev);
+	unsigned int temp;
+
+	if (device_may_wakeup(&i2c_imx->adapter.dev)) {
+		dev_dbg(&i2c_imx->adapter.dev, "Switch to master mode\n");
+
+		temp = imx_i2c_read_reg(i2c_imx, IMX_I2C_I2CR);
+		temp |= I2CR_IEN;
+		temp &= ~I2CR_IIEN;
+		imx_i2c_write_reg(temp, i2c_imx, IMX_I2C_I2CR);
+
+		clk_disable_unprepare(i2c_imx->clk);
+		disable_irq_wake(i2c_imx->irq);
+	} else {
+		enable_irq(i2c_imx->irq);
+	}
+
+	return 0;
+}
+
+static const struct dev_pm_ops i2c_imx_pm_ops = {
+	.suspend = i2c_imx_suspend,
+	.resume = i2c_imx_resume,
+};
+#endif /* CONFIG_PM */
+
 static struct platform_driver i2c_imx_driver = {
 	.probe = i2c_imx_probe,
 	.remove = i2c_imx_remove,
 	.driver	= {
 		.name	= DRIVER_NAME,
+		.pm	= &i2c_imx_pm_ops,
 		.of_match_table = i2c_imx_dt_ids,
 	},
 	.id_table	= imx_i2c_devtype,
