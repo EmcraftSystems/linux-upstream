@@ -230,7 +230,7 @@ static int kszphy_broadcast_disable(struct phy_device *phydev)
 
 	ret = phy_write(phydev, MII_KSZPHY_OMSO, ret | KSZPHY_OMSO_B_CAST_OFF);
 out:
-	if (ret)
+	if (IS_ERR_VALUE(ret))
 		dev_err(&phydev->dev, "failed to disable broadcast address\n");
 
 	return ret;
@@ -250,7 +250,7 @@ static int kszphy_nand_tree_disable(struct phy_device *phydev)
 	ret = phy_write(phydev, MII_KSZPHY_OMSO,
 			ret & ~KSZPHY_OMSO_NAND_TREE_ON);
 out:
-	if (ret)
+	if (IS_ERR_VALUE(ret))
 		dev_err(&phydev->dev, "failed to disable NAND tree mode\n");
 
 	return ret;
@@ -269,7 +269,7 @@ static int kszphy_config_init(struct phy_device *phydev)
 
 	if (priv->rmii_ref_clk_sel) {
 		ret = kszphy_rmii_clk_sel(phydev, priv->rmii_ref_clk_sel_val);
-		if (ret) {
+		if (IS_ERR_VALUE(ret)) {
 			dev_err(&phydev->dev, "failed to set rmii reference clock\n");
 			return ret;
 		}
