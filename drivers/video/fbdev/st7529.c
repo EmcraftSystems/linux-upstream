@@ -29,6 +29,7 @@
 #include <linux/gpio.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/freezer.h>
 
 #define DRIVER_NAME		"lcd_st7529"
 
@@ -41,6 +42,7 @@
 #define CMD_EXT_IN		0x30
 #define CMD_EXT_OUT		0x31
 #define CMD_SLEEP_OUT		0x94
+#define CMD_SLEEP_IN		0x95
 #define CMD_OSC_ON		0xD1
 #define CMD_PWRCTRL		0x20
 #define ARG_PWRCTRL_VB		0x8
@@ -51,6 +53,7 @@
 #define ARG_VOLCTRL_12V_DOWN	0x4
 #define CMD_DIS_NORMAL		0xA6
 #define CMD_DISPLAY_ON		0xAF
+#define CMD_DISPLAY_OFF		0xAE
 #define CMD_DISCTRL		0xCA
 #define ARG_DISCTRL_CLK_RATIO_1	0
 #define ARG_DISCTRL_DUTY_1_144	0x23
@@ -194,6 +197,8 @@ static int st7529_task(void *param)
 {
 	struct mfb_info *mfbi = (struct mfb_info*)param;
 
+	set_freezable();
+
 	while (!kthread_should_stop()) {
 		st7529_command(CMD_EXT_IN, 0);
 		st7529_command(CMD_CASET, 2,
@@ -202,6 +207,8 @@ static int st7529_task(void *param)
 			       RAM_HEIGHT - mfbi->height, RAM_HEIGHT);
 		st7529_command(CMD_RAMWR, 0);
 		st7529_data(mfbi->buffer, mfbi->width * mfbi->height);
+
+		try_to_freeze();
 		schedule_timeout_interruptible(msecs_to_jiffies(1000));
 	}
 
@@ -342,11 +349,39 @@ static const struct of_device_id st7529_of_match[] = {
 
 MODULE_DEVICE_TABLE(of, st7529_of_match);
 
+#ifdef CONFIG_PM
+static int st7529_suspend(struct device *dev)
+{
+	struct spi_device *spi = to_spi_device(dev);
+	struct mfb_info *mfbi = fb_info->par;
+
+	st7529_command(CMD_DISPLAY_OFF, 0);
+	st7529_command(CMD_SLEEP_IN, 0);
+	return 0;
+}
+
+static int st7529_resume(struct device *dev)
+{
+	struct spi_device *spi = to_spi_device(dev);
+	struct mfb_info *mfbi = fb_info->par;
+
+	st7529_command(CMD_SLEEP_OUT, 0);
+	st7529_command(CMD_DISPLAY_ON, 0);
+	return 0;
+}
+
+static const struct dev_pm_ops st7529_pm_ops = {
+	.suspend = st7529_suspend,
+	.resume = st7529_resume,
+};
+#endif /* CONFIG_PM */
+
 static struct spi_driver st7529_driver = {
 	.driver = {
 		.name		= DRIVER_NAME,
 		.owner		= THIS_MODULE,
 		.of_match_table = st7529_of_match,
+		.pm		= &st7529_pm_ops,
 	},
 	.probe		= st7529_probe,
 	.remove		= st7529_remove,
