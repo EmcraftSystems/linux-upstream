@@ -338,6 +338,10 @@ static int perform_cable_diag(struct phy_device *phydev, int mdix,
 			      int *cable_type, int *cable_length)
 {
 	int i, max_wait = 10, rc;
+	int ctrl_reg = phy_read(phydev, MII_LAN83C185_CTRL_STATUS);
+
+	phy_write(phydev, MII_LAN83C185_CTRL_STATUS,
+		  ctrl_reg & (~MII_LAN83C185_EDPWRDOWN));
 
 	mmd_write(phydev, MDIO_MMD_VEND1,
 		  MMD_LAN8742_TDR_MATCH_THR_REG,
@@ -377,6 +381,8 @@ static int perform_cable_diag(struct phy_device *phydev, int mdix,
 		mdelay(500);
 		rc = -1;
 	}
+
+	phy_write(phydev, MII_LAN83C185_CTRL_STATUS, ctrl_reg);
 
 	if (i >= max_wait) {
 		dev_err(&phydev->dev, "TDR status read timeout\n");
@@ -420,6 +426,8 @@ int lan8742_module_eeprom(struct phy_device *phydev, struct ethtool_eeprom *ee, 
 	if (ETHTOOL_GMODULEEEPROM != ee->cmd)
 		return -EOPNOTSUPP;
 
+	mutex_lock(&phydev->lock);
+
 	perform_cable_diag(phydev, 0,
 			   &smsc_eeprom->tx_cable_type,
 			   &smsc_eeprom->tx_cable_length);
@@ -432,6 +440,8 @@ int lan8742_module_eeprom(struct phy_device *phydev, struct ethtool_eeprom *ee, 
 	phy_write(phydev, MII_LAN83C185_SCS, 0);
 	phy_write(phydev, MII_LAN83C185_TDR, 0);
 	phy_write(phydev, MII_BMCR, BMCR_ANENABLE | BMCR_ANRESTART);
+
+	mutex_unlock(&phydev->lock);
 
 	return 0;
 }
