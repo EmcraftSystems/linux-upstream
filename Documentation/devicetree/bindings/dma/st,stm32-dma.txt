@@ -1,0 +1,39 @@
+* StMicro STM32 Direct Memory Access Controller (DMA)
+
+Required properties:
+- compatible: Should be "st,<chip>-dma".
+- reg: Should contain DMA registers location and length.
+- interrupts: Should contain DMA interrupt.
+- #dma-cells: Must be <2>, used to represent the number of integer cells in
+the dmas property of client devices.
+
+Example:
+
+dma2: dma@40026400 {
+	compatible = "st,stm32f4-dma";
+	#dma-cells = <2>;
+	reg = <0x40026400 0x400>;
+	interrupts = <56 57 58 59 60 68 69 70>;
+	clocks = <&rcc 0 22>;
+};
+
+DMA clients connected to the STM32 DMA controller must use the format
+described in the dma.txt file, using a three-cell specifier for each channel:
+a phandle plus two integer cells, which specify the peripheral.
+The three cells in order are:
+
+1. A phandle pointing to the DMA controller.
+2. The DMA stream
+3. The DMA channel
+
+Example:
+
+usart1: serial@40011000 {
+	compatible = "st,stm32-usart";
+	reg = <0x40011000 0x400>;
+	interrupts = <37>;
+	st,use-dma-rx;
+	st,use-dma-tx;
+	dmas = <&dma2 5 4>, <&dma2 7 4>;
+	dma-names = "rx", "tx";
+};

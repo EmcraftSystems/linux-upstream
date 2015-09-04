@@ -397,6 +397,15 @@
 			clocks = <&clk_hse>;
 		};
 
+		dma2: dma@40026400 {
+			compatible = "st,stm32f4-dma";
+			#dma-cells = <2>;
+			reg = <0x40026400 0x400>;
+			interrupts = <56 57 58 59 60 68 69 70>;
+			clocks = <&rcc 0 22>;
+			status = "disabled";
+		};
+
 		mac: ethernet@40028000 {
 			compatible = "stm,stm32-dwmac", "snps,dwmac-3.611",
 				     "snps,dwmac";

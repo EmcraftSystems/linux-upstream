@@ -459,6 +459,13 @@ config XGENE_DMA
 	help
 	  Enable support for the APM X-Gene SoC DMA engine.
 
+config STM32_DMA
+	tristate "STM32 DMA support"
+	depends on ARCH_STM32
+	select DMA_ENGINE
+	help
+	  Support the StMicro STM32 DMA controller.
+
 config DMA_ENGINE
 	bool
 
