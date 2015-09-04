@@ -2681,6 +2681,8 @@ static void sdhci_disable_irq_wakeups(struct sdhci_host *host)
 
 int sdhci_suspend_host(struct sdhci_host *host)
 {
+	pm_runtime_forbid(host->mmc->parent);
+
 	sdhci_disable_card_detection(host);
 
 	mmc_retune_timer_stop(host->mmc);
@@ -2692,9 +2694,6 @@ int sdhci_suspend_host(struct sdhci_host *host)
 		sdhci_writel(host, 0, SDHCI_SIGNAL_ENABLE);
 		free_irq(host->irq, host);
 	} else {
-		if (host->runtime_suspended) {
-			pm_generic_runtime_resume(host->mmc->parent);
-		}
 		sdhci_enable_irq_wakeups(host);
 		enable_irq_wake(host->irq);
 	}
@@ -2736,6 +2735,8 @@ int sdhci_resume_host(struct sdhci_host *host)
 	}
 
 	sdhci_enable_card_detection(host);
+
+	pm_runtime_allow(host->mmc->parent);
 
 	return ret;
 }
