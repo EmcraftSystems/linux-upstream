@@ -24,6 +24,8 @@
 #include <video/videomode.h>
 #include <linux/pm_runtime.h>
 #include <linux/console.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 
 #define DRIVER_NAME			"fsl-dcu-fb"
 
@@ -150,6 +152,9 @@ struct dcu_fb_data {
 	u32 bits_per_pixel;
 	bool pixclockpol;
 	struct completion vsync_wait;
+	int lcd_enable_gpio;
+	int lcd_backlight_gpio;
+	int lcd_backlight_gpio_active_low;
 };
 
 struct layer_display_offset {
@@ -995,11 +1000,28 @@ static irqreturn_t fsl_dcu_irq(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static void fsl_dcu_turn_on_lcd(struct dcu_fb_data *dcufb)
+{
+	if (gpio_is_valid(dcufb->lcd_enable_gpio))
+		gpio_set_value(dcufb->lcd_enable_gpio, 1);
+	if (gpio_is_valid(dcufb->lcd_backlight_gpio))
+		gpio_set_value(dcufb->lcd_backlight_gpio, !dcufb->lcd_backlight_gpio_active_low);
+}
+
+static void fsl_dcu_turn_off_lcd(struct dcu_fb_data *dcufb)
+{
+	if (gpio_is_valid(dcufb->lcd_enable_gpio))
+		gpio_set_value(dcufb->lcd_enable_gpio, 0);
+	if (gpio_is_valid(dcufb->lcd_backlight_gpio))
+		gpio_set_value(dcufb->lcd_backlight_gpio, dcufb->lcd_backlight_gpio_active_low);
+}
+
 #ifdef CONFIG_PM_RUNTIME
 static int fsl_dcu_runtime_suspend(struct device *dev)
 {
 	struct dcu_fb_data *dcufb = dev_get_drvdata(dev);
 
+	fsl_dcu_turn_off_lcd(dcufb);
 	clk_disable_unprepare(dcufb->clk);
 
 	return 0;
@@ -1010,6 +1032,7 @@ static int fsl_dcu_runtime_resume(struct device *dev)
 	struct dcu_fb_data *dcufb = dev_get_drvdata(dev);
 
 	clk_prepare_enable(dcufb->clk);
+	fsl_dcu_turn_on_lcd(dcufb);
 
 	return 0;
 }
@@ -1057,6 +1080,8 @@ static int fsl_dcu_suspend(struct device *dev)
 	struct dcu_fb_data *dcufb = dev_get_drvdata(dev);
 	struct fb_info *fbi = dcufb->fsl_dcu_info[0];
 
+	fsl_dcu_turn_off_lcd(dcufb);
+
 	console_lock();
 	fb_set_suspend(fbi, 1);
 	console_unlock();
@@ -1091,6 +1116,8 @@ static int fsl_dcu_resume(struct device *dev)
 
 	fsl_dcu_set_par(fbi);
 
+	fsl_dcu_turn_on_lcd(dcufb);
+
 failed_bypasstcon:
 	return ret;
 }
@@ -1104,6 +1131,8 @@ static int fsl_dcu_probe(struct platform_device *pdev)
 	int ret = 0;
 	int i;
 	char *option = NULL;
+	int lcd_en_gpio = -1, lcd_backlight_gpio = -1;
+	struct device_node *node = pdev->dev.of_node;
 
 	fb_get_options("dcufb", &option);
 
@@ -1151,7 +1180,7 @@ static int fsl_dcu_probe(struct platform_device *pdev)
 
 	/* Put TCON in bypass mode, so the input signals from DCU are passed
 	 * through TCON unchanged */
-	ret = bypass_tcon(pdev->dev.of_node);
+	ret = bypass_tcon(node);
 	if (ret) {
 		dev_err(&pdev->dev, "could not bypass TCON\n");
 		goto failed_bypasstcon;
@@ -1202,6 +1231,40 @@ static int fsl_dcu_probe(struct platform_device *pdev)
 		if (ret < 0)
 			goto failed_alloc_framebuffer;
 	}
+
+	lcd_en_gpio = of_get_named_gpio(node, "lcd-en-gpios", 0);
+	if (gpio_is_valid(lcd_en_gpio)) {
+		ret = devm_gpio_request_one(&pdev->dev, lcd_en_gpio,
+					    GPIOF_OUT_INIT_HIGH, "lcd_enable");
+
+		if (ret) {
+			dev_err(&pdev->dev, "Failed to request LCD nReset GPIO (%d): %d\n",
+				lcd_en_gpio, ret);
+			goto failed_alloc_framebuffer;
+		}
+	}
+
+	lcd_backlight_gpio = of_get_named_gpio(node, "lcd-backlight-gpios", 0);
+	if (gpio_is_valid(lcd_backlight_gpio)) {
+		int flags = 0;
+		of_get_named_gpio_flags(node, "lcd-backlight-gpios", 0, &flags);
+		dcufb->lcd_backlight_gpio_active_low = flags & OF_GPIO_ACTIVE_LOW;
+
+		ret = devm_gpio_request_one(&pdev->dev, lcd_backlight_gpio,
+					    dcufb->lcd_backlight_gpio_active_low ?
+					    GPIOF_OUT_INIT_LOW : GPIOF_OUT_INIT_HIGH,
+					    "lcd_backlight");
+		if (ret) {
+			dev_err(&pdev->dev, "Failed to request LCD backlight GPIO (%d): %d\n",
+				lcd_backlight_gpio, ret);
+			goto failed_alloc_framebuffer;
+		}
+	}
+
+	dcufb->lcd_enable_gpio = lcd_en_gpio;
+	dcufb->lcd_backlight_gpio = lcd_backlight_gpio;
+
+	fsl_dcu_turn_on_lcd(dcufb);
 
 	return 0;
 

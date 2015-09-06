@@ -23,6 +23,7 @@
 #include <linux/of_device.h>
 #include <linux/regmap.h>
 #include <linux/mfd/syscon.h>
+#include <linux/of_gpio.h>
 
 #define DRIVER_NAME "mxs_phy"
 
@@ -159,6 +160,7 @@ struct mxs_phy {
 	const struct mxs_phy_data *data;
 	struct regmap *regmap_anatop;
 	int port_id;
+	int pwr_en_gpio;
 };
 
 static inline bool is_imx6q_phy(struct mxs_phy *mxs_phy)
@@ -208,6 +210,9 @@ static int mxs_phy_hw_init(struct mxs_phy *mxs_phy)
 
 	if (mxs_phy->data->flags & MXS_PHY_NEED_IP_FIX)
 		writel(BM_USBPHY_IP_FIX, base + HW_USBPHY_IP_SET);
+
+	if (gpio_is_valid(mxs_phy->pwr_en_gpio))
+		gpio_set_value(mxs_phy->pwr_en_gpio, 1);
 
 	return 0;
 }
@@ -369,6 +374,8 @@ static int mxs_phy_suspend(struct usb_phy *x, int suspend)
 	vbus_is_on = mxs_phy_get_vbus_status(mxs_phy);
 
 	if (suspend) {
+		if (gpio_is_valid(mxs_phy->pwr_en_gpio))
+			gpio_set_value(mxs_phy->pwr_en_gpio, 0);
 		/*
 		 * FIXME: Do not power down RXPWD1PT1 bit for low speed
 		 * connect. The low speed connection will have problem at
@@ -388,6 +395,8 @@ static int mxs_phy_suspend(struct usb_phy *x, int suspend)
 		       x->io_priv + HW_USBPHY_CTRL_SET);
 		clk_disable_unprepare(mxs_phy->clk);
 	} else {
+		if (gpio_is_valid(mxs_phy->pwr_en_gpio))
+			gpio_set_value(mxs_phy->pwr_en_gpio, 1);
 		mxs_phy_clock_switch_delay();
 		ret = clk_prepare_enable(mxs_phy->clk);
 		if (ret)
@@ -481,6 +490,17 @@ static int mxs_phy_probe(struct platform_device *pdev)
 				"failed to find regmap for anatop\n");
 			return PTR_ERR(mxs_phy->regmap_anatop);
 		}
+	}
+
+	mxs_phy->pwr_en_gpio = of_get_named_gpio(np, "fsl,phy-pwr-en-gpio", 0);
+	if (gpio_is_valid(mxs_phy->pwr_en_gpio)) {
+		ret = devm_gpio_request(&pdev->dev, mxs_phy->pwr_en_gpio, "usb_pwr_en");
+		if (ret < 0) {
+			dev_err(&pdev->dev, "failed to request gpio: %d\n", mxs_phy->pwr_en_gpio);
+			mxs_phy->pwr_en_gpio = -1;
+		}
+	} else {
+		dev_warn(&pdev->dev, "Invalid GPIO: %d\n", mxs_phy->pwr_en_gpio);
 	}
 
 	ret = of_alias_get_id(np, "usbphy");

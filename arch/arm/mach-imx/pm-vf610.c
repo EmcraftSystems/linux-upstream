@@ -1,0 +1,413 @@
+/*
+ * Copyright 2012 Freescale Semiconductor, Inc.
+ *
+ * Added to support STOP mode with DDR self-refresh
+ * Copyright (c) 2015
+ * Sergei Miroshnichenko, Emcraft Systems, sergeimir@emcraft.com
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ */
+
+#include <linux/delay.h>
+#include <linux/init.h>
+#include <linux/io.h>
+#include <linux/irq.h>
+#include <linux/genalloc.h>
+#include <linux/mfd/syscon.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
+#include <linux/of_platform.h>
+#include <linux/regmap.h>
+#include <linux/suspend.h>
+#include <linux/clk.h>
+#include <asm/cacheflush.h>
+#include <asm/fncpy.h>
+#include <asm/proc-fns.h>
+#include <asm/suspend.h>
+#include <asm/tlb.h>
+
+#include "common.h"
+
+#define CCR				0x0
+#define BM_CCR_FIRC_EN			(0x1 << 16)
+#define BM_CCR_FXOSC_EN			(0x1 << 12)
+
+#define CCSR				0x8
+#define BM_CCSR_DDRC_CLK_SEL		(0x1 << 6)
+#define BM_CCSR_FAST_CLK_SEL		(0x1 << 5)
+#define BM_CCSR_SLOW_CLK_SEL		(0x1 << 4)
+#define BM_CCSR_SYS_CLK_SEL_MASK	(0x7 << 0)
+
+#define CLPCR				0x2c
+#define BM_CLPCR_ARM_CLK_DIS_ON_LPM	(0x1 << 5)
+#define BM_CLPCR_SBYOS			(0x1 << 6)
+#define BM_CLPCR_DIS_REF_OSC		(0x1 << 7)
+#define BM_CLPCR_ANADIG_STOP_MODE	(0x1 << 8)
+#define BM_CLPCR_FXOSC_BYPSEN		(0x1 << 10)
+#define BM_CLPCR_FXOSC_PWRDWN		(0x1 << 11)
+#define BM_CLPCR_MASK_CORE0_WFI		(0x1 << 22)
+#define BM_CLPCR_MASK_CORE1_WFI		(0x1 << 23)
+#define BM_CLPCR_MASK_SCU_IDLE		(0x1 << 24)
+#define BM_CLPCR_MASK_L2CC_IDLE		(0x1 << 25)
+
+#define CCGR				0x40
+
+#define GPC_PGCR			0x0
+#define BM_PGCR_DS_STOP			(0x1 << 7)
+#define BM_PGCR_DS_LPSTOP		(0x1 << 6)
+#define BM_PGCR_WB_STOP			(0x1 << 4)
+#define BM_PGCR_HP_OFF			(0x1 << 3)
+
+#define GPC_LPMR			0x40
+#define BM_LPMR_RUN			0x0
+#define BM_LPMR_STOP			0x2
+
+#define ANATOP_PLL1_CTRL		0x270
+#define ANATOP_PLL2_CTRL		0x30
+#define ANATOP_PLL2_PFD			0x100
+#define ANATOP_PLL3_CTRL		0x10
+#define ANATOP_PLL4_CTRL		0x70
+#define ANATOP_PLL5_CTRL		0xe0
+#define ANATOP_PLL6_CTRL		0xa0
+#define ANATOP_PLL7_CTRL		0x10
+#define ANATOP_REG_1P1			0x110
+#define ANATOP_REG_3P0			0x120
+#define ANATOP_REG_2P5			0x130
+#define BM_PLL_POWERDOWN		(0x1 << 12)
+#define BM_PLL_ENABLE			(0x1 << 13)
+#define BM_PLL_BYPASS			(0x1 << 16)
+#define BM_PLL_LOCK			(0x1 << 31)
+#define BM_PLL_PFD2_CLKGATE		(0x1 << 15)
+
+#define VF610_SUSPEND_OCRAM_SIZE	0x4000
+
+struct vf610_pm_base {
+	phys_addr_t pbase;
+	void __iomem *vbase;
+};
+
+struct vf610_cpu_pm_info {
+	phys_addr_t pbase;
+	phys_addr_t resume_addr;
+	u32 cpu_type;
+	u32 pm_info_size;
+	struct vf610_pm_base anatop_base;
+	struct vf610_pm_base src_base;
+	struct vf610_pm_base ccm_base;
+	struct vf610_pm_base gpc_base;
+	struct vf610_pm_base mscm_base;
+	struct vf610_pm_base ddrmc_base;
+	struct vf610_pm_base l2_base;
+	u32 ccm_ccsr;
+} __aligned(8);
+
+enum vf610_cpu_pwr_mode {
+	VF610_RUN,
+	VF610_LP_RUN,
+	VF610_STOP,
+	VF610_LP_STOP,
+};
+
+static void __iomem *ccm_base;
+static void __iomem *suspend_ocram_base;
+
+static void (*suspend_in_iram)(suspend_state_t state,
+			       unsigned long iram_paddr,
+			       unsigned long suspend_iram_base) = NULL;
+
+extern void mvf_suspend(suspend_state_t state);
+
+struct vf610_pm_socdata {
+	const char *src_compat;
+	const char *gpc_compat;
+	const char *anatop_compat;
+	const char *mscm_compat;
+	const char *ccm_compat;
+	const char *ddrmc_compat;
+};
+
+static const struct vf610_pm_socdata vf610_pm_data __initconst = {
+	.src_compat	= "fsl,vf610-src",
+	.gpc_compat	= "fsl,vf610-gpc",
+	.anatop_compat	= "fsl,vf610-anatop",
+	.mscm_compat	= "fsl,vf610-mscm-ir",
+	.ccm_compat	= "fsl,vf610-ccm",
+	.ddrmc_compat	= "emcraft,ddrmc",
+};
+
+static void vf610_set(void __iomem *pll_base, u32 mask)
+{
+	writel_relaxed(readl_relaxed(pll_base) | mask, pll_base);
+}
+
+static void vf610_clr(void __iomem *pll_base, u32 mask)
+{
+	writel_relaxed(readl_relaxed(pll_base) & ~mask, pll_base);
+}
+
+int vf610_set_lpm(enum vf610_cpu_pwr_mode mode)
+{
+	struct vf610_cpu_pm_info *pm_info = suspend_ocram_base;
+	void __iomem *anatop	= pm_info->anatop_base.vbase;
+	void __iomem *gpc_base	= pm_info->gpc_base.vbase;
+	u32 ccr		= readl_relaxed(ccm_base + CCR);
+	u32 ccsr	= readl_relaxed(ccm_base + CCSR);
+	u32 cclpcr	= readl_relaxed(ccm_base + CLPCR);
+	u32 gpc_pgcr 	= readl_relaxed(gpc_base + GPC_PGCR);
+
+	switch (mode) {
+	case VF610_STOP:
+		cclpcr &= ~BM_CLPCR_ANADIG_STOP_MODE;
+		cclpcr &= ~BM_CLPCR_ARM_CLK_DIS_ON_LPM;
+		cclpcr &= ~BM_CLPCR_SBYOS;
+		writel_relaxed(cclpcr, ccm_base + CLPCR);
+
+		gpc_pgcr |= BM_PGCR_DS_STOP;
+		gpc_pgcr |= BM_PGCR_HP_OFF;
+		writel_relaxed(gpc_pgcr, gpc_base + GPC_PGCR);
+
+		writel_relaxed(BM_LPMR_STOP, gpc_base + GPC_LPMR);
+		/* fall-through */
+	case VF610_LP_RUN:
+		/* Store clock settings */
+		pm_info->ccm_ccsr = ccsr;
+
+		ccr |= BM_CCR_FIRC_EN;
+		writel_relaxed(ccr, ccm_base + CCR);
+
+		/* Enable PLL2 for DDR clock */
+		vf610_set(anatop + ANATOP_PLL2_CTRL, BM_PLL_ENABLE);
+		vf610_clr(anatop + ANATOP_PLL2_CTRL, BM_PLL_POWERDOWN);
+		vf610_clr(anatop + ANATOP_PLL2_CTRL, BM_PLL_BYPASS);
+		while (!(readl(anatop + ANATOP_PLL2_CTRL) & BM_PLL_LOCK));
+		vf610_clr(anatop + ANATOP_PLL2_PFD, BM_PLL_PFD2_CLKGATE);
+
+		/* Switch internal OSC's */
+		ccsr &= ~BM_CCSR_FAST_CLK_SEL;
+		ccsr &= ~BM_CCSR_SLOW_CLK_SEL;
+
+		/* Select PLL2 as DDR clock */
+		ccsr &= ~BM_CCSR_DDRC_CLK_SEL;
+		writel_relaxed(ccsr, ccm_base + CCSR);
+
+		/* switch system clock to FIRC 24MHz */
+		ccsr &= ~BM_CCSR_SYS_CLK_SEL_MASK;
+		writel_relaxed(ccsr, ccm_base + CCSR);
+
+		vf610_set(anatop + ANATOP_PLL1_CTRL, BM_PLL_BYPASS);
+		vf610_clr(anatop + ANATOP_PLL3_CTRL, BM_PLL_ENABLE);
+		vf610_clr(anatop + ANATOP_PLL5_CTRL, BM_PLL_ENABLE);
+
+		vf610_clr(anatop + ANATOP_PLL7_CTRL, BM_PLL_ENABLE);
+		break;
+	case VF610_RUN:
+		vf610_clr(anatop + ANATOP_PLL1_CTRL, BM_PLL_BYPASS);
+		vf610_set(anatop + ANATOP_PLL3_CTRL, BM_PLL_ENABLE);
+		vf610_set(anatop + ANATOP_PLL5_CTRL, BM_PLL_ENABLE);
+		vf610_set(anatop + ANATOP_PLL7_CTRL, BM_PLL_ENABLE);
+
+		/* Restore clock settings */
+		writel_relaxed(pm_info->ccm_ccsr, ccm_base + CCSR);
+
+		/* Disable PLL2 if not needed */
+		if (pm_info->ccm_ccsr & BM_CCSR_DDRC_CLK_SEL)
+			vf610_set(anatop + ANATOP_PLL2_CTRL, BM_PLL_POWERDOWN);
+
+		writel_relaxed(BM_LPMR_RUN, gpc_base + GPC_LPMR);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int vf610_pm_enter(suspend_state_t state)
+{
+	struct vf610_cpu_pm_info *pm_info = suspend_ocram_base;
+
+	switch (state) {
+	case PM_SUSPEND_STANDBY:
+		vf610_set_lpm(VF610_STOP);
+
+		/* zzZZZzzz */
+		cpu_do_idle();
+
+		vf610_set_lpm(VF610_RUN);
+		break;
+	case PM_SUSPEND_MEM:
+		vf610_set_lpm(VF610_STOP);
+
+		local_flush_tlb_all();
+		flush_cache_all();
+
+		suspend_in_iram(state, (unsigned long)pm_info->pbase, (unsigned long)suspend_ocram_base);
+
+		vf610_set_lpm(VF610_RUN);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int vf610_pm_valid(suspend_state_t state)
+{
+	return ((state == PM_SUSPEND_STANDBY) || (state == PM_SUSPEND_MEM));
+}
+
+static const struct platform_suspend_ops vf610_pm_ops = {
+	.enter = vf610_pm_enter,
+	.valid = vf610_pm_valid,
+};
+
+static int __init imx_pm_get_base(struct vf610_pm_base *base,
+				const char *compat)
+{
+	struct device_node *node;
+	struct resource res;
+	int ret = 0;
+
+	node = of_find_compatible_node(NULL, NULL, compat);
+	if (!node) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	ret = of_address_to_resource(node, 0, &res);
+	if (ret)
+		goto put_node;
+
+	base->pbase = res.start;
+	base->vbase = ioremap(res.start, resource_size(&res));
+
+	if (!base->vbase)
+		ret = -ENOMEM;
+
+put_node:
+	of_node_put(node);
+out:
+	return ret;
+}
+
+static int __init vf610_suspend_init(const struct vf610_pm_socdata *socdata)
+{
+	phys_addr_t ocram_pbase;
+	struct device_node *node;
+	struct platform_device *pdev;
+	struct vf610_cpu_pm_info *pm_info;
+	struct gen_pool *ocram_pool;
+	unsigned long ocram_base;
+	int ret = 0;
+
+	suspend_set_ops(&vf610_pm_ops);
+
+	if (!socdata) {
+		pr_warn("%s: invalid argument!\n", __func__);
+		return -EINVAL;
+	}
+
+	node = of_find_compatible_node(NULL, NULL, "mmio-sram");
+	if (!node) {
+		pr_warn("%s: failed to find ocram node!\n", __func__);
+		return -ENODEV;
+	}
+
+	pdev = of_find_device_by_node(node);
+	if (!pdev) {
+		pr_warn("%s: failed to find ocram device!\n", __func__);
+		ret = -ENODEV;
+		goto put_node;
+	}
+
+	ocram_pool = gen_pool_get(&pdev->dev);
+	if (!ocram_pool) {
+		pr_warn("%s: ocram pool unavailable!\n", __func__);
+		ret = -ENODEV;
+		goto put_node;
+	}
+
+	ocram_base = gen_pool_alloc(ocram_pool, VF610_SUSPEND_OCRAM_SIZE);
+	if (!ocram_base) {
+		pr_warn("%s: unable to alloc ocram!\n", __func__);
+		ret = -ENOMEM;
+		goto put_node;
+	}
+
+	ocram_pbase = gen_pool_virt_to_phys(ocram_pool, ocram_base);
+
+	suspend_ocram_base = __arm_ioremap_exec(ocram_pbase,
+						VF610_SUSPEND_OCRAM_SIZE, false);
+
+	memcpy((void *)(ocram_base + sizeof(*pm_info)), mvf_suspend, SZ_32K);
+	suspend_in_iram = (void *)(suspend_ocram_base + sizeof(*pm_info));
+
+	pm_info = suspend_ocram_base;
+	pm_info->pbase = ocram_pbase;
+	pm_info->pm_info_size = sizeof(*pm_info);
+
+	/*
+	 * ccm physical address is not used by asm code currently,
+	 * so get ccm virtual address directly, as we already have
+	 * it from ccm driver.
+	 */
+	ret = imx_pm_get_base(&pm_info->ccm_base, socdata->ccm_compat);
+	if (ret) {
+		pr_warn("%s: failed to get ccm base %d!\n", __func__, ret);
+		goto put_node;
+	}
+
+	ccm_base = pm_info->ccm_base.vbase;
+
+	ret = imx_pm_get_base(&pm_info->anatop_base, socdata->anatop_compat);
+	if (ret) {
+		pr_warn("%s: failed to get anatop base %d!\n", __func__, ret);
+		goto put_node;
+	}
+
+	ret = imx_pm_get_base(&pm_info->gpc_base, socdata->gpc_compat);
+	if (ret) {
+		pr_warn("%s: failed to get gpc base %d!\n", __func__, ret);
+		goto gpc_map_failed;
+	}
+
+	ret = imx_pm_get_base(&pm_info->ddrmc_base, socdata->ddrmc_compat);
+	if (ret) {
+		pr_warn("%s: failed to get ddrmc base %d!\n", __func__, ret);
+		goto gpc_map_failed;
+	}
+
+	ret = imx_pm_get_base(&pm_info->mscm_base, socdata->mscm_compat);
+	if (ret) {
+		pr_warn("%s: failed to get mscm base %d!\n", __func__, ret);
+		goto gpc_map_failed;
+	}
+
+	goto put_node;
+
+gpc_map_failed:
+	iounmap(&pm_info->anatop_base.vbase);
+put_node:
+	of_node_put(node);
+
+	return ret;
+}
+
+static int __init vf610_pm_init(void)
+{
+	int err = 0;
+
+	if (IS_ENABLED(CONFIG_SUSPEND)) {
+		err = vf610_suspend_init(&vf610_pm_data);
+		if (err)
+			pr_warn("No DDR LPM support with suspend");
+	}
+
+	return err;
+}
+
+late_initcall(vf610_pm_init);

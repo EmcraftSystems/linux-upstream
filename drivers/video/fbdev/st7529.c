@@ -29,14 +29,51 @@
 #include <linux/gpio.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/freezer.h>
 
-#define DRIVER_NAME	"lcd_st7529"
+#define DRIVER_NAME		"lcd_st7529"
 
-#define RAM_WIDTH	256
-#define RAM_HEIGHT	144
+#define RAM_WIDTH		256
+#define RAM_HEIGHT		144
 
-#define GSET(gpio)	gpio_direction_output(gpio, 1);
-#define GUNSET(gpio)	gpio_direction_output(gpio, 0);
+#define GSET(gpio)		gpio_direction_output(gpio, 1);
+#define GUNSET(gpio)		gpio_direction_output(gpio, 0);
+
+#define CMD_EXT_IN		0x30
+#define CMD_EXT_OUT		0x31
+#define CMD_SLEEP_OUT		0x94
+#define CMD_SLEEP_IN		0x95
+#define CMD_OSC_ON		0xD1
+#define CMD_PWRCTRL		0x20
+#define ARG_PWRCTRL_VB		0x8
+#define ARG_PWRCTRL_VF		0x2
+#define ARG_PWRCTRL_VR		0x1
+#define CMD_VOLCTRL		0x81
+#define ARG_VOLCTRL_12V_UP	0x38
+#define ARG_VOLCTRL_12V_DOWN	0x4
+#define CMD_DIS_NORMAL		0xA6
+#define CMD_DISPLAY_ON		0xAF
+#define CMD_DISPLAY_OFF		0xAE
+#define CMD_DISCTRL		0xCA
+#define ARG_DISCTRL_CLK_RATIO_1	0
+#define ARG_DISCTRL_DUTY_1_144	0x23
+#define ARG_DISCTRL_INVERSE_SET	9
+#define CMD_COMSCN		0xBB
+#define ARG_COMSCN_79_0_80_159	0x2
+#define CMD_DATSDR		0xBC
+#define ARG_DATSDR_COLUMN_NORM	0
+#define ARG_DATSDR_ARRG_1_2_3	0
+#define ARG_DATSDR_GRAY_3_BYTES	2
+#define CMD_SWINT		0x34
+#define CMD_ANASET		0x32
+#define ARG_ANASET_OCS_12K	0x0
+#define ARG_ANASET_BOOSTER_6K	0x1
+#define ARG_ANASET_BIAS_1_12	0x2
+#define CMD_CASET		0x15
+#define CMD_LASET		0x75
+#define CMD_RAMWR		0x5C
+#define CMD_SET_GRAY_1		0x20
+#define CMD_SET_GRAY_2		0x21
 
 struct mfb_info
 {
@@ -102,7 +139,7 @@ static int st7529_command(unsigned char cmd, int args_cnt, ...)
 	}
 
 	if (err)
-		dev_err(&mfbi->spi->dev, "Failed to write command: %d\n", err);
+		dev_err(&mfbi->spi->dev, "Failed to write command 0x%x: %d\n", cmd, err);
 
 	return err;
 }
@@ -114,44 +151,64 @@ static void st7529_hw_init(struct mfb_info *mfbi)
 	GSET(mfbi->nres_gpio);
 	msleep(150);
 
-	st7529_command(0x30, 0);		/* Ext = 0 */
-	st7529_command(0x94, 0);		/* Sleep out */
-	st7529_command(0xD1, 0);		/* OSC on */
-	st7529_command(0x20, 1, 0x8);		/* Power Control Set: Booster must be on first */
+	st7529_command(CMD_EXT_IN, 0);
+	st7529_command(CMD_SLEEP_OUT, 0);
+	st7529_command(CMD_OSC_ON, 0);
+	/* Power Control Set: Booster must be on first */
+	st7529_command(CMD_PWRCTRL, 1, ARG_PWRCTRL_VB);
 	msleep(2);
-	st7529_command(0x20, 1, 0xB);		/* Power Control Set: Booster, Regulator, Follower on */
-	st7529_command(0x81, 2, 0x38, 0x04);	/* Electronic Control: Vop=? */
-	st7529_command(0xCA, 3, 0, 0x23, 0);	/* Display control: CL = X1, Duty = 144, FR Inverse-Set Value */
-	st7529_command(0xA6, 0);		/* Normal display (0 is black) */
-	st7529_command(0xBB, 1, 0x2);		/* Common Scan Direction: 79->0, 80->159 */
-	st7529_command(0xBC, 3, 0, 0, 2);	/* Address Scan Direction: Column Normal; Arrangement: (P1,P2,P3), gray-scale 3B3P mode */
-	st7529_command(0x31, 0);		/* Ext = 1 */
-	st7529_command(0x32, 3, 0, 1, 2);	/* Analog Circuit Set: OSC Frequency = 12.7kHz, Booster Efficiency = 6kHz, Bias = 1/12 */
-	st7529_command(0x34, 0);		/* Software Initial */
-	st7529_command(0x20, 16,		/* Gray 1 set */
+	st7529_command(CMD_PWRCTRL, 1,
+		       ARG_PWRCTRL_VB | ARG_PWRCTRL_VF | ARG_PWRCTRL_VR);
+	st7529_command(CMD_VOLCTRL, 2,
+		       ARG_VOLCTRL_12V_UP,
+		       ARG_VOLCTRL_12V_DOWN);
+	st7529_command(CMD_DISCTRL, 3,
+		       ARG_DISCTRL_CLK_RATIO_1,
+		       ARG_DISCTRL_DUTY_1_144,
+		       ARG_DISCTRL_INVERSE_SET);
+	st7529_command(CMD_DIS_NORMAL, 0);
+	st7529_command(CMD_COMSCN, 1,
+		       ARG_COMSCN_79_0_80_159);
+	st7529_command(CMD_DATSDR, 3,
+		       ARG_DATSDR_COLUMN_NORM,
+		       ARG_DATSDR_ARRG_1_2_3,
+		       ARG_DATSDR_GRAY_3_BYTES);
+	st7529_command(CMD_EXT_OUT, 0);
+	st7529_command(CMD_ANASET, 3,
+		       ARG_ANASET_OCS_12K,
+		       ARG_ANASET_BOOSTER_6K,
+		       ARG_ANASET_BIAS_1_12);
+	st7529_command(CMD_SWINT, 0);
+	st7529_command(CMD_SET_GRAY_1, 16,
 		       0x0,  0x2,  0x4,  0x6,
 		       0x8,  0xA,  0xC,  0xE,
 		       0x10, 0x12, 0x14, 0x16,
 		       0x18, 0x1A, 0x1C, 0x1F);
-	st7529_command(0x21, 16,		/* Gray 2 set */
+	st7529_command(CMD_SET_GRAY_2, 16,
 		       0x0,  0x2,  0x4,  0x6,
 		       0x8,  0xA,  0xC,  0xE,
 		       0x10, 0x12, 0x14, 0x16,
 		       0x18, 0x1A, 0x1C, 0x1F);
-	st7529_command(0x30, 0);		/* Ext = 0 */
-	st7529_command(0xAF, 0);		/* Display On */
+	st7529_command(CMD_EXT_IN, 0);
+	st7529_command(CMD_DISPLAY_ON, 0);
 }
 
 static int st7529_task(void *param)
 {
 	struct mfb_info *mfbi = (struct mfb_info*)param;
 
+	set_freezable();
+
 	while (!kthread_should_stop()) {
-		st7529_command(0x30, 0);				/* Ext = 0 */
-		st7529_command(0x15, 2, 0, (mfbi->width / 3) - 1);	/* Column Address Set */
-		st7529_command(0x75, 2, RAM_HEIGHT - mfbi->height, 144);/* Line Address Set */
-		st7529_command(0x5C, 0);				/* Writing to Memory */
+		st7529_command(CMD_EXT_IN, 0);
+		st7529_command(CMD_CASET, 2,
+			       0, (mfbi->width / 3) - 1);
+		st7529_command(CMD_LASET, 2,
+			       RAM_HEIGHT - mfbi->height, RAM_HEIGHT);
+		st7529_command(CMD_RAMWR, 0);
 		st7529_data(mfbi->buffer, mfbi->width * mfbi->height);
+
+		try_to_freeze();
 		schedule_timeout_interruptible(msecs_to_jiffies(1000));
 	}
 
@@ -185,21 +242,21 @@ static int st7529_probe(struct spi_device *spi)
 	nres_gpio = of_get_named_gpio(node, "nres-gpios", 0);
 	if (!gpio_is_valid(nres_gpio)) {
 		err = nres_gpio;
-		dev_err(&spi->dev, "Failed to parse nReset GPIO: %d\n", err);
+		dev_err(&spi->dev, "Invalid nReset gpio %d: %d\n", nres_gpio, err);
 		return err;
 	}
 
 	a0_gpio = of_get_named_gpio(node, "a0-gpios", 0);
 	if (!gpio_is_valid(a0_gpio)) {
 		err = a0_gpio;
-		dev_err(&spi->dev, "Failed to parse A0 GPIO: %d\n", err);
+		dev_err(&spi->dev, "Invalid A0 gpio %d: %d\n", a0_gpio, err);
 		return err;
 	}
 
 	err = devm_gpio_request_one(&spi->dev, nres_gpio,
 				    GPIOF_OUT_INIT_HIGH, "lcd_nreset");
 	if (err) {
-		dev_err(&spi->dev, "Failed to request LCD nReset GPIO (%d): %d\n", nres_gpio, err);
+		dev_err(&spi->dev, "Invalid nReset gpio %d: %d\n", nres_gpio, err);
 		return err;
 	}
 
@@ -292,11 +349,39 @@ static const struct of_device_id st7529_of_match[] = {
 
 MODULE_DEVICE_TABLE(of, st7529_of_match);
 
+#ifdef CONFIG_PM
+static int st7529_suspend(struct device *dev)
+{
+	struct spi_device *spi = to_spi_device(dev);
+	struct mfb_info *mfbi = fb_info->par;
+
+	st7529_command(CMD_DISPLAY_OFF, 0);
+	st7529_command(CMD_SLEEP_IN, 0);
+	return 0;
+}
+
+static int st7529_resume(struct device *dev)
+{
+	struct spi_device *spi = to_spi_device(dev);
+	struct mfb_info *mfbi = fb_info->par;
+
+	st7529_command(CMD_SLEEP_OUT, 0);
+	st7529_command(CMD_DISPLAY_ON, 0);
+	return 0;
+}
+
+static const struct dev_pm_ops st7529_pm_ops = {
+	.suspend = st7529_suspend,
+	.resume = st7529_resume,
+};
+#endif /* CONFIG_PM */
+
 static struct spi_driver st7529_driver = {
 	.driver = {
 		.name		= DRIVER_NAME,
 		.owner		= THIS_MODULE,
 		.of_match_table = st7529_of_match,
+		.pm		= &st7529_pm_ops,
 	},
 	.probe		= st7529_probe,
 	.remove		= st7529_remove,
@@ -307,4 +392,3 @@ module_spi_driver(st7529_driver);
 MODULE_AUTHOR("EmCraft Systems");
 MODULE_DESCRIPTION("Sitronix ST7529 framebuffer driver");
 MODULE_LICENSE("GPL");
-

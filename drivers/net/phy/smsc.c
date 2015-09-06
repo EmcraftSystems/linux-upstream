@@ -24,12 +24,19 @@
 #include <linux/netdevice.h>
 #include <linux/smscphy.h>
 #include <linux/mdio.h>
+#include <linux/of.h>
+#include <linux/of_gpio.h>
 
-static const char *smsc_cable_types_str[4] = {
-	"Default",
-	"Shorted cable",
-	"Open cable",
-	"Match cable"
+struct smsc_private {
+	int wol_supported;
+	int int_irq;
+};
+
+struct smsc_eeprom {
+	int	tx_cable_type;
+	int	tx_cable_length;
+	int	rx_cable_type;
+	int	rx_cable_length;
 };
 
 static const int smsc_match_cable_length_lookup[16] = {
@@ -38,6 +45,45 @@ static const int smsc_match_cable_length_lookup[16] = {
 	49,  59,  70,  81,
 	91, 102, 113, 123
 };
+
+static int mmd_set_addr(struct phy_device *phydev, int dev, int reg)
+{
+	int rc = phy_write(phydev, MII_LAN83C185_MMD_CONTROL,
+			   MII_LAN83C185_MMD_CONTROL_FUNC_ADDRESS | dev);
+	if (rc < 0)
+		return rc;
+
+	rc = phy_write(phydev, MII_LAN83C185_MMD_ACCESS, reg);
+	if (rc < 0)
+		return rc;
+
+	rc = phy_write(phydev, MII_LAN83C185_MMD_CONTROL,
+		       MII_LAN83C185_MMD_CONTROL_FUNC_DATA | dev);
+
+	return rc;
+}
+
+static int mmd_write(struct phy_device *phydev, int dev, int reg, int val)
+{
+	int rc = mmd_set_addr(phydev, dev, reg);
+	if (rc < 0)
+		return rc;
+
+	rc = phy_write(phydev, MII_LAN83C185_MMD_ACCESS, val);
+
+	return rc;
+}
+
+static int mmd_read(struct phy_device *phydev, int dev, int reg)
+{
+	int rc = mmd_set_addr(phydev, dev, reg);
+	if (rc < 0)
+		return rc;
+
+	rc = phy_read(phydev, MII_LAN83C185_MMD_ACCESS);
+
+	return rc;
+}
 
 static int smsc_phy_config_intr(struct phy_device *phydev)
 {
@@ -155,25 +201,171 @@ static int lan87xx_read_status(struct phy_device *phydev)
 	return err;
 }
 
-static int perform_cable_diag(struct phy_device *phydev, int mdix)
+static irqreturn_t lan8742_irq(int irq, void *dev_id)
+{
+	/* Wake-on-LAN */
+	return IRQ_HANDLED;
+}
+
+int lan8742_probe(struct phy_device *phydev)
+{
+	const struct device *dev = &phydev->dev;
+	struct device_node *node = dev->of_node;
+	int nint_gpio = of_get_named_gpio(node, "nint-gpios", 0);
+	struct smsc_private *priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+
+	priv->wol_supported = 0;
+	phydev->priv = priv;
+
+	if (gpio_is_valid(nint_gpio)) {
+		int err;
+
+		priv->int_irq = gpio_to_irq(nint_gpio);
+
+		err = request_irq(priv->int_irq, lan8742_irq,
+				  IRQF_TRIGGER_FALLING, "smsc8742", phydev);
+		if (err)
+			dev_err(dev, "failed to request PHY irq %d from gpio %d: %d\n",
+				gpio_to_irq(nint_gpio), nint_gpio, err);
+		else
+			priv->wol_supported = 1;
+	}
+
+	return 0;
+}
+
+static void lan8742_remove(struct phy_device *phydev)
+{
+	if (phydev->priv)
+		kfree(phydev->priv);
+}
+
+static int lan8742_set_wol(struct phy_device *phydev,
+			     struct ethtool_wolinfo *wol)
+{
+	u32 wucsr = mmd_read(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG);
+	struct net_device *ndev = phydev->attached_dev;
+	struct smsc_private *priv = phydev->priv;
+	const u8 *mac;
+
+	if (!ndev)
+		return -ENODEV;
+
+	if (!priv->wol_supported)
+		return -EOPNOTSUPP;
+
+	mac = (const u8*)ndev->dev_addr;
+	mmd_write(phydev, MDIO_MMD_PCS, MMD_LAN8742_MAC_RECEIVE_ADDR_A, (mac[5] << 8) | mac[4]);
+	mmd_write(phydev, MDIO_MMD_PCS, MMD_LAN8742_MAC_RECEIVE_ADDR_B, (mac[3] << 8) | mac[2]);
+	mmd_write(phydev, MDIO_MMD_PCS, MMD_LAN8742_MAC_RECEIVE_ADDR_C, (mac[1] << 8) | mac[0]);
+
+	if (wol->wolopts & WAKE_MAGIC)
+		wucsr |= MMD_LAN8742_WUCS_MAGIC_ENABLED;
+	else
+		wucsr &= ~MMD_LAN8742_WUCS_MAGIC_ENABLED;
+
+	mmd_write(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG, wucsr);
+
+	return 0;
+}
+
+static void lan8742_get_wol(struct phy_device *phydev,
+			   struct ethtool_wolinfo *wol)
+{
+	u32 wucsr = mmd_read(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG);
+	struct smsc_private *priv = phydev->priv;
+
+	wol->wolopts = 0;
+
+	if (priv->wol_supported) {
+		wol->supported = WAKE_MAGIC;
+
+		if (wucsr & MMD_LAN8742_WUCS_MAGIC_ENABLED)
+			wol->wolopts |= WAKE_MAGIC;
+	} else {
+		wol->supported = 0;
+	}
+}
+
+static int lan8742_suspend(struct phy_device *phydev)
+{
+	u32 wucsr = mmd_read(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG);
+	struct smsc_private *priv = phydev->priv;
+	int err = 0;
+
+	if (priv->wol_supported && (wucsr & MMD_LAN8742_WUCS_MAGIC_ENABLED)) {
+		u32 im = phy_read(phydev, MII_LAN83C185_IM);
+		im |= MII_LAN83C185_ISF_INT8;
+		phy_write(phydev, MII_LAN83C185_IM, im);
+
+		wucsr |= MMD_LAN8742_WUCS_INTERFACE_DISABLE;
+		mmd_write(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG, wucsr);
+
+		enable_irq_wake(priv->int_irq);
+	} else {
+		wucsr &= ~MMD_LAN8742_WUCS_MAGIC_ENABLED;
+		mmd_write(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG, wucsr);
+		err = genphy_suspend(phydev);
+	}
+
+	return err;
+}
+
+static int lan8742_resume(struct phy_device *phydev)
+{
+	u32 wucsr = mmd_read(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG);
+	struct smsc_private *priv = phydev->priv;
+	int err = 0;
+
+	if (priv->wol_supported && (wucsr & MMD_LAN8742_WUCS_MAGIC_ENABLED) &&
+	    (wucsr & MMD_LAN8742_WUCS_INTERFACE_DISABLE)) {
+		u32 im = phy_read(phydev, MII_LAN83C185_IM);
+		im &= ~MII_LAN83C185_ISF_INT8;
+		phy_write(phydev, MII_LAN83C185_IM, im);
+
+		disable_irq_wake(priv->int_irq);
+
+		wucsr &= ~MMD_LAN8742_WUCS_INTERFACE_DISABLE;
+		mmd_write(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG, wucsr);
+	} else {
+		err = genphy_resume(phydev);
+	}
+
+	return err;
+}
+
+static int perform_cable_diag(struct phy_device *phydev, int mdix,
+			      int *cable_type, int *cable_length)
 {
 	int i, max_wait = 10, rc;
+	int ctrl_reg = phy_read(phydev, MII_LAN83C185_CTRL_STATUS);
 
-	rc = phy_write(phydev, MII_BMCR,
+	phy_write(phydev, MII_LAN83C185_CTRL_STATUS,
+		  ctrl_reg & (~MII_LAN83C185_EDPWRDOWN));
+
+	mmd_write(phydev, MDIO_MMD_VEND1,
+		  MMD_LAN8742_TDR_MATCH_THR_REG,
+		  MMD_LAN8742_TDR_MATCH_THR_VAL);
+
+	mmd_write(phydev, MDIO_MMD_VEND1,
+		  MMD_LAN8742_TDR_OPEN_THR_REG,
+		  MMD_LAN8742_TDR_OPEN_THR_VAL);
+
+	phy_write(phydev, MII_BMCR,
 		  BMCR_SPEED100 | BMCR_FULLDPLX);
 
 	if (mdix)
-		rc = phy_write(phydev, MII_LAN83C185_SCS,
+		phy_write(phydev, MII_LAN83C185_SCS,
 			  MII_LAN83C185_SCS_DISABLE_AUTO_MDIX |
 			  MII_LAN83C185_SCS_MDIX);
 	else
-		rc = phy_write(phydev, MII_LAN83C185_SCS,
+		phy_write(phydev, MII_LAN83C185_SCS,
 			  MII_LAN83C185_SCS_DISABLE_AUTO_MDIX);
 
 	mdelay(500);
 
 	rc = phy_write(phydev, MII_LAN83C185_TDR,
-		  MII_LAN83C185_TDR_ENABLE);
+		       MII_LAN83C185_TDR_ENABLE);
 
 	for (i = 0; i < max_wait; ++i) {
 		rc = phy_read(phydev, MII_LAN83C185_TDR);
@@ -183,237 +375,75 @@ static int perform_cable_diag(struct phy_device *phydev, int mdix)
 				break;
 		} else {
 			dev_err(&phydev->dev, "Failed to read TDR PHY register: %d\n", rc);
-			goto out;
+			goto err;
 		}
 
 		mdelay(500);
 		rc = -1;
 	}
 
-	if (i >= max_wait)
+	phy_write(phydev, MII_LAN83C185_CTRL_STATUS, ctrl_reg);
+
+	if (i >= max_wait) {
 		dev_err(&phydev->dev, "TDR status read timeout\n");
-
-out:
-	return rc;
-}
-
-static int mmd_set_addr(struct phy_device *phydev, int dev, int reg)
-{
-	int rc = phy_write(phydev, MII_LAN83C185_MMD_CONTROL,
-			   MII_LAN83C185_MMD_CONTROL_FUNC_ADDRESS | dev);
-	if (rc < 0)
-		return rc;
-
-	rc = phy_write(phydev, MII_LAN83C185_MMD_ACCESS, reg);
-	if (rc < 0)
-		return rc;
-
-	rc = phy_write(phydev, MII_LAN83C185_MMD_CONTROL,
-		       MII_LAN83C185_MMD_CONTROL_FUNC_DATA | dev);
-
-	return rc;
-}
-
-static int mmd_write(struct phy_device *phydev, int dev, int reg, int val)
-{
-	int rc = mmd_set_addr(phydev, dev, reg);
-	if (rc < 0)
-		return rc;
-
-	rc = phy_write(phydev, MII_LAN83C185_MMD_ACCESS, val);
-
-	return rc;
-}
-
-static ssize_t show_cable_diag(struct device *d,
-			       struct device_attribute *attr, char *buf)
-{
-	struct phy_device *phydev = to_phy_device(d);
-	int rc, tx_cable_type, tx_cable_length, rx_cable_type, rx_cable_length;
-	const char *tx_caption  = "estimated cable length (+/- 20m)";
-	const char *rx_caption = "estimated cable length (+/- 20m)";
-	const char *tx_help = "", *rx_help = "";
-	const char *help_shorted = "\nMultiply this value by: 0.759 for CAT 6 cable, 0.788 for CAT 5E, 0.873 for CAT 5, 0.793 for unknown\n";
-	const char *help_open = "\nMultiply this value by: 0.745 for CAT 6 cable, 0.76 for CAT 5E, 0.85 for CAT 5, 0.769 for unknown\n";
-
-	mmd_write(phydev, MDIO_MMD_VEND1,
-		  MMD_LAN8742A_TDR_MATCH_THR_REG,
-		  MMD_LAN8742A_TDR_MATCH_THR_VAL);
-
-	mmd_write(phydev, MDIO_MMD_VEND1,
-		  MMD_LAN8742A_TDR_OPEN_THR_REG,
-		  MMD_LAN8742A_TDR_OPEN_THR_VAL);
-
-	rc = perform_cable_diag(phydev, 0);
-	if (rc < 0)
 		goto err;
-	tx_cable_type = (rc & MII_LAN83C185_TDR_CABLE_TYPE_MASK) >>
+	}
+
+	*cable_type =
+		(rc & MII_LAN83C185_TDR_CABLE_TYPE_MASK) >>
 		MII_LAN83C185_TDR_CABLE_TYPE_SHIFT;
 
-	if (SMSC_CABLE_TYPE__MATCH == tx_cable_type) {
+	if (SMSC_CABLE_TYPE__MATCH == *cable_type) {
+		int raw_len;
+
 		rc = phy_read(phydev, MII_LAN83C185_CBLN);
-		tx_cable_length = smsc_match_cable_length_lookup[
-			(rc & MII_LAN83C185_CBLN_MASK) >>
-			MII_LAN83C185_CBLN_SHIFT];
+		raw_len = (rc & MII_LAN83C185_CBLN_MASK) >> MII_LAN83C185_CBLN_SHIFT;
+		*cable_length = smsc_match_cable_length_lookup[raw_len];
 	} else {
-		tx_caption = "Estimated physical distance to the fault";
-		if (SMSC_CABLE_TYPE__SHORTED == tx_cable_type)
-			tx_help = help_shorted;
-		else if (SMSC_CABLE_TYPE__OPEN == tx_cable_type)
-			tx_help = help_open;
-		tx_cable_length = (rc & MII_LAN83C185_TDR_CABLE_LENGTH_MASK) >>
+		*cable_length =
+			(rc & MII_LAN83C185_TDR_CABLE_LENGTH_MASK) >>
 			MII_LAN83C185_TDR_CABLE_LENGTH_SHIFT;
 	}
 
-	rc = perform_cable_diag(phydev, 1);
-	if (rc < 0)
-		goto err;
-	rx_cable_type = (rc & MII_LAN83C185_TDR_CABLE_TYPE_MASK) >>
-		MII_LAN83C185_TDR_CABLE_TYPE_SHIFT;
-
-	if (SMSC_CABLE_TYPE__MATCH == rx_cable_type) {
-		rc = phy_read(phydev, MII_LAN83C185_CBLN);
-		rx_cable_length = smsc_match_cable_length_lookup[
-			(rc & MII_LAN83C185_CBLN_MASK) >>
-			MII_LAN83C185_CBLN_SHIFT];
-	} else {
-		rx_caption = "Estimated physical distance to the fault";
-		if (SMSC_CABLE_TYPE__SHORTED == rx_cable_type)
-			rx_help = help_shorted;
-		else if (SMSC_CABLE_TYPE__OPEN == rx_cable_type)
-			rx_help = help_open;
-		rx_cable_length = (rc & MII_LAN83C185_TDR_CABLE_LENGTH_MASK) >>
-			MII_LAN83C185_TDR_CABLE_LENGTH_SHIFT;
-	}
-
-	rc = sprintf(buf, "TX: %s, %s: %d%s\nRX: %s, %s: %d%s\n",
-		     smsc_cable_types_str[tx_cable_type],
-		     tx_caption,
-		     tx_cable_length,
-		     tx_help,
-		     smsc_cable_types_str[rx_cable_type],
-		     rx_caption,
-		     rx_cable_length,
-		     rx_help);
+	return 0;
 
 err:
+	*cable_type = -1;
+	*cable_length = -1;
+	return rc;
+}
+
+static int lan8742_module_info(struct phy_device *phydev, struct ethtool_modinfo *modinfo)
+{
+	modinfo->eeprom_len = sizeof(struct smsc_eeprom);
+	return 0;
+}
+
+int lan8742_module_eeprom(struct phy_device *phydev, struct ethtool_eeprom *ee, u8 *data)
+{
+	struct smsc_eeprom *smsc_eeprom = (struct smsc_eeprom *)data;
+
+	if (ETHTOOL_GMODULEEEPROM != ee->cmd)
+		return -EOPNOTSUPP;
+
+	mutex_lock(&phydev->lock);
+
+	perform_cable_diag(phydev, 0,
+			   &smsc_eeprom->tx_cable_type,
+			   &smsc_eeprom->tx_cable_length);
+
+	perform_cable_diag(phydev, 1,
+			   &smsc_eeprom->rx_cable_type,
+			   &smsc_eeprom->rx_cable_length);
+
 	/* Set Auto-functionality back */
 	phy_write(phydev, MII_LAN83C185_SCS, 0);
 	phy_write(phydev, MII_LAN83C185_TDR, 0);
 	phy_write(phydev, MII_BMCR, BMCR_ANENABLE | BMCR_ANRESTART);
 
-	return rc;
-}
+	mutex_unlock(&phydev->lock);
 
-static DEVICE_ATTR(cable_diagnostics, S_IRUGO, show_cable_diag, NULL);
-
-static ssize_t dump_registers(struct device *d,
-			      struct device_attribute *attr, char *buf)
-{
-	struct phy_device *phydev = to_phy_device(d);
-	int rc, i, total_len = 0;
-
-	for (i = 0; i < 32; ++i) {
-		int len;
-		rc = phy_read(phydev, i);
-		if (rc >= 0)
-			len = sprintf(buf, "reg %2d: 0x%x\n", i, rc);
-		else
-			len = sprintf(buf, "reg %2d: READ ERROR %d\n", i, rc);
-		total_len += len;
-		buf += len;
-	}
-
-	return total_len;
-}
-
-static DEVICE_ATTR(dump_registers, S_IRUGO, dump_registers, NULL);
-
-static struct attribute *lan8742A_sysfs_entries[] = {
-	&dev_attr_cable_diagnostics.attr,
-	&dev_attr_dump_registers.attr,
-	NULL
-};
-
-static struct attribute_group lan8742A_attribute_group = {
-	.name = NULL,
-	.attrs = lan8742A_sysfs_entries,
-};
-
-static int smsc8742Ax_fixup(struct phy_device *phydev)
-{
-	int rc;
-	int phy_addr = phydev->addr;
-
-	/*
-	 * 8742A responds on PHY Addr 0 (which is broadcast)
-	 * after reset, so reconfigure it to PHY Addr 1.
-	 */
-	phydev->addr = 0;
-	rc = phy_read(phydev, MII_LAN83C185_SPECIAL_MODES);
-	if (rc < 0)
-		return rc;
-
-	rc |= MII_LAN83C185_MODE_PHYADDR_1;
-	rc = phy_write(phydev, MII_LAN83C185_SPECIAL_MODES, rc);
-	phydev->addr = phy_addr;
-
-	return rc;
-}
-
-static int lan8742Ax_config_init(struct phy_device *phydev)
-{
-	int rc = smsc8742Ax_fixup(phydev);
-
-	if (rc < 0)
-		return rc;
-
-	rc = phy_read(phydev, MII_LAN83C185_SPECIAL_MODES);
-	if (rc < 0)
-		return rc;
-
-	rc |= MII_LAN83C185_MODE_ALL;
-	rc = phy_write(phydev, MII_LAN83C185_SPECIAL_MODES, rc);
-	if (rc < 0)
-		return rc;
-
-	rc = phy_read(phydev, MII_BMCR);
-	if (rc < 0)
-		return rc;
-
-	rc |= BMCR_ANRESTART;
-	rc = phy_write(phydev, MII_BMCR, rc);
-	if (rc < 0)
-		return rc;
-
-	return smsc_phy_ack_interrupt(phydev);
-}
-
-int lan8742Ax_probe(struct phy_device *phydev)
-{
-	return sysfs_create_group(&phydev->dev.kobj,
-				  &lan8742A_attribute_group);
-}
-
-static void lan8742Ax_remove(struct phy_device *phydev)
-{
-	sysfs_remove_group(&phydev->dev.kobj,
-			   &lan8742A_attribute_group);
-}
-
-static int lan8742Ax_read_status(struct phy_device *phydev)
-{
-	int rc = phy_read(phydev, MII_LAN83C185_SPECIAL_MODES);
-
-	if (0xffff == rc) {
-		/*
-		 * PHY was on PHY Addr 1, but after unexpected
-		 * reset switched to PHY Addr 0.
-		 */
-		lan8742Ax_config_init(phydev);
-	}
-
-	return genphy_read_status(phydev);
+	return 0;
 }
 
 static struct phy_driver smsc_phy_driver[] = {
@@ -532,9 +562,9 @@ static struct phy_driver smsc_phy_driver[] = {
 
 	.driver		= { .owner = THIS_MODULE, }
 }, {
-	.phy_id		= MII_LAN8742A_ID,
-	.phy_id_mask	= MII_LAN8742A_ID_MASK,
-	.name		= "SMSC LAN8742A/LAN8742Ai",
+	.phy_id		= MII_LAN8742_ID,
+	.phy_id_mask	= MII_LAN8742_ID_MASK,
+	.name		= "SMSC LAN8742",
 
 	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause
 				| SUPPORTED_Asym_Pause),
@@ -542,29 +572,27 @@ static struct phy_driver smsc_phy_driver[] = {
 
 	/* basic functions */
 	.config_aneg	= genphy_config_aneg,
-	.read_status	= lan8742Ax_read_status,
-	.config_init	= lan8742Ax_config_init,
-	.probe		= lan8742Ax_probe,
-	.remove		= lan8742Ax_remove,
+	.read_status	= lan87xx_read_status,
+	.config_init	= smsc_phy_config_init,
+	.soft_reset	= smsc_phy_reset,
+	.probe		= lan8742_probe,
+	.remove		= lan8742_remove,
 
 	/* IRQ related */
 	.ack_interrupt	= smsc_phy_ack_interrupt,
 	.config_intr	= smsc_phy_config_intr,
 
-	.suspend	= genphy_suspend,
-	.resume		= genphy_resume,
+	.suspend	= lan8742_suspend,
+	.resume		= lan8742_resume,
+	.set_wol	= lan8742_set_wol,
+	.get_wol	= lan8742_get_wol,
+	.module_info	= lan8742_module_info,
+	.module_eeprom	= lan8742_module_eeprom,
 
 	.driver		= { .owner = THIS_MODULE, }
 } };
 
 module_phy_driver(smsc_phy_driver);
-
-static int __init smsc_init(void)
-{
-	return phy_register_fixup_for_uid(MII_LAN8742A_ID,
-					  MII_LAN8742A_ID_MASK,
-					  smsc8742Ax_fixup);
-}
 
 MODULE_DESCRIPTION("SMSC PHY driver");
 MODULE_AUTHOR("Herbert Valerio Riedel");
@@ -576,10 +604,8 @@ static struct mdio_device_id __maybe_unused smsc_tbl[] = {
 	{ 0x0007c0c0, 0xfffffff0 },
 	{ 0x0007c0d0, 0xfffffff0 },
 	{ 0x0007c0f0, 0xfffffff0 },
-	{ MII_LAN8742A_ID, MII_LAN8742A_ID_MASK },
+	{ MII_LAN8742_ID, MII_LAN8742_ID_MASK },
 	{ }
 };
 
 MODULE_DEVICE_TABLE(mdio, smsc_tbl);
-
-module_init(smsc_init);

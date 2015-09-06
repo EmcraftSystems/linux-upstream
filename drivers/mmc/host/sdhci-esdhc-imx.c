@@ -75,6 +75,7 @@
 #define ESDHC_CTRL_4BITBUS		(0x1 << 1)
 #define ESDHC_CTRL_8BITBUS		(0x2 << 1)
 #define ESDHC_CTRL_BUSWIDTH_MASK	(0x3 << 1)
+#define ESDHC_CTRL_SDIO_INT		(1 << 24)
 
 /*
  * There is an INT DMA ERR mis-match between eSDHC and STD SDHC SPEC:
@@ -561,6 +562,9 @@ static void esdhc_writeb_le(struct sdhci_host *host, u8 val, int reg)
 		 */
 		mask = 0xffff & ~(ESDHC_CTRL_BUSWIDTH_MASK | ESDHC_CTRL_D3CD);
 
+		mask |= ESDHC_CTRL_SDIO_INT;
+		new_val |= ESDHC_CTRL_SDIO_INT;
+
 		esdhc_clrset_le(host, mask, new_val, reg);
 		return;
 	}
@@ -878,6 +882,7 @@ static const struct sdhci_pltfm_data sdhci_esdhc_imx_pdata = {
 			| SDHCI_QUIRK_NO_ENDATTR_IN_NOPDESC
 			| SDHCI_QUIRK_BROKEN_ADMA_ZEROLEN_DESC
 			| SDHCI_QUIRK_BROKEN_CARD_DETECTION,
+	.quirks2 = SDHCI_QUIRK2_CARD_ON_NEEDS_BUS_ON,
 	.ops = &sdhci_esdhc_ops,
 };
 
@@ -1125,6 +1130,11 @@ static int sdhci_esdhc_imx_probe(struct platform_device *pdev)
 	err = sdhci_add_host(host);
 	if (err)
 		goto disable_clk;
+
+	if (host->mmc->pm_caps & MMC_PM_WAKE_SDIO_IRQ) {
+		device_set_wakeup_capable(&pdev->dev, 1);
+		device_wakeup_disable(&pdev->dev);
+	}
 
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_set_autosuspend_delay(&pdev->dev, 50);
