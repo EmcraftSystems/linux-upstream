@@ -26,6 +26,8 @@
 #include <linux/of_platform.h>
 #include <linux/serial_core.h>
 #include <linux/clk.h>
+#include <linux/dma-mapping.h>
+#include <linux/dmaengine.h>
 
 #define DRIVER_NAME "stm32-usart"
 
@@ -110,14 +112,37 @@
 #define USART_GTPR_PSC_MASK	GENMASK(7, 0)
 #define USART_GTPR_GT_MASK	GENMASK(15, 8)
 
-#define DRIVER_NAME "stm32-usart"
-#define STM32_SERIAL_NAME "ttyS"
-#define STM32_MAX_PORTS 6
+#define DRIVER_NAME		"stm32-usart"
+#define STM32_SERIAL_NAME	"ttyS"
+#define STM32_MAX_PORTS		6
+#define STM32_SERIAL_RINGSIZE	1024
+
+struct stm32_uart_char {
+	u32			sr;
+	u32			ch;
+};
+
+struct stm32_dma_data {
+	struct dma_async_tx_descriptor *dsc;
+	struct dma_chan		*chan;
+	dma_cookie_t		cookie;
+	struct scatterlist	sg;
+	bool			use;
+};
 
 struct stm32_port {
-	struct uart_port port;
-	struct clk *clk;
-	bool hw_flow_control;
+	struct uart_port	port;
+	struct clk		*clk;
+	bool			hw_flow_control;
+
+	struct circ_buf		rx_ring;
+	struct tasklet_struct	tasklet;
+
+	struct stm32_dma_data	dma_rx;
+
+	int (*prepare_rx)(struct uart_port *port);
+	void (*schedule_rx)(struct uart_port *port);
+	void (*release_rx)(struct uart_port *port);
 };
 
 static struct stm32_port stm32_ports[STM32_MAX_PORTS];
@@ -130,6 +155,12 @@ static inline struct stm32_port *to_stm32_port(struct uart_port *port)
 	return container_of(port, struct stm32_port, port);
 }
 
+static bool stm32_use_dma_rx(struct uart_port *port)
+{
+	struct stm32_port *stm32_port = to_stm32_port(port);
+
+	return stm32_port->dma_rx.use;
+}
 static void stm32_set_bits(struct uart_port *port, u32 reg, u32 bits)
 {
 	u32 val;
@@ -150,19 +181,54 @@ static void stm32_clr_bits(struct uart_port *port, u32 reg, u32 bits)
 
 static void stm32_receive_chars(struct uart_port *port)
 {
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	struct circ_buf *ring = &stm32_port->rx_ring;
+	struct stm32_uart_char *c;
+	u32 sr, ch;
+
+	while ((sr = readl_relaxed(port->membase + USART_SR)) & USART_SR_RXNE) {
+		ch = readl_relaxed(port->membase + USART_DR);
+
+		if (!CIRC_SPACE(ring->head, ring->tail, STM32_SERIAL_RINGSIZE)) {
+			/* Buffer overflow, ignore char */
+			continue;
+		}
+
+		c = &((struct stm32_uart_char *)ring->buf)[ring->head];
+		c->sr = sr;
+		c->ch = ch;
+
+		/* Make sure the character is stored before we update head. */
+		smp_wmb();
+		ring->head = (ring->head + 1) & (STM32_SERIAL_RINGSIZE - 1);
+	}
+
+	tasklet_schedule(&stm32_port->tasklet);
+}
+
+static void stm32_rx_from_ring(struct uart_port *port)
+{
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	struct circ_buf *ring = &stm32_port->rx_ring;
 	struct tty_port *tport = &port->state->port;
-	unsigned long c;
 	u32 sr;
 	char flag;
 
 	if (port->irq_wake)
 		pm_wakeup_event(tport->tty->dev, 0);
 
-	while ((sr = readl_relaxed(port->membase + USART_SR)) & USART_SR_RXNE) {
-		sr |= USART_SR_DUMMY_RX;
-		c = readl_relaxed(port->membase + USART_DR);
-		flag = TTY_NORMAL;
+	while (ring->head != ring->tail) {
+		struct stm32_uart_char	c;
+
+		/* Make sure c is loaded after head */
+		smp_rmb();
+
+		c = ((struct stm32_uart_char *)ring->buf)[ring->tail];
+		ring->tail = (ring->tail + 1) & (STM32_SERIAL_RINGSIZE - 1);
+
 		port->icount.rx++;
+		sr = c.sr | USART_SR_DUMMY_RX;
+		flag = TTY_NORMAL;
 
 		if (sr & USART_SR_ERR_MASK) {
 			if (sr & USART_SR_LBD) {
@@ -187,9 +253,9 @@ static void stm32_receive_chars(struct uart_port *port)
 				flag = TTY_FRAME;
 		}
 
-		if (uart_handle_sysrq_char(port, c))
+		if (uart_handle_sysrq_char(port, c.ch))
 			continue;
-		uart_insert_char(port, sr, USART_SR_ORE, c, flag);
+		uart_insert_char(port, sr, USART_SR_ORE, c.ch, flag);
 	}
 
 	spin_unlock(&port->lock);
@@ -232,11 +298,20 @@ static void stm32_transmit_chars(struct uart_port *port)
 static irqreturn_t stm32_interrupt(int irq, void *ptr)
 {
 	struct uart_port *port = ptr;
+	struct stm32_port *stm32_port = to_stm32_port(port);
 	u32 sr;
 
 	spin_lock(&port->lock);
 
 	sr = readl_relaxed(port->membase + USART_SR);
+
+	if (stm32_use_dma_rx(port)) {
+		if (sr & USART_SR_IDLE) {
+			/* Read DR to clear IDLE interrupt */
+			readl_relaxed(port->membase + USART_DR);
+			tasklet_schedule(&stm32_port->tasklet);
+		}
+	}
 
 	if (sr & USART_SR_RXNE)
 		stm32_receive_chars(port);
@@ -291,7 +366,7 @@ static void stm32_throttle(struct uart_port *port)
 	unsigned long flags;
 
 	spin_lock_irqsave(&port->lock, flags);
-	stm32_clr_bits(port, USART_CR1, USART_CR1_RXNEIE);
+	stm32_clr_bits(port, USART_CR1, USART_CR1_RE);
 	spin_unlock_irqrestore(&port->lock, flags);
 }
 
@@ -301,14 +376,14 @@ static void stm32_unthrottle(struct uart_port *port)
 	unsigned long flags;
 
 	spin_lock_irqsave(&port->lock, flags);
-	stm32_set_bits(port, USART_CR1, USART_CR1_RXNEIE);
+	stm32_set_bits(port, USART_CR1, USART_CR1_RE);
 	spin_unlock_irqrestore(&port->lock, flags);
 }
 
 /* Receive stop */
 static void stm32_stop_rx(struct uart_port *port)
 {
-	stm32_clr_bits(port, USART_CR1, USART_CR1_RXNEIE);
+	stm32_clr_bits(port, USART_CR1, USART_CR1_RE);
 }
 
 /* Handle breaks - ignored by us */
@@ -316,10 +391,230 @@ static void stm32_break_ctl(struct uart_port *port, int break_state)
 {
 }
 
+static void stm32_complete_rx_dma(void *arg)
+{
+	struct uart_port *port = arg;
+	struct stm32_port *stm32_port = to_stm32_port(port);
+
+	tasklet_schedule(&stm32_port->tasklet);
+}
+
+static void stm32_rx_from_dma(struct uart_port *port)
+{
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	struct stm32_dma_data *dma = &stm32_port->dma_rx;
+	struct tty_port *tport = &port->state->port;
+	struct circ_buf *ring = &stm32_port->rx_ring;
+	struct dma_chan *chan = dma->chan;
+	struct dma_tx_state state;
+	enum dma_status dmastat;
+	size_t count;
+
+	dmastat = dmaengine_tx_status(chan, dma->cookie, &state);
+	/* Restart a new tasklet if DMA status is error */
+	if (dmastat == DMA_ERROR) {
+		dev_dbg(port->dev, "Get residue error, restart tasklet\n");
+		tasklet_schedule(&stm32_port->tasklet);
+		return;
+	}
+
+	/* CPU claims ownership of RX DMA buffer */
+	dma_sync_sg_for_cpu(port->dev, &dma->sg, 1, DMA_FROM_DEVICE);
+
+	/*
+	 * ring->head points to the end of data already written by the DMA.
+	 * ring->tail points to the beginning of data to be read by the
+	 * framework.
+	 * The current transfer size should not be larger than the dma buffer
+	 * length.
+	 */
+	ring->head = sg_dma_len(&dma->sg) - state.residue;
+	BUG_ON(ring->head > sg_dma_len(&dma->sg));
+	/*
+	 * At this point ring->head may point to the first byte right after the
+	 * last byte of the dma buffer:
+	 * 0 <= ring->head <= sg_dma_len(&stm32_port->sg_rx)
+	 *
+	 * However ring->tail must always points inside the dma buffer:
+	 * 0 <= ring->tail <= sg_dma_len(&stm32_port->sg_rx) - 1
+	 *
+	 * Since we use a ring buffer, we have to handle the case
+	 * where head is lower than tail. In such a case, we first read from
+	 * tail to the end of the buffer then reset tail.
+	 */
+	if (ring->head < ring->tail) {
+		count = sg_dma_len(&dma->sg) - ring->tail;
+
+		tty_insert_flip_string(tport, ring->buf + ring->tail, count);
+		ring->tail = 0;
+		port->icount.rx += count;
+	}
+
+	/* Finally we read data from tail to head */
+	if (ring->tail < ring->head) {
+		count = ring->head - ring->tail;
+
+		tty_insert_flip_string(tport, ring->buf + ring->tail, count);
+		/* Wrap ring->head if needed */
+		if (ring->head >= sg_dma_len(&dma->sg))
+			ring->head = 0;
+		ring->tail = ring->head;
+		port->icount.rx += count;
+	}
+
+	/* USART retreives ownership of RX DMA buffer */
+	dma_sync_sg_for_device(port->dev, &dma->sg, 1, DMA_FROM_DEVICE);
+
+	/*
+	 * Drop the lock here since it might end up calling
+	 * uart_start(), which takes the lock.
+	 */
+	spin_unlock(&port->lock);
+	tty_flip_buffer_push(tport);
+	spin_lock(&port->lock);
+}
+
+static void stm32_release_rx_dma(struct uart_port *port)
+{
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	struct stm32_dma_data *dma = &stm32_port->dma_rx;
+	struct dma_chan *chan = dma->chan;
+
+	if (chan) {
+		dmaengine_terminate_all(chan);
+		dma_release_channel(chan);
+		dma_unmap_sg(port->dev, &dma->sg, 1, DMA_FROM_DEVICE);
+	}
+
+	dma->dsc = NULL;
+	dma->chan = NULL;
+	dma->cookie = -EINVAL;
+}
+
+static int stm32_prepare_rx_dma(struct uart_port *port)
+{
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	struct stm32_dma_data *dma = &stm32_port->dma_rx;
+	struct dma_async_tx_descriptor *dsc;
+	struct circ_buf *ring;
+	dma_cap_mask_t mask;
+	struct dma_slave_config config;
+	int ret, nent;
+
+	ring = &stm32_port->rx_ring;
+
+	dma_cap_zero(mask);
+	dma_cap_set(DMA_CYCLIC, mask);
+
+	dma->chan = dma_request_slave_channel(port->dev, "rx");
+	if (!dma->chan)
+		goto chan_err;
+
+	sg_init_table(&dma->sg, 1);
+	BUG_ON(!PAGE_ALIGNED(ring->buf));
+	sg_set_page(&dma->sg, virt_to_page(ring->buf),
+		    sizeof(struct stm32_uart_char) * STM32_SERIAL_RINGSIZE,
+		    (int)ring->buf & ~PAGE_MASK);
+
+	nent = dma_map_sg(port->dev, &dma->sg, 1, DMA_FROM_DEVICE);
+	if (!nent) {
+		dev_dbg(port->dev, "need to release resource of dma\n");
+		goto chan_err;
+	}
+	dev_dbg(port->dev, "%s: mapped %d@%p to %x\n", __func__,
+		sg_dma_len(&dma->sg), ring->buf, sg_dma_address(&dma->sg));
+
+	/* Configure the slave DMA */
+	memset(&config, 0, sizeof(config));
+	config.direction = DMA_DEV_TO_MEM;
+	config.src_addr_width = DMA_SLAVE_BUSWIDTH_1_BYTE;
+	config.src_addr = port->mapbase + USART_DR;
+	config.src_maxburst = 1;
+	ret = dmaengine_slave_config(dma->chan, &config);
+	if (ret) {
+		dev_err(port->dev, "DMA rx slave configuration failed\n");
+		goto chan_err;
+	}
+
+	/*
+	 * Prepare a cyclic dma transfer with half ring buffer size
+	 * period
+	 */
+	dsc = dmaengine_prep_dma_cyclic(dma->chan, sg_dma_address(&dma->sg),
+				sg_dma_len(&dma->sg), sg_dma_len(&dma->sg) / 2,
+				DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT);
+	dsc->callback = stm32_complete_rx_dma;
+	dsc->callback_param = port;
+	dma->dsc = dsc;
+	dma->cookie = dmaengine_submit(dsc);
+
+	dev_info(port->dev, "using %s for rx DMA transfers\n",
+		 dma_chan_name(dma->chan));
+	return 0;
+chan_err:
+	dev_err(port->dev, "DMA RX channel not available, switch to pio\n");
+	dma->use = 0;
+	if (dma->chan)
+		stm32_release_rx_dma(port);
+	return -EINVAL;
+}
+
+static void stm32_set_ops(struct uart_port *port)
+{
+	struct stm32_port	*stm32_port = to_stm32_port(port);
+
+	if (stm32_use_dma_rx(port)) {
+		stm32_port->prepare_rx = stm32_prepare_rx_dma;
+		stm32_port->schedule_rx = stm32_rx_from_dma;
+		stm32_port->release_rx = stm32_release_rx_dma;
+	} else {
+		stm32_port->prepare_rx = NULL;
+		stm32_port->schedule_rx = stm32_rx_from_ring;
+		stm32_port->release_rx = NULL;
+	}
+}
+
+/*
+ * tasklet handling tty stuff outside the interrupt handler.
+ */
+static void stm32_tasklet_func(unsigned long data)
+{
+	struct uart_port *port = (struct uart_port *)data;
+	struct stm32_port *stm32_port = to_stm32_port(port);
+
+	/* The interrupt handler does not take the lock */
+	spin_lock(&port->lock);
+
+	stm32_port->schedule_rx(port);
+
+	spin_unlock(&port->lock);
+}
+
+static void stm32_init_property(struct uart_port *port,
+				struct platform_device *pdev)
+{
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	struct device_node *np = pdev->dev.of_node;
+
+	/*
+	 * Don't use DMA by defaul
+	 */
+	stm32_port->dma_rx.use = false;
+
+	if (np) {
+		if (of_get_property(np, "st,use-dma-rx", NULL) &&
+		    of_get_property(np, "dmas", NULL)) {
+			stm32_port->dma_rx.use  = true;
+		}
+	}
+}
+
 static int stm32_startup(struct uart_port *port)
 {
-	const char *name = to_platform_device(port->dev)->name;
-	u32 val;
+	struct platform_device *pdev = to_platform_device(port->dev);
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	const char *name = pdev->name;
+	u32 cr1, cr3;
 	int ret;
 
 	ret = request_irq(port->irq, stm32_interrupt, IRQF_NO_SUSPEND,
@@ -327,18 +622,56 @@ static int stm32_startup(struct uart_port *port)
 	if (ret)
 		return ret;
 
-	val = USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE;
-	stm32_set_bits(port, USART_CR1, val);
+	tasklet_enable(&stm32_port->tasklet);
+
+	/*
+	 * Initialize DMA (if necessary)
+	 */
+	stm32_init_property(port, pdev);
+	stm32_set_ops(port);
+
+	if (stm32_port->prepare_rx) {
+		ret = stm32_port->prepare_rx(port);
+		if (ret < 0)
+			stm32_set_ops(port);
+	}
+
+	/*
+	 * Init UART
+	 */
+	cr1 = USART_CR1_TE | USART_CR1_RE;
+	if (stm32_use_dma_rx(port))
+		cr1 |= USART_CR1_IDLEIE;
+	else
+		cr1 |= USART_CR1_RXNEIE;
+
+	cr3 = 0;
+	if (stm32_port->dma_rx.use)
+		cr3 |= USART_CR3_DMAR;
+
+	stm32_set_bits(port, USART_CR1, cr1);
+	stm32_set_bits(port, USART_CR3, cr3);
 
 	return 0;
 }
 
 static void stm32_shutdown(struct uart_port *port)
 {
-	u32 val;
+	struct stm32_port *stm32_port = to_stm32_port(port);
 
-	val = USART_CR1_TXEIE | USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE;
-	stm32_set_bits(port, USART_CR1, val);
+	/*
+	 * Shut-down serial
+	 */
+	writel_relaxed(0, port->membase + USART_CR1);
+
+	/*
+	 * Shut-down the DMA
+	 */
+	if (stm32_port->release_rx)
+		stm32_port->release_rx(port);
+
+	stm32_port->rx_ring.head = 0;
+	stm32_port->rx_ring.tail = 0;
 
 	free_irq(port->irq, port);
 }
@@ -360,12 +693,9 @@ static void stm32_set_termios(struct uart_port *port, struct ktermios *termios,
 
 	spin_lock_irqsave(&port->lock, flags);
 
-	/* Stop serial port and reset value */
-	writel_relaxed(0, port->membase + USART_CR1);
-
-	cr1 = USART_CR1_TE | USART_CR1_RE | USART_CR1_UE | USART_CR1_RXNEIE;
-	cr2 = 0;
-	cr3 = 0;
+	cr1 = readl_relaxed(port->membase + USART_CR1);
+	cr2 = readl_relaxed(port->membase + USART_CR2);
+	cr3 = readl_relaxed(port->membase + USART_CR3);
 
 	if (cflag & CSTOPB)
 		cr2 |= USART_CR2_STOP_2B;
@@ -519,6 +849,10 @@ static int stm32_init_port(struct stm32_port *stm32port,
 	port->dev	= &pdev->dev;
 	port->irq	= platform_get_irq(pdev, 0);
 
+	tasklet_init(&stm32port->tasklet, stm32_tasklet_func,
+		     (unsigned long)port);
+	tasklet_disable(&stm32port->tasklet);
+
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	port->membase = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(port->membase))
@@ -589,6 +923,11 @@ static int stm32_serial_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
+	stm32port->rx_ring.buf = kmalloc(sizeof(struct stm32_uart_char) *
+					 STM32_SERIAL_RINGSIZE, GFP_KERNEL);
+	if (!stm32port->rx_ring.buf)
+		return -ENOMEM;
+
 	ret = uart_add_one_port(&stm32_usart_driver, &stm32port->port);
 	if (ret)
 		return ret;
@@ -601,8 +940,16 @@ static int stm32_serial_probe(struct platform_device *pdev)
 static int stm32_serial_remove(struct platform_device *pdev)
 {
 	struct uart_port *port = platform_get_drvdata(pdev);
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	int ret;
 
-	return uart_remove_one_port(&stm32_usart_driver, port);
+	tasklet_kill(&stm32_port->tasklet);
+
+	ret = uart_remove_one_port(&stm32_usart_driver, port);
+
+	kfree(stm32_port->rx_ring.buf);
+
+	return ret;
 }
 
 
