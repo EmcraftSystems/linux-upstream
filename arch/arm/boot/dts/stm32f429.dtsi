@@ -264,6 +264,61 @@
 				};
 			};
 		};
+
+		ltdc {
+			pinctrl_ltdc: ltdc-0 {
+				st,pins {
+					clk = <&gpiog 7 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					de = <&gpiof 10 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					hsync = <&gpioi 10 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					vsync = <&gpioi 9 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					b1 = <&gpiog 12 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					b2 = <&gpiog 10 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					b4 = <&gpioi 4 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					b5 = <&gpioi 5 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					b6 = <&gpioi 6 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					b7 = <&gpioi 7 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					g2 = <&gpioh 13 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					g3 = <&gpioh 14 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					g4 = <&gpioh 15 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					g5 = <&gpioi 0 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					g6 = <&gpioc 7 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					g7 = <&gpioi 2 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					r0 = <&gpioh 2 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					r1 = <&gpioh 3 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					r2 = <&gpioh 8 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					r3 = <&gpioh 9 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					r4 = <&gpioh 10 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					r5 = <&gpioh 11 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					r6 = <&gpioh 12 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					r7 = <&gpiog 6 ALT14
+						NO_PULL PUSH_PULL LOW_SPEED>;
+				};
+			};
+		};
 	};
 
 	soc {
@@ -384,6 +439,34 @@
 		syscfg: syscon@40013800 {
 			compatible = "st,stm32-syscfg", "syscon";
 			reg = <0x40013800 0x24>;
+		};
+
+		ltdc: ltdc@40016800 {
+			display = <&display0>;
+			compatible = "st,stm32f4-ltdc";
+			reg = <0x40016800 0x400>;
+			clocks = <&rcc 0 186>, <&rcc 0 182>;
+			clock-names = "ltdc", "sai1";
+			status = "disabled";
+
+			display0: display {
+				bits-per-pixel = <32>;
+				display-timings {
+					native-mode = <&timing0>;
+					timing0: timing0 {
+						clock-frequency = <9000000>;
+						hactive = <480>;
+						vactive = <272>;
+						hback-porch = <2>;
+						hfront-porch = <2>;
+						vback-porch = <2>;
+						vfront-porch = <2>;
+						hsync-len = <41>;
+						vsync-len = <10>;
+						vsync-active = <1>;
+					};
+				};
+			};
 		};
 
 		rst: reset@40023800 {

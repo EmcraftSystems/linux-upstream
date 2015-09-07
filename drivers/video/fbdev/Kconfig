@@ -999,6 +999,17 @@ config FB_ATMEL
 	help
 	  This enables support for the AT91/AT32 LCD Controller.
 
+config FB_STM32
+	tristate "STM32 LTDC Controller support"
+	depends on OF && FB && ARCH_STM32
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select FB_MODE_HELPERS
+	select VIDEOMODE_HELPERS
+	help
+	  This enables support for the STM32 LCD Controller.
+
 config FB_NVIDIA
 	tristate "nVidia Framebuffer Support"
 	depends on FB && PCI
