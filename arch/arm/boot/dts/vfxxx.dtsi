@@ -70,10 +70,22 @@
 
 			mscm_ir: interrupt-controller@40001800 {
 				compatible = "fsl,vf610-mscm-ir";
+				#address-cells = <1>;
+				#size-cells = <1>;
 				reg = <0x40001800 0x400>;
 				fsl,cpucfg = <&mscm_cpucfg>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
+
+				cpu2cpu@40001800 {
+					reg = <0x40001800 0x40>;
+					interrupt-parent = <&mscm_ir>;
+					interrupts = <0 IRQ_TYPE_LEVEL_HIGH>,
+						<1 IRQ_TYPE_LEVEL_HIGH>,
+						<2 IRQ_TYPE_LEVEL_HIGH>,
+						<3 IRQ_TYPE_LEVEL_HIGH>;
+					interrupt-names = "int0", "int1", "int2", "int3";
+				};
 			};
 
 			edma0: dma-controller@40018000 {
