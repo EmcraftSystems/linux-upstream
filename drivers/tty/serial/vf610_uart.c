@@ -894,6 +894,8 @@ imx_set_termios(struct uart_port *port, struct ktermios *termios,
 	bdh = readb(sport->port.membase + MXC_UARTBDH);
 	modem = readb(sport->port.membase + MXC_UARTMODEM);
 
+	sport->port.uartclk = clk_get_rate(sport->clk);
+
 	/*
 	 * We only support CS8 and CS7,but CS7 must enable PE.
 	 * supported mode:

@@ -189,12 +189,6 @@ wait_sr_exit:
 
 	ddr_enable_self_refresh
 
-	/* Switch to FIRC */
-	get_base r3 CCM_VBASE_OFFSET
-	ldr	r4, [r3, #0x08]
-	bic	r4, r4, #0x7
-	str	r4, [r3, #0x08]
-
 	disable_pll 0x20	@ pll7
 	disable_pll 0x10	@ pll3
 	disable_pll 0x20	@ pll2
@@ -420,13 +414,6 @@ wait_pll2:
 	ands	r4, r4, #(1<<31)
 	beq	wait_pll2
 	nop
-
-	/* switch system clock source to pll1 */
-	get_base r3 CCM_VBASE_OFFSET
-	ldr	r4, [r3, #0x08]
-	bic	r4, #0x77
-	orr	r4, #0x24
-	str	r4, [r3, #0x08]
 
 	ddr_disable_self_refresh
 

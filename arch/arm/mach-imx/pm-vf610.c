@@ -28,6 +28,9 @@
 #include <asm/proc-fns.h>
 #include <asm/suspend.h>
 #include <asm/tlb.h>
+#include <linux/tty.h>
+#include <linux/console.h>
+#include <linux/serial_core.h>
 
 #include "common.h"
 
@@ -102,6 +105,9 @@ struct vf610_cpu_pm_info {
 	struct vf610_pm_base ddrmc_base;
 	struct vf610_pm_base l2_base;
 	u32 ccm_ccsr;
+	struct clk *sys_sel_clk;
+	struct clk *sys_sel_clk_active;
+	struct clk *sys_sel_clk_suspend;
 } __aligned(8);
 
 enum vf610_cpu_pwr_mode {
@@ -148,6 +154,23 @@ static void vf610_clr(void __iomem *pll_base, u32 mask)
 	writel_relaxed(readl_relaxed(pll_base) & ~mask, pll_base);
 }
 
+static void uarts_reconfig(void)
+{
+	struct device_node *np;
+
+	for_each_compatible_node(np, NULL, "fsl,vf610-uart") {
+		struct platform_device *pdev = of_find_device_by_node(np);
+		struct uart_port *port = pdev ? platform_get_drvdata(pdev) : NULL;
+
+		if (port && port->state) {
+			struct tty_struct *tty = port->state->port.tty;
+			if (tty && port->ops->set_termios) {
+				port->ops->set_termios(port, &tty->termios, NULL);
+			}
+		}
+	}
+}
+
 int vf610_set_lpm(enum vf610_cpu_pwr_mode mode)
 {
 	struct vf610_cpu_pm_info *pm_info = suspend_ocram_base;
@@ -178,13 +201,6 @@ int vf610_set_lpm(enum vf610_cpu_pwr_mode mode)
 		ccr |= BM_CCR_FIRC_EN;
 		writel_relaxed(ccr, ccm_base + CCR);
 
-		/* Enable PLL2 for DDR clock */
-		vf610_set(anatop + ANATOP_PLL2_CTRL, BM_PLL_ENABLE);
-		vf610_clr(anatop + ANATOP_PLL2_CTRL, BM_PLL_POWERDOWN);
-		vf610_clr(anatop + ANATOP_PLL2_CTRL, BM_PLL_BYPASS);
-		while (!(readl(anatop + ANATOP_PLL2_CTRL) & BM_PLL_LOCK));
-		vf610_clr(anatop + ANATOP_PLL2_PFD, BM_PLL_PFD2_CLKGATE);
-
 		/* Switch internal OSC's */
 		ccsr &= ~BM_CCSR_FAST_CLK_SEL;
 		ccsr &= ~BM_CCSR_SLOW_CLK_SEL;
@@ -193,25 +209,18 @@ int vf610_set_lpm(enum vf610_cpu_pwr_mode mode)
 		ccsr &= ~BM_CCSR_DDRC_CLK_SEL;
 		writel_relaxed(ccsr, ccm_base + CCSR);
 
-		/* switch system clock to FIRC 24MHz */
-		ccsr &= ~BM_CCSR_SYS_CLK_SEL_MASK;
-		writel_relaxed(ccsr, ccm_base + CCSR);
+		if (!IS_ERR(pm_info->sys_sel_clk) && !IS_ERR(pm_info->sys_sel_clk_suspend)) {
+			clk_set_parent(pm_info->sys_sel_clk, pm_info->sys_sel_clk_suspend);
+			uarts_reconfig();
+		}
 
-		vf610_set(anatop + ANATOP_PLL1_CTRL, BM_PLL_BYPASS);
-		vf610_clr(anatop + ANATOP_PLL3_CTRL, BM_PLL_ENABLE);
-		vf610_clr(anatop + ANATOP_PLL5_CTRL, BM_PLL_ENABLE);
-
-		vf610_clr(anatop + ANATOP_PLL7_CTRL, BM_PLL_ENABLE);
 		break;
 	case VF610_RUN:
-		vf610_clr(anatop + ANATOP_PLL1_CTRL, BM_PLL_BYPASS);
-		vf610_set(anatop + ANATOP_PLL3_CTRL, BM_PLL_ENABLE);
-		vf610_set(anatop + ANATOP_PLL5_CTRL, BM_PLL_ENABLE);
-		vf610_set(anatop + ANATOP_PLL7_CTRL, BM_PLL_ENABLE);
-
 		/* Restore clock settings */
-		writel_relaxed(pm_info->ccm_ccsr, ccm_base + CCSR);
-
+		if (!IS_ERR(pm_info->sys_sel_clk) && !IS_ERR(pm_info->sys_sel_clk_active)) {
+			clk_set_parent(pm_info->sys_sel_clk, pm_info->sys_sel_clk_active);
+			uarts_reconfig();
+		}
 		/* Disable PLL2 if not needed */
 		if (pm_info->ccm_ccsr & BM_CCSR_DDRC_CLK_SEL)
 			vf610_set(anatop + ANATOP_PLL2_CTRL, BM_PLL_POWERDOWN);
@@ -349,6 +358,14 @@ static int __init vf610_suspend_init(const struct vf610_pm_socdata *socdata)
 	pm_info = suspend_ocram_base;
 	pm_info->pbase = ocram_pbase;
 	pm_info->pm_info_size = sizeof(*pm_info);
+
+	node = of_find_compatible_node(NULL, NULL, "pm-vf610");
+	if (node) {
+		pm_info->sys_sel_clk = of_clk_get_by_name(node, "sys-sel");
+		pm_info->sys_sel_clk_suspend = of_clk_get_by_name(node, "sys-sel-suspend");
+		if (!IS_ERR(pm_info->sys_sel_clk) && !IS_ERR(pm_info->sys_sel_clk_suspend))
+		    pm_info->sys_sel_clk_active = clk_get_parent(pm_info->sys_sel_clk);
+	}
 
 	/*
 	 * ccm physical address is not used by asm code currently,
