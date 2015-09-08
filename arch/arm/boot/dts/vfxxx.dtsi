@@ -70,10 +70,22 @@
 
 			mscm_ir: interrupt-controller@40001800 {
 				compatible = "fsl,vf610-mscm-ir";
+				#address-cells = <1>;
+				#size-cells = <1>;
 				reg = <0x40001800 0x400>;
 				fsl,cpucfg = <&mscm_cpucfg>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
+
+				cpu2cpu@40001800 {
+					reg = <0x40001800 0x40>;
+					interrupt-parent = <&mscm_ir>;
+					interrupts = <0 IRQ_TYPE_LEVEL_HIGH>,
+						<1 IRQ_TYPE_LEVEL_HIGH>,
+						<2 IRQ_TYPE_LEVEL_HIGH>,
+						<3 IRQ_TYPE_LEVEL_HIGH>;
+					interrupt-names = "int0", "int1", "int2", "int3";
+				};
 			};
 
 			edma0: dma-controller@40018000 {
@@ -393,6 +405,24 @@
 				reg = <0x4006e000 0x1000>;
 				interrupts = <96 IRQ_TYPE_LEVEL_HIGH>;
 			};
+
+			tcon0: tcon@4003d000 {
+				compatible = "fsl,vf610-tcon";
+				reg = <0x4003d000 0x1000>;
+				clocks = <&clks VF610_CLK_TCON0>;
+				clock-names = "tcon";
+				status = "disabled";
+			};
+
+			dcu0: dcu@40058000 {
+				compatible = "fsl,vf610-dcu";
+				reg = <0x40058000 0x1200>;
+				interrupts = <30 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&clks VF610_CLK_DCU0>;
+				clock-names = "dcu";
+				tcon-controller = <&tcon0>;
+				status = "disabled";
+			};
 		};
 
 		aips1: aips-bus@40080000 {
@@ -542,6 +572,17 @@
 				clocks = <&clks VF610_CLK_FLEXCAN1>,
 					 <&clks VF610_CLK_FLEXCAN1>;
 				clock-names = "ipg", "per";
+				status = "disabled";
+			};
+
+			nfc: nand@400e0000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "fsl,vf610-nfc";
+				reg = <0x400e0000 0x4000>;
+				interrupts = <83 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&clks VF610_CLK_NFC>;
+				clock-names = "nfc";
 				status = "disabled";
 			};
 

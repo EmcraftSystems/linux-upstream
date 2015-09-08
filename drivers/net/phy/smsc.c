@@ -32,19 +32,28 @@ struct smsc_private {
 	int int_irq;
 };
 
-struct smsc_eeprom {
-	int	tx_cable_type;
-	int	tx_cable_length;
-	int	rx_cable_type;
-	int	rx_cable_length;
-};
-
 static const int smsc_match_cable_length_lookup[16] = {
 	 0,   0,   0,   0,
 	 6,  17,  27,  38,
 	49,  59,  70,  81,
 	91, 102, 113, 123
 };
+
+static const char smsc_gstrings[][ETH_GSTRING_LEN] = {
+	"TX cable match\t",
+	"TX cable opened\t",
+	"TX cable shorted",
+	"TX length (if match)",
+	"TX distance to fault",
+	"RX cable match\t",
+	"RX cable opened\t",
+	"RX cable shorted",
+	"RX length (if match)",
+	"RX distance to fault",
+};
+
+#define SMSC_TEST_LEN		ARRAY_SIZE(smsc_gstrings)
+#define SMSC_STRINGS_LEN	(SMSC_TEST_LEN * ETH_GSTRING_LEN)
 
 static int mmd_set_addr(struct phy_device *phydev, int dev, int reg)
 {
@@ -413,28 +422,46 @@ err:
 	return rc;
 }
 
-static int lan8742_module_info(struct phy_device *phydev, struct ethtool_modinfo *modinfo)
+int lan8742_get_sset_count(struct phy_device *phydev, int sset)
 {
-	modinfo->eeprom_len = sizeof(struct smsc_eeprom);
-	return 0;
+	switch (sset) {
+	case ETH_SS_TEST:
+		return SMSC_TEST_LEN;
+	default:
+		return -EOPNOTSUPP;
+	}
 }
 
-int lan8742_module_eeprom(struct phy_device *phydev, struct ethtool_eeprom *ee, u8 *data)
+void lan8742_get_strings(struct phy_device *phydev, u32 stringset, u8 *data)
 {
-	struct smsc_eeprom *smsc_eeprom = (struct smsc_eeprom *)data;
+	switch (stringset) {
+	case ETH_SS_TEST:
+		memcpy(data, smsc_gstrings, SMSC_STRINGS_LEN);
+		break;
+	}
+}
 
-	if (ETHTOOL_GMODULEEEPROM != ee->cmd)
-		return -EOPNOTSUPP;
-
+void lan8742_self_test(struct phy_device *phydev,
+		       struct ethtool_test *eth_test, u64 *data)
+{
+	int tx_state, tx_len, rx_state, rx_len;
 	mutex_lock(&phydev->lock);
 
-	perform_cable_diag(phydev, 0,
-			   &smsc_eeprom->tx_cable_type,
-			   &smsc_eeprom->tx_cable_length);
+	perform_cable_diag(phydev, 0, &tx_state, &tx_len);
 
-	perform_cable_diag(phydev, 1,
-			   &smsc_eeprom->rx_cable_type,
-			   &smsc_eeprom->rx_cable_length);
+	perform_cable_diag(phydev, 1, &rx_state, &rx_len);
+
+	data[0] = (tx_state == SMSC_CABLE_TYPE__MATCH);
+	data[1] = (tx_state == SMSC_CABLE_TYPE__OPEN);
+	data[2] = (tx_state == SMSC_CABLE_TYPE__SHORTED);
+	data[3] = (tx_state == SMSC_CABLE_TYPE__MATCH) ? tx_len : 0;
+	data[4] = (tx_state == SMSC_CABLE_TYPE__MATCH) ? 0 : tx_len;
+
+	data[5] = (rx_state == SMSC_CABLE_TYPE__MATCH);
+	data[6] = (rx_state == SMSC_CABLE_TYPE__OPEN);
+	data[7] = (rx_state == SMSC_CABLE_TYPE__SHORTED);
+	data[8] = (rx_state == SMSC_CABLE_TYPE__MATCH) ? rx_len : 0;
+	data[9] = (rx_state == SMSC_CABLE_TYPE__MATCH) ? 0 : rx_len;
 
 	/* Set Auto-functionality back */
 	phy_write(phydev, MII_LAN83C185_SCS, 0);
@@ -442,8 +469,6 @@ int lan8742_module_eeprom(struct phy_device *phydev, struct ethtool_eeprom *ee, 
 	phy_write(phydev, MII_BMCR, BMCR_ANENABLE | BMCR_ANRESTART);
 
 	mutex_unlock(&phydev->lock);
-
-	return 0;
 }
 
 static struct phy_driver smsc_phy_driver[] = {
@@ -586,8 +611,9 @@ static struct phy_driver smsc_phy_driver[] = {
 	.resume		= lan8742_resume,
 	.set_wol	= lan8742_set_wol,
 	.get_wol	= lan8742_get_wol,
-	.module_info	= lan8742_module_info,
-	.module_eeprom	= lan8742_module_eeprom,
+	.get_sset_count	= lan8742_get_sset_count,
+	.get_strings	= lan8742_get_strings,
+	.self_test	= lan8742_self_test,
 
 	.driver		= { .owner = THIS_MODULE, }
 } };
