@@ -2393,6 +2393,8 @@ static void fec_enet_get_ethtool_stats(struct net_device *dev,
 static void fec_enet_get_strings(struct net_device *netdev,
 	u32 stringset, u8 *data)
 {
+	struct fec_enet_private *fep = netdev_priv(netdev);
+	struct phy_device *phydev = fep->phy_dev;
 	int i;
 	switch (stringset) {
 	case ETH_SS_STATS:
@@ -2400,17 +2402,28 @@ static void fec_enet_get_strings(struct net_device *netdev,
 			memcpy(data + i * ETH_GSTRING_LEN,
 				fec_stats[i].name, ETH_GSTRING_LEN);
 		break;
+	default:
+		if (phydev && phydev->drv && phydev->drv->get_strings)
+			phydev->drv->get_strings(phydev, stringset, data);
 	}
 }
 
 static int fec_enet_get_sset_count(struct net_device *dev, int sset)
 {
+	struct fec_enet_private *fep = netdev_priv(dev);
+	struct phy_device *phydev = fep->phy_dev;
+	int ret = -EOPNOTSUPP;
+
 	switch (sset) {
 	case ETH_SS_STATS:
-		return ARRAY_SIZE(fec_stats);
+		ret = ARRAY_SIZE(fec_stats);
+		break;
 	default:
-		return -EOPNOTSUPP;
+		if (phydev && phydev->drv && phydev->drv->get_sset_count)
+			ret = phydev->drv->get_sset_count(phydev, sset);
 	}
+
+	return ret;
 }
 #endif /* !defined(CONFIG_M5272) */
 
@@ -2628,6 +2641,16 @@ fec_enet_set_wol(struct net_device *ndev, struct ethtool_wolinfo *wol)
 	return 0;
 }
 
+void fec_enet_self_test(struct net_device *ndev,
+			struct ethtool_test *eth_test, u64 *data)
+{
+	struct fec_enet_private *fep = netdev_priv(ndev);
+	struct phy_device *phydev = fep->phy_dev;
+
+	if (phydev && phydev->drv && phydev->drv->self_test)
+		phydev->drv->self_test(phydev, eth_test, data);
+}
+
 static const struct ethtool_ops fec_enet_ethtool_ops = {
 	.get_settings		= fec_enet_get_settings,
 	.set_settings		= fec_enet_set_settings,
@@ -2644,6 +2667,7 @@ static const struct ethtool_ops fec_enet_ethtool_ops = {
 	.get_strings		= fec_enet_get_strings,
 	.get_ethtool_stats	= fec_enet_get_ethtool_stats,
 	.get_sset_count		= fec_enet_get_sset_count,
+	.self_test		= fec_enet_self_test,
 #endif
 	.get_ts_info		= fec_enet_get_ts_info,
 	.get_tunable		= fec_enet_get_tunable,
