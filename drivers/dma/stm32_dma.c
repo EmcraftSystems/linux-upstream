@@ -225,9 +225,9 @@ static void stm_handle_once(struct stm32_dma_chan *stm_chan)
 		return;
 
 	dma_cookie_complete(txd);
+	dma_descriptor_unmap(txd);
 	if (callback)
 		callback(param);
-
 	dma_run_dependencies(txd);
 }
 
@@ -441,10 +441,13 @@ static int stm_config(struct dma_chan *chan,
 
 static int stm_terminate_all(struct dma_chan *chan)
 {
-	struct stm32_dma_chan	*stm_chan = to_stm_dma_chan(chan);
+	struct stm32_dma_chan		*stm_chan = to_stm_dma_chan(chan);
+	struct dma_async_tx_descriptor	*txd = &stm_chan->txd;
 
 	stm_chan->regs->cr &= ~STM32_DMA_CR_EN;
-	stm_handle_once(stm_chan);
+
+	dma_descriptor_unmap(txd);
+	dma_run_dependencies(txd);
 
 	return 0;
 }

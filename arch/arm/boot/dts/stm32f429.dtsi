@@ -159,9 +159,20 @@
 		usart1 {
 			pinctrl_usart1: usart1-0 {
 				st,pins {
-					tx = <&gpioa 9 ALT7
+					tx = <&gpiob 6 ALT7
 						NO_PULL PUSH_PULL LOW_SPEED>;
 					rx = <&gpioa 10 ALT7
+						NO_PULL PUSH_PULL LOW_SPEED>;
+				};
+			};
+		};
+
+		usart7 {
+			pinctrl_usart7: usart7-0 {
+				st,pins {
+					tx = <&gpiof 7 ALT8
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					rx = <&gpiof 6 ALT8
 						NO_PULL PUSH_PULL LOW_SPEED>;
 				};
 			};
@@ -406,6 +417,8 @@
 			compatible = "st,stm32-usart", "st,stm32-uart";
 			reg = <0x40007800 0x400>;
 			interrupts = <82>;
+			dmas = <&dma1 3 5>, <&dma1 1 5>;
+			dma-names = "rx", "tx";
 			clocks = <&rcc 0 158>;
 			status = "disabled";
 		};
@@ -423,8 +436,8 @@
 			reg = <0x40011000 0x400>;
 			interrupts = <37>;
 			clocks = <&rcc 0 164>;
-			dmas = <&dma2 5 4>;
-			dma-names = "rx";
+			dmas = <&dma2 5 4>, <&dma2 7 4>;
+			dma-names = "rx", "tx";
 			status = "disabled";
 		};
 
@@ -480,6 +493,15 @@
 			compatible = "st,stm32f42xx-rcc";
 			reg = <0x40023800 0x400>;
 			clocks = <&clk_hse>;
+		};
+
+		dma1: dma@40026000 {
+			compatible = "st,stm32f4-dma";
+			#dma-cells = <2>;
+			reg = <0x40026000 0x400>;
+			interrupts = <11 12 13 14 15 16 17 47>;
+			clocks = <&rcc 0 21>;
+			status = "disabled";
 		};
 
 		dma2: dma@40026400 {
