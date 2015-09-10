@@ -28,6 +28,8 @@
 #include <linux/micrel_phy.h>
 #include <linux/of.h>
 #include <linux/clk.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 
 /* Operation Mode Strap Override */
 #define MII_KSZPHY_OMSO				0x16
@@ -86,6 +88,7 @@ struct kszphy_priv {
 	int led_mode;
 	bool rmii_ref_clk_sel;
 	bool rmii_ref_clk_sel_val;
+	struct gpio_desc *enable_gpio;
 };
 
 static const struct kszphy_type ksz8021_type = {
@@ -266,6 +269,9 @@ static int kszphy_config_init(struct phy_device *phydev)
 		return 0;
 
 	type = priv->type;
+
+	if (priv->enable_gpio)
+		gpiod_set_value(priv->enable_gpio, 1);
 
 	if (priv->rmii_ref_clk_sel) {
 		ret = kszphy_rmii_clk_sel(phydev, priv->rmii_ref_clk_sel_val);
@@ -569,6 +575,11 @@ static int kszphy_probe(struct phy_device *phydev)
 	} else {
 		priv->led_mode = -1;
 	}
+
+	priv->enable_gpio = devm_gpiod_get_optional(&phydev->dev,
+			"enable", GPIOD_OUT_HIGH);
+	if (IS_ERR(priv->enable_gpio))
+		return IS_ERR(priv->enable_gpio);
 
 	clk = devm_clk_get(&phydev->dev, "rmii-ref");
 	/* NOTE: clk may be NULL if building without CONFIG_HAVE_CLK */
