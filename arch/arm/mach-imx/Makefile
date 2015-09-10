@@ -98,7 +98,7 @@ obj-$(CONFIG_SOC_IMX51) += mach-imx51.o
 obj-$(CONFIG_SOC_IMX53) += mach-imx53.o
 
 vf610-pm-$(CONFIG_PM) += pm-vf610.o
-obj-$(CONFIG_SOC_VF610) += mach-vf610.o $(vf610-pm-y)
+obj-$(CONFIG_SOC_VF610) += mach-vf610.o $(vf610-pm-y) mvf_sema4.o
 
 obj-$(CONFIG_SOC_LS1021A) += mach-ls1021a.o
 

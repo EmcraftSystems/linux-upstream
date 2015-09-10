@@ -12,6 +12,15 @@ menuconfig UIO
 
 if UIO
 
+config UIO_DMA
+	tristate "UIO-DMA driver"
+	default n
+	help
+	  Framework for allocating physically contiguous memory blocks
+	  and mapping those memory blocks into user-space.
+
+	  If you don't know what to do here, say N.
+
 config UIO_CIF
 	tristate "generic Hilscher CIF Card driver"
 	depends on PCI
