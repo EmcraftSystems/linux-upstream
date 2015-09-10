@@ -528,7 +528,7 @@
 		};
 
 		usb_hs: usb@40040000 {
-			compatible = "snps,dwc2";
+			compatible = "st,stm32-otg-hs";
 			reg = <0x40040000 0x40000>;
 			interrupts = <77>;
 			clocks = <&rcc 0 29>, <&rcc 0 30>;

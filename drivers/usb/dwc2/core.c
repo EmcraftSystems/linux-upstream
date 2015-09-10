@@ -2559,7 +2559,7 @@ void dwc2_set_param_host_perio_tx_fifo_size(struct dwc2_hsotg *hsotg, int val)
 {
 	int valid = 1;
 
-	if (val < 16 || val > hsotg->hw_params.host_perio_tx_fifo_size)
+	if (val && (val < 16 || val > hsotg->hw_params.host_perio_tx_fifo_size))
 		valid = 0;
 
 	if (!valid) {
