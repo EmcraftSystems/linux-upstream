@@ -307,8 +307,10 @@ static inline bool update_defer_init(pg_data_t *pgdat,
 
 void set_pageblock_migratetype(struct page *page, int migratetype)
 {
+#ifdef CONFIG_MMU
 	if (unlikely(page_group_by_mobility_disabled &&
 		     migratetype < MIGRATE_PCPTYPES))
+#endif
 		migratetype = MIGRATE_UNMOVABLE;
 
 	set_pageblock_flags_group(page, (unsigned long)migratetype,
