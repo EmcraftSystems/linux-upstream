@@ -1083,7 +1083,13 @@ static int stm32_init_port(struct stm32_port *stm32port,
 	if (!stm32port->port.uartclk)
 		ret = -EINVAL;
 
+	/*
+	 * Don't stop clocks if early printk is on, to avoid locking in
+	 * one of waituart()/busyuart() polls.
+	 */
+#ifndef CONFIG_EARLY_PRINTK
 	clk_disable_unprepare(stm32port->clk);
+#endif
 
 	return ret;
 }
