@@ -390,6 +390,14 @@
 			status = "disabled";
 		};
 
+		rtc: rtc@40002800 {
+			compatible = "st,stm32f4-rtc";
+			reg = <0x40002800 0x400>;
+			interrupts = <3>, <41>;
+			interrupt-names = "wakeup", "alarm";
+			status = "disabled";
+		};
+
 		usart3: serial@40004800 {
 			compatible = "st,stm32-usart", "st,stm32-uart";
 			reg = <0x40004800 0x400>;
@@ -412,6 +420,12 @@
 			interrupts = <53>;
 			clocks = <&rcc 0 148>;
 			status = "disabled";
+		};
+
+		pwr: pwr@40007000 {
+			compatible = "st,stm32-pwr", "syscon";
+			reg = <0x40007000 0x400>;
+			clocks = <&rcc 0 156>;
 		};
 
 		usart7: serial@40007800 {
@@ -455,6 +469,11 @@
 			reg = <0x40013800 0x24>;
 		};
 
+		exti: exti@40013C00 {
+			compatible = "st,stm32-exti", "syscon";
+			reg = <0x40013C00 0x400>;
+		};
+
 		ltdc: ltdc@40016800 {
 			display = <&display0>;
 			compatible = "st,stm32f4-ltdc";
@@ -491,7 +510,7 @@
 
 		rcc: rcc@40023810 {
 			#clock-cells = <2>;
-			compatible = "st,stm32f42xx-rcc";
+			compatible = "st,stm32f42xx-rcc", "syscon";
 			reg = <0x40023800 0x400>;
 			clocks = <&clk_hse>;
 		};

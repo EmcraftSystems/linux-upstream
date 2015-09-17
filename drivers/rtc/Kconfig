@@ -1465,6 +1465,14 @@ config RTC_DRV_LPC32XX
 	  This driver can also be buillt as a module. If so, the module
 	  will be called rtc-lpc32xx.
 
+config RTC_DRV_STM32
+	depends on ARCH_STM32
+	depends on OF
+	select MFD_SYSCON
+	tristate "STM32 On-chip RTC"
+	help
+	  This enables support for the StMicro RTC in STM32
+
 config RTC_DRV_PM8XXX
 	tristate "Qualcomm PMIC8XXX RTC"
 	depends on MFD_PM8XXX || MFD_SPMI_PMIC
