@@ -89,6 +89,7 @@ struct kszphy_priv {
 	bool rmii_ref_clk_sel;
 	bool rmii_ref_clk_sel_val;
 	struct gpio_desc *enable_gpio;
+	bool force_rmii_mode;
 };
 
 static const struct kszphy_type ksz8021_type = {
@@ -272,6 +273,16 @@ static int kszphy_config_init(struct phy_device *phydev)
 
 	if (priv->enable_gpio)
 		gpiod_set_value(priv->enable_gpio, 1);
+
+	if (priv->force_rmii_mode) {
+		ret = phy_read(phydev, MII_KSZPHY_OMSO);
+		if (ret < 0 ||
+			(ret = phy_write(phydev, MII_KSZPHY_OMSO,
+				ret | KSZPHY_OMSO_RMII_OVERRIDE)) < 0) {
+			dev_err(&phydev->dev, "failed to force rmii mode\n");
+			return ret;
+		}
+	}
 
 	if (priv->rmii_ref_clk_sel) {
 		ret = kszphy_rmii_clk_sel(phydev, priv->rmii_ref_clk_sel_val);
@@ -580,6 +591,8 @@ static int kszphy_probe(struct phy_device *phydev)
 			"enable", GPIOD_OUT_HIGH);
 	if (IS_ERR(priv->enable_gpio))
 		return IS_ERR(priv->enable_gpio);
+
+	priv->force_rmii_mode = of_property_read_bool(np, "force-rmii-mode");
 
 	clk = devm_clk_get(&phydev->dev, "rmii-ref");
 	/* NOTE: clk may be NULL if building without CONFIG_HAVE_CLK */
