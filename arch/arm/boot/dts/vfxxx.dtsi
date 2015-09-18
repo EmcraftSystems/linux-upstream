@@ -29,6 +29,16 @@
 		gpio4 = &gpio4;
 		usbphy0 = &usbphy0;
 		usbphy1 = &usbphy1;
+		esdhc0 = &esdhc0;
+		esdhc1 = &esdhc1;
+		i2c0 = &i2c0;
+		i2c1 = &i2c1;
+		i2c2 = &i2c2;
+		i2c3 = &i2c3;
+		spi0 = &dspi0;
+		spi1 = &dspi1;
+		spi2 = &dspi2;
+		spi3 = &dspi3;
 	};
 
 	fxosc: fxosc {
@@ -50,11 +60,27 @@
 		mask = <0x1000>;
 	};
 
+	ocram0: sram@3f000000 {
+		compatible = "mmio-sram";
+		reg = <0x3f000000 0x40000>;
+	};
+
+	pm: pm {
+		compatible = "pm-vf610";
+		clocks = <&clks VF610_CLK_SYS_SEL>, <&clks VF610_CLK_FASK_CLK_SEL>;
+		clock-names = "sys-sel", "sys-sel-suspend";
+	};
+
+	ddrmc0: ddrmc@400ae000 {
+		compatible = "emcraft,ddrmc";
+		reg = <0x400ae000 0x1000>;
+	};
+
 	soc {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		compatible = "simple-bus";
-		interrupt-parent = <&mscm_ir>;
+		interrupt-parent = <&gpc>;
 		ranges;
 
 		aips0: aips-bus@40000000 {
@@ -66,6 +92,23 @@
 			mscm_cpucfg: cpucfg@40001000 {
 				compatible = "fsl,vf610-mscm-cpucfg", "syscon";
 				reg = <0x40001000 0x800>;
+			};
+
+			global_timer: timer@40002200 {
+				compatible = "arm,cortex-a9-global-timer";
+				reg = <0x40002200 0x20>;
+				interrupts = <11 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-parent = <&intc>;
+				clocks = <&clks VF610_CLK_PLATFORM_BUS>;
+			};
+
+			intc: interrupt-controller@40002000 {
+				compatible = "arm,cortex-a9-gic";
+				#interrupt-cells = <3>;
+				interrupt-controller;
+				interrupt-parent = <&intc>;
+				reg = <0x40003000 0x1000>,
+				      <0x40002100 0x100>;
 			};
 
 			mscm_ir: interrupt-controller@40001800 {
@@ -86,6 +129,14 @@
 						<3 IRQ_TYPE_LEVEL_HIGH>;
 					interrupt-names = "int0", "int1", "int2", "int3";
 				};
+			};
+
+			gpc: gpc@4006c000 {
+				compatible = "fsl,vf610-gpc";
+				reg = <0x4006c000 0x1000>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				interrupt-parent = <&mscm_ir>;
 			};
 
 			edma0: dma-controller@40018000 {
