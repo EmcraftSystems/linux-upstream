@@ -68,23 +68,6 @@
 #define BM_LPMR_RUN			0x0
 #define BM_LPMR_STOP			0x2
 
-#define ANATOP_PLL1_CTRL		0x270
-#define ANATOP_PLL2_CTRL		0x30
-#define ANATOP_PLL2_PFD			0x100
-#define ANATOP_PLL3_CTRL		0x10
-#define ANATOP_PLL4_CTRL		0x70
-#define ANATOP_PLL5_CTRL		0xe0
-#define ANATOP_PLL6_CTRL		0xa0
-#define ANATOP_PLL7_CTRL		0x10
-#define ANATOP_REG_1P1			0x110
-#define ANATOP_REG_3P0			0x120
-#define ANATOP_REG_2P5			0x130
-#define BM_PLL_POWERDOWN		(0x1 << 12)
-#define BM_PLL_ENABLE			(0x1 << 13)
-#define BM_PLL_BYPASS			(0x1 << 16)
-#define BM_PLL_LOCK			(0x1 << 31)
-#define BM_PLL_PFD2_CLKGATE		(0x1 << 15)
-
 #define VF610_SUSPEND_OCRAM_SIZE	0x4000
 
 struct vf610_pm_base {
@@ -103,7 +86,7 @@ struct vf610_cpu_pm_info {
 	struct vf610_pm_base gpc_base;
 	struct vf610_pm_base mscm_base;
 	struct vf610_pm_base ddrmc_base;
-	struct vf610_pm_base l2_base;
+	struct vf610_pm_base iomuxc_base;
 	u32 ccm_ccsr;
 	struct clk *sys_sel_clk;
 	struct clk *sys_sel_clk_active;
@@ -120,9 +103,9 @@ enum vf610_cpu_pwr_mode {
 static void __iomem *ccm_base;
 static void __iomem *suspend_ocram_base;
 
-static void (*suspend_in_iram)(suspend_state_t state,
-			       unsigned long iram_paddr,
-			       unsigned long suspend_iram_base) = NULL;
+static u32 (*suspend_in_iram)(suspend_state_t state,
+			      unsigned long iram_paddr,
+			      unsigned long suspend_iram_base) = NULL;
 
 extern void mvf_suspend(suspend_state_t state);
 
@@ -133,6 +116,7 @@ struct vf610_pm_socdata {
 	const char *mscm_compat;
 	const char *ccm_compat;
 	const char *ddrmc_compat;
+	const char *iomuxc_compat;
 };
 
 static const struct vf610_pm_socdata vf610_pm_data __initconst = {
@@ -142,17 +126,8 @@ static const struct vf610_pm_socdata vf610_pm_data __initconst = {
 	.mscm_compat	= "fsl,vf610-mscm-ir",
 	.ccm_compat	= "fsl,vf610-ccm",
 	.ddrmc_compat	= "emcraft,ddrmc",
+	.iomuxc_compat	= "fsl,vf610-iomuxc",
 };
-
-static void vf610_set(void __iomem *pll_base, u32 mask)
-{
-	writel_relaxed(readl_relaxed(pll_base) | mask, pll_base);
-}
-
-static void vf610_clr(void __iomem *pll_base, u32 mask)
-{
-	writel_relaxed(readl_relaxed(pll_base) & ~mask, pll_base);
-}
 
 static void uarts_reconfig(void)
 {
@@ -174,7 +149,6 @@ static void uarts_reconfig(void)
 int vf610_set_lpm(enum vf610_cpu_pwr_mode mode)
 {
 	struct vf610_cpu_pm_info *pm_info = suspend_ocram_base;
-	void __iomem *anatop	= pm_info->anatop_base.vbase;
 	void __iomem *gpc_base	= pm_info->gpc_base.vbase;
 	u32 ccr		= readl_relaxed(ccm_base + CCR);
 	u32 ccsr	= readl_relaxed(ccm_base + CCSR);
@@ -183,16 +157,19 @@ int vf610_set_lpm(enum vf610_cpu_pwr_mode mode)
 
 	switch (mode) {
 	case VF610_STOP:
-		cclpcr &= ~BM_CLPCR_ANADIG_STOP_MODE;
+		cclpcr |= BM_CLPCR_ANADIG_STOP_MODE;
 		cclpcr &= ~BM_CLPCR_ARM_CLK_DIS_ON_LPM;
 		cclpcr &= ~BM_CLPCR_SBYOS;
+		cclpcr |= BM_CLPCR_MASK_SCU_IDLE;
+		cclpcr |= BM_CLPCR_MASK_L2CC_IDLE;
+		cclpcr &= ~BM_CLPCR_MASK_CORE1_WFI;
+		cclpcr &= ~BM_CLPCR_MASK_CORE0_WFI;
 		writel_relaxed(cclpcr, ccm_base + CLPCR);
 
 		gpc_pgcr |= BM_PGCR_DS_STOP;
 		gpc_pgcr |= BM_PGCR_HP_OFF;
 		writel_relaxed(gpc_pgcr, gpc_base + GPC_PGCR);
 
-		writel_relaxed(BM_LPMR_STOP, gpc_base + GPC_LPMR);
 		/* fall-through */
 	case VF610_LP_RUN:
 		/* Store clock settings */
@@ -200,13 +177,8 @@ int vf610_set_lpm(enum vf610_cpu_pwr_mode mode)
 
 		ccr |= BM_CCR_FIRC_EN;
 		writel_relaxed(ccr, ccm_base + CCR);
-
-		/* Switch internal OSC's */
 		ccsr &= ~BM_CCSR_FAST_CLK_SEL;
 		ccsr &= ~BM_CCSR_SLOW_CLK_SEL;
-
-		/* Select PLL2 as DDR clock */
-		ccsr &= ~BM_CCSR_DDRC_CLK_SEL;
 		writel_relaxed(ccsr, ccm_base + CCSR);
 
 		if (!IS_ERR(pm_info->sys_sel_clk) && !IS_ERR(pm_info->sys_sel_clk_suspend)) {
@@ -216,14 +188,10 @@ int vf610_set_lpm(enum vf610_cpu_pwr_mode mode)
 
 		break;
 	case VF610_RUN:
-		/* Restore clock settings */
 		if (!IS_ERR(pm_info->sys_sel_clk) && !IS_ERR(pm_info->sys_sel_clk_active)) {
 			clk_set_parent(pm_info->sys_sel_clk, pm_info->sys_sel_clk_active);
 			uarts_reconfig();
 		}
-		/* Disable PLL2 if not needed */
-		if (pm_info->ccm_ccsr & BM_CCSR_DDRC_CLK_SEL)
-			vf610_set(anatop + ANATOP_PLL2_CTRL, BM_PLL_POWERDOWN);
 
 		writel_relaxed(BM_LPMR_RUN, gpc_base + GPC_LPMR);
 		break;
@@ -234,10 +202,28 @@ int vf610_set_lpm(enum vf610_cpu_pwr_mode mode)
 	return 0;
 }
 
-static int vf610_pm_enter(suspend_state_t state)
+static int vf610_suspend_finish(unsigned long val)
 {
 	struct vf610_cpu_pm_info *pm_info = suspend_ocram_base;
 
+	local_flush_tlb_all();
+	flush_cache_all();
+
+	local_fiq_disable();
+
+	outer_flush_all();
+	outer_disable();
+
+	suspend_in_iram(PM_SUSPEND_MEM, (unsigned long)pm_info->pbase, (unsigned long)suspend_ocram_base);
+
+	outer_resume();
+
+	return 0;
+}
+
+
+static int vf610_pm_enter(suspend_state_t state)
+{
 	switch (state) {
 	case PM_SUSPEND_STANDBY:
 		vf610_set_lpm(VF610_STOP);
@@ -250,10 +236,7 @@ static int vf610_pm_enter(suspend_state_t state)
 	case PM_SUSPEND_MEM:
 		vf610_set_lpm(VF610_STOP);
 
-		local_flush_tlb_all();
-		flush_cache_all();
-
-		suspend_in_iram(state, (unsigned long)pm_info->pbase, (unsigned long)suspend_ocram_base);
+		cpu_suspend(0, vf610_suspend_finish);
 
 		vf610_set_lpm(VF610_RUN);
 		break;
@@ -395,6 +378,12 @@ static int __init vf610_suspend_init(const struct vf610_pm_socdata *socdata)
 	ret = imx_pm_get_base(&pm_info->ddrmc_base, socdata->ddrmc_compat);
 	if (ret) {
 		pr_warn("%s: failed to get ddrmc base %d!\n", __func__, ret);
+		goto gpc_map_failed;
+	}
+
+	ret = imx_pm_get_base(&pm_info->iomuxc_base, socdata->iomuxc_compat);
+	if (ret) {
+		pr_warn("%s: failed to get iomuxc base %d!\n", __func__, ret);
 		goto gpc_map_failed;
 	}
 
