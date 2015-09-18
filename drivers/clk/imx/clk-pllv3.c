@@ -53,7 +53,7 @@ struct clk_pllv3 {
 
 static int clk_pllv3_wait_lock(struct clk_pllv3 *pll)
 {
-	unsigned long timeout = jiffies + msecs_to_jiffies(10);
+	int timeout = 10000;
 	u32 val = readl_relaxed(pll->base) & pll->powerdown;
 
 	/* No need to wait for lock when pll is not powered up */
@@ -62,14 +62,10 @@ static int clk_pllv3_wait_lock(struct clk_pllv3 *pll)
 
 	/* Wait for PLL to lock */
 	do {
-		if (readl_relaxed(pll->base) & BM_PLL_LOCK)
-			break;
-		if (time_after(jiffies, timeout))
-			break;
-		usleep_range(50, 500);
-	} while (1);
+		val = readl_relaxed(pll->base);
+	} while (!(val & BM_PLL_LOCK) && --timeout);
 
-	return readl_relaxed(pll->base) & BM_PLL_LOCK ? 0 : -ETIMEDOUT;
+	return (val & BM_PLL_LOCK) ? 0 : -ETIMEDOUT;
 }
 
 static int clk_pllv3_prepare(struct clk_hw *hw)
