@@ -1260,8 +1260,15 @@ static int serial_imx_suspend(struct device *dev)
 {
 	struct imx_port *sport = dev_get_drvdata(dev);
 
-	if (sport)
+	if (sport) {
+		struct tty_struct *tty = tty_port_tty_get(&sport->port.state->port);
+		int may_wakeup = (tty ? device_may_wakeup(tty->dev) : 0);
+
 		uart_suspend_port(&imx_reg, &sport->port);
+
+		if (!may_wakeup)
+			clk_disable_unprepare(sport->clk);
+	}
 
 	return 0;
 }
@@ -1270,8 +1277,15 @@ static int serial_imx_resume(struct device *dev)
 {
 	struct imx_port *sport = dev_get_drvdata(dev);
 
-	if (sport)
+	if (sport) {
+		struct tty_struct *tty = tty_port_tty_get(&sport->port.state->port);
+		int may_wakeup = (tty ? device_may_wakeup(tty->dev) : 0);
+
+		if (!may_wakeup)
+			clk_prepare_enable(sport->clk);
+
 		uart_resume_port(&imx_reg, &sport->port);
+	}
 
 	return 0;
 }
