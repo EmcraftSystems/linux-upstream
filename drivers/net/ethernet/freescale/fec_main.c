@@ -1845,8 +1845,11 @@ static int fec_enet_clk_enable(struct net_device *ndev, bool enable)
 	struct fec_enet_private *fep = netdev_priv(ndev);
 	int ret;
 
-	if (enable) {
+	if (enable && !fep->main_clk_on) {
 		ret = clk_prepare_enable(fep->clk_ahb);
+		if (ret)
+			return ret;
+		ret = clk_prepare_enable(fep->clk_ipg);
 		if (ret)
 			return ret;
 		if (fep->clk_enet_out) {
@@ -1870,7 +1873,9 @@ static int fec_enet_clk_enable(struct net_device *ndev, bool enable)
 			if (ret)
 				goto failed_clk_ref;
 		}
-	} else {
+		fep->main_clk_on = true;
+	} else if (!enable && fep->main_clk_on) {
+		clk_disable_unprepare(fep->clk_ipg);
 		clk_disable_unprepare(fep->clk_ahb);
 		if (fep->clk_enet_out)
 			clk_disable_unprepare(fep->clk_enet_out);
@@ -1882,6 +1887,7 @@ static int fec_enet_clk_enable(struct net_device *ndev, bool enable)
 		}
 		if (fep->clk_ref)
 			clk_disable_unprepare(fep->clk_ref);
+		fep->main_clk_on = false;
 	}
 
 	return 0;
@@ -1895,6 +1901,7 @@ failed_clk_ptp:
 failed_clk_enet_out:
 		clk_disable_unprepare(fep->clk_ahb);
 
+	fep->main_clk_on = false;
 	return ret;
 }
 
@@ -3459,10 +3466,6 @@ fec_probe(struct platform_device *pdev)
 	if (ret)
 		goto failed_clk;
 
-	ret = clk_prepare_enable(fep->clk_ipg);
-	if (ret)
-		goto failed_clk_ipg;
-
 	fep->reg_phy = devm_regulator_get(&pdev->dev, "phy");
 	if (!IS_ERR(fep->reg_phy)) {
 		ret = regulator_enable(fep->reg_phy);
@@ -3544,7 +3547,6 @@ failed_init:
 		regulator_disable(fep->reg_phy);
 failed_regulator:
 	clk_disable_unprepare(fep->clk_ipg);
-failed_clk_ipg:
 	fec_enet_clk_enable(ndev, false);
 failed_clk:
 failed_phy:
@@ -3657,6 +3659,8 @@ static int __maybe_unused fec_resume(struct device *dev)
 		netif_device_attach(ndev);
 		netif_tx_unlock_bh(ndev);
 		napi_enable(&fep->napi);
+		phy_init_hw(fep->phy_dev);
+		phy_start_aneg(fep->phy_dev);
 		phy_start(fep->phy_dev);
 	}
 	rtnl_unlock();
@@ -3672,19 +3676,15 @@ failed_clk:
 static int __maybe_unused fec_runtime_suspend(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
-	struct fec_enet_private *fep = netdev_priv(ndev);
 
-	clk_disable_unprepare(fep->clk_ipg);
-
-	return 0;
+	return fec_enet_clk_enable(ndev, false);
 }
 
 static int __maybe_unused fec_runtime_resume(struct device *dev)
 {
 	struct net_device *ndev = dev_get_drvdata(dev);
-	struct fec_enet_private *fep = netdev_priv(ndev);
 
-	return clk_prepare_enable(fep->clk_ipg);
+	return fec_enet_clk_enable(ndev, true);
 }
 
 static const struct dev_pm_ops fec_pm_ops = {
