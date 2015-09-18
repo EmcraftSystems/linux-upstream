@@ -152,9 +152,8 @@ struct dcu_fb_data {
 	u32 bits_per_pixel;
 	bool pixclockpol;
 	struct completion vsync_wait;
-	int lcd_enable_gpio;
-	int lcd_backlight_gpio;
-	int lcd_backlight_gpio_active_low;
+	struct gpio_desc *lcd_enable_gpio;
+	struct gpio_desc *lcd_backlight_gpio;
 };
 
 struct layer_display_offset {
@@ -1002,18 +1001,18 @@ static irqreturn_t fsl_dcu_irq(int irq, void *dev_id)
 
 static void fsl_dcu_turn_on_lcd(struct dcu_fb_data *dcufb)
 {
-	if (gpio_is_valid(dcufb->lcd_enable_gpio))
-		gpio_set_value(dcufb->lcd_enable_gpio, 1);
-	if (gpio_is_valid(dcufb->lcd_backlight_gpio))
-		gpio_set_value(dcufb->lcd_backlight_gpio, !dcufb->lcd_backlight_gpio_active_low);
+	if (dcufb->lcd_enable_gpio)
+		gpiod_set_value(dcufb->lcd_enable_gpio, 1);
+	if (dcufb->lcd_backlight_gpio)
+		gpiod_set_value(dcufb->lcd_backlight_gpio, 1);
 }
 
 static void fsl_dcu_turn_off_lcd(struct dcu_fb_data *dcufb)
 {
-	if (gpio_is_valid(dcufb->lcd_enable_gpio))
-		gpio_set_value(dcufb->lcd_enable_gpio, 0);
-	if (gpio_is_valid(dcufb->lcd_backlight_gpio))
-		gpio_set_value(dcufb->lcd_backlight_gpio, dcufb->lcd_backlight_gpio_active_low);
+	if (dcufb->lcd_enable_gpio)
+		gpiod_set_value(dcufb->lcd_enable_gpio, 0);
+	if (dcufb->lcd_backlight_gpio)
+		gpiod_set_value(dcufb->lcd_backlight_gpio, 0);
 }
 
 #ifdef CONFIG_PM_RUNTIME
@@ -1131,7 +1130,6 @@ static int fsl_dcu_probe(struct platform_device *pdev)
 	int ret = 0;
 	int i;
 	char *option = NULL;
-	int lcd_en_gpio = -1, lcd_backlight_gpio = -1;
 	struct device_node *node = pdev->dev.of_node;
 
 	fb_get_options("dcufb", &option);
@@ -1232,37 +1230,21 @@ static int fsl_dcu_probe(struct platform_device *pdev)
 			goto failed_alloc_framebuffer;
 	}
 
-	lcd_en_gpio = of_get_named_gpio(node, "lcd-en-gpios", 0);
-	if (gpio_is_valid(lcd_en_gpio)) {
-		ret = devm_gpio_request_one(&pdev->dev, lcd_en_gpio,
-					    GPIOF_OUT_INIT_HIGH, "lcd_enable");
-
-		if (ret) {
-			dev_err(&pdev->dev, "Failed to request LCD nReset GPIO (%d): %d\n",
-				lcd_en_gpio, ret);
-			goto failed_alloc_framebuffer;
-		}
+	dcufb->lcd_enable_gpio = devm_gpiod_get_optional(&pdev->dev,
+							 "lcd-en", GPIOD_OUT_HIGH);
+	if (IS_ERR(dcufb->lcd_enable_gpio)) {
+		dev_info(&pdev->dev, "Operating without lcd_enable gpio: %li\n",
+			 PTR_ERR(dcufb->lcd_enable_gpio));
+		dcufb->lcd_enable_gpio = NULL;
 	}
 
-	lcd_backlight_gpio = of_get_named_gpio(node, "lcd-backlight-gpios", 0);
-	if (gpio_is_valid(lcd_backlight_gpio)) {
-		int flags = 0;
-		of_get_named_gpio_flags(node, "lcd-backlight-gpios", 0, &flags);
-		dcufb->lcd_backlight_gpio_active_low = flags & OF_GPIO_ACTIVE_LOW;
-
-		ret = devm_gpio_request_one(&pdev->dev, lcd_backlight_gpio,
-					    dcufb->lcd_backlight_gpio_active_low ?
-					    GPIOF_OUT_INIT_LOW : GPIOF_OUT_INIT_HIGH,
-					    "lcd_backlight");
-		if (ret) {
-			dev_err(&pdev->dev, "Failed to request LCD backlight GPIO (%d): %d\n",
-				lcd_backlight_gpio, ret);
-			goto failed_alloc_framebuffer;
-		}
+	dcufb->lcd_backlight_gpio = devm_gpiod_get_optional(&pdev->dev,
+							    "lcd-backlight", GPIOD_OUT_HIGH);
+	if (IS_ERR(dcufb->lcd_backlight_gpio)) {
+		dev_info(&pdev->dev, "Operating without backlight_enable gpio: %li\n",
+			 PTR_ERR(dcufb->lcd_backlight_gpio));
+		dcufb->lcd_backlight_gpio = NULL;
 	}
-
-	dcufb->lcd_enable_gpio = lcd_en_gpio;
-	dcufb->lcd_backlight_gpio = lcd_backlight_gpio;
 
 	fsl_dcu_turn_on_lcd(dcufb);
 
