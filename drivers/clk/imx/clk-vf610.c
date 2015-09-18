@@ -377,7 +377,7 @@ static void __init vf610_clocks_init(struct device_node *ccm_node)
 	clk[VF610_CLK_DAC0] = imx_clk_gate2("dac0", "ipg_bus", CCM_CCGR8, CCM_CCGRx_CGn(12));
 	clk[VF610_CLK_DAC1] = imx_clk_gate2("dac1", "ipg_bus", CCM_CCGR8, CCM_CCGRx_CGn(13));
 
-	clk[VF610_CLK_ASRC] = imx_clk_gate2("asrc", "ipg_bus", CCM_CCGR4, CCM_CCGRx_CGn(1));
+	clk[VF610_CLK_ASRC] = imx_clk_gate2("asrc", "ipg_bus", CCM_CCGR4, CCM_CCGRx_CGn(0));
 
 	clk[VF610_CLK_FLEXCAN0_EN] = imx_clk_gate("flexcan0_en", "ipg_bus", CCM_CSCDR2, 11);
 	clk[VF610_CLK_FLEXCAN0] = imx_clk_gate2("flexcan0", "flexcan0_en", CCM_CCGR0, CCM_CCGRx_CGn(0));
@@ -391,6 +391,21 @@ static void __init vf610_clocks_init(struct device_node *ccm_node)
 
 	clk[VF610_CLK_SNVS] = imx_clk_gate2("snvs-rtc", "ipg_bus", CCM_CCGR6, CCM_CCGRx_CGn(7));
 	clk[VF610_CLK_DAP] = imx_clk_gate("dap", "platform_bus", CCM_CCSR, 24);
+
+	clk[VF610_CLK_WDT_M4] = imx_clk_gate2("wdt_m4", "ipg_bus", CCM_CCGR1, CCM_CCGRx_CGn(15));
+	clk[VF610_CLK_PDB] = imx_clk_gate2("pdb", "ipg_bus", CCM_CCGR1, CCM_CCGRx_CGn(6));
+	clk[VF610_CLK_CRC] = imx_clk_gate2("crc", "ipg_bus", CCM_CCGR1, CCM_CCGRx_CGn(3));
+	clk[VF610_CLK_RLE] = imx_clk_gate2("rle", "ipg_bus", CCM_CCGR2, CCM_CCGRx_CGn(2));
+	clk[VF610_CLK_LPTMR] = imx_clk_gate2("lptmr", "ipg_bus", CCM_CCGR2, CCM_CCGRx_CGn(0));
+	clk[VF610_CLK_WDT_EXTERNAL] = imx_clk_gate2("ewm", "ipg_bus", CCM_CCGR4, CCM_CCGRx_CGn(5));
+	clk[VF610_CLK_TCON1] = imx_clk_gate2("tcon1", "platform_bus", CCM_CCGR7, CCM_CCGRx_CGn(13));
+	clk[VF610_CLK_VIU3] = imx_clk_gate2("viu3", "platform_bus", CCM_CCGR8, CCM_CCGRx_CGn(9));
+	clk[VF610_CLK_VDEC] = imx_clk_gate2("vdec", "platform_bus", CCM_CCGR8, CCM_CCGRx_CGn(8));
+	clk[VF610_CLK_SPDIF] = imx_clk_gate2("spdif", "ipg_bus", CCM_CCGR4, CCM_CCGRx_CGn(1));
+	clk[VF610_CLK_OTP] = imx_clk_gate2("otp", "ipg_bus", CCM_CCGR6, CCM_CCGRx_CGn(5));
+	clk[VF610_CLK_LCD] = imx_clk_gate2("lcd", "ipg_bus", CCM_CCGR7, CCM_CCGRx_CGn(14));
+	clk[VF610_CLK_L2_SWITCH] = imx_clk_gate2("l2_switch", "ipg_bus", CCM_CCGR10, CCM_CCGRx_CGn(8));
+	clk[VF610_CLK_SCSC] = imx_clk_gate2("scsc", "ipg_bus", CCM_CCGR3, CCM_CCGRx_CGn(2));
 
 	imx_check_clocks(clk, ARRAY_SIZE(clk));
 
