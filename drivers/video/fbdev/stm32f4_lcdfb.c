@@ -317,7 +317,7 @@ static void update_lcdc(struct fb_info *info)
 	/* Configure PLLSAI prescalers for LCD */
 	rv = clk_set_rate(fb->pix_clk, PICOS2KHZ(var->pixclock) * 1000);
 	if (rv)
-		dev_warn(dev, "failed set-up proper pix_clk\n");
+		dev_warn(dev, "failed to set-up proper pix_clk\n");
 	clk_prepare_enable(fb->pix_clk);
 
 	/*
@@ -743,7 +743,7 @@ static int fb_probe(struct platform_device *pdev)
 		ret = install_fb(info);
 		if (ret) {
 			dev_err(&pdev->dev,
-				"Failed to register framebuffer %d\n", i);
+				"failed to register framebuffer %d\n", i);
 			goto failed_install_fb;
 		}
 	}
