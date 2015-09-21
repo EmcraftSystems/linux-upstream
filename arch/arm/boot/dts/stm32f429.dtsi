@@ -62,6 +62,9 @@
 		gpio8 = &gpioi;
 		gpio9 = &gpioj;
 		gpio10 = &gpiok;
+		i2c0 = &i2c_1;
+		i2c1 = &i2c_2;
+		i2c2 = &i2c_3;
 		ethernet0 = &mac;
 	};
 
@@ -175,6 +178,39 @@
 						NO_PULL PUSH_PULL LOW_SPEED>;
 					rx = <&gpiof 6 ALT8
 						NO_PULL PUSH_PULL LOW_SPEED>;
+				};
+			};
+		};
+
+		i2c_1 {
+			pinctrl_i2c_1: i2c_1-0 {
+				st,pins {
+					scl = <&gpiob 8 ALT4
+						PULL_UP OPEN_DRAIN LOW_SPEED>;
+					sda = <&gpiob 7 ALT4
+						PULL_UP OPEN_DRAIN LOW_SPEED>;
+				};
+			};
+		};
+
+		i2c_2 {
+			pinctrl_i2c_2: i2c_2-0 {
+				st,pins {
+					scl = <&gpiob 10 ALT4
+						PULL_UP OPEN_DRAIN LOW_SPEED>;
+					sda = <&gpiob 11 ALT4
+						PULL_UP OPEN_DRAIN LOW_SPEED>;
+				};
+			};
+		};
+
+		i2c_3 {
+			pinctrl_i2c_3: i2c_3-0 {
+				st,pins {
+					scl = <&gpioh 7 ALT4
+						PULL_UP OPEN_DRAIN LOW_SPEED>;
+					sda = <&gpioc 9 ALT4
+						PULL_UP OPEN_DRAIN LOW_SPEED>;
 				};
 			};
 		};
@@ -419,6 +455,33 @@
 			reg = <0x40005000 0x400>;
 			interrupts = <53>;
 			clocks = <&rcc 0 148>;
+			status = "disabled";
+		};
+
+		i2c_1: i2c@40005400 {
+			compatible = "st,stm32-i2c";
+			reg = <0x40005400 0x400>;
+			interrupts = <31 32>;
+			clocks = <&rcc 0 149>;
+			resets = <&rst STM32F4_APB1_RESET(I2C1)>;
+			status = "disabled";
+		};
+
+		i2c_2: i2c@40005800 {
+			compatible = "st,stm32-i2c";
+			reg = <0x40005800 0x400>;
+			interrupts = <33 34>;
+			clocks = <&rcc 0 150>;
+			resets = <&rst STM32F4_APB1_RESET(I2C2)>;
+			status = "disabled";
+		};
+
+		i2c_3: i2c@40005C00 {
+			compatible = "st,stm32-i2c";
+			reg = <0x40005C00 0x400>;
+			interrupts = <72 73>;
+			clocks = <&rcc 0 151>;
+			resets = <&rst STM32F4_APB1_RESET(I2C3)>;
 			status = "disabled";
 		};
 
