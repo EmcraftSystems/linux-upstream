@@ -65,6 +65,12 @@
 		i2c0 = &i2c_1;
 		i2c1 = &i2c_2;
 		i2c2 = &i2c_3;
+		spi0 = &spi_1;
+		spi1 = &spi_2;
+		spi2 = &spi_3;
+		spi3 = &spi_4;
+		spi4 = &spi_5;
+		spi5 = &spi_6;
 		ethernet0 = &mac;
 	};
 
@@ -211,6 +217,45 @@
 						PULL_UP OPEN_DRAIN LOW_SPEED>;
 					sda = <&gpioc 9 ALT4
 						PULL_UP OPEN_DRAIN LOW_SPEED>;
+				};
+			};
+		};
+
+		spi_2 {
+			pinctrl_spi_2: spi_2-0 {
+				st,pins {
+					clk = <&gpioi 1 ALT5
+						PULL_UP PUSH_PULL FAST_SPEED>;
+					di = <&gpiob 14 ALT5
+						PULL_UP PUSH_PULL FAST_SPEED>;
+					do = <&gpiob 15 ALT5
+						PULL_UP PUSH_PULL FAST_SPEED>;
+				};
+			};
+		};
+
+		spi_4 {
+			pinctrl_spi_4: spi_4-0 {
+				st,pins {
+					clk = <&gpioe 2 ALT5
+						PULL_UP PUSH_PULL FAST_SPEED>;
+					di = <&gpioe 5 ALT5
+						PULL_UP PUSH_PULL FAST_SPEED>;
+					do = <&gpioe 6 ALT5
+						PULL_UP PUSH_PULL FAST_SPEED>;
+				};
+			};
+		};
+
+		spi_5 {
+			pinctrl_spi_5: spi_5-0 {
+				st,pins {
+					clk = <&gpioh 6 ALT5
+						PULL_UP PUSH_PULL FAST_SPEED>;
+					di = <&gpiof 8 ALT5
+						PULL_UP PUSH_PULL FAST_SPEED>;
+					do = <&gpiof 9 ALT5
+						PULL_UP PUSH_PULL FAST_SPEED>;
 				};
 			};
 		};
@@ -434,6 +479,26 @@
 			status = "disabled";
 		};
 
+		spi_2: spi@40003800 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "st,stm32f4-spi";
+			reg = <0x40003800 0x400>;
+			interrupts = <36>;
+			clocks = <&rcc 0 142>;
+			resets = <&rst STM32F4_APB1_RESET(SPI2)>;
+			status = "disabled";
+		};
+
+		spi_3: spi@40003c00 {
+			compatible = "st,stm32f4-spi";
+			reg = <0x40003c00 0x400>;
+			interrupts = <51>;
+			clocks = <&rcc 0 143>;
+			resets = <&rst STM32F4_APB1_RESET(SPI3)>;
+			status = "disabled";
+		};
+
 		usart3: serial@40004800 {
 			compatible = "st,stm32-usart", "st,stm32-uart";
 			reg = <0x40004800 0x400>;
@@ -527,6 +592,24 @@
 			status = "disabled";
 		};
 
+		spi_1: spi@40013000 {
+			compatible = "st,stm32f4-spi";
+			reg = <0x40013000 0x400>;
+			interrupts = <35>;
+			clocks = <&rcc 0 172>;
+			resets = <&rst STM32F4_APB2_RESET(SPI1)>;
+			status = "disabled";
+		};
+
+		spi_4: spi@40013400 {
+			compatible = "st,stm32f4-spi";
+			reg = <0x40013400 0x400>;
+			interrupts = <84>;
+			clocks = <&rcc 0 173>;
+			resets = <&rst STM32F4_APB2_RESET(SPI4)>;
+			status = "disabled";
+		};
+
 		syscfg: syscon@40013800 {
 			compatible = "st,stm32-syscfg", "syscon";
 			reg = <0x40013800 0x24>;
@@ -535,6 +618,24 @@
 		exti: exti@40013C00 {
 			compatible = "st,stm32-exti", "syscon";
 			reg = <0x40013C00 0x400>;
+		};
+
+		spi_5: spi@40015000 {
+			compatible = "st,stm32f4-spi";
+			reg = <0x40015000 0x400>;
+			interrupts = <85>;
+			clocks = <&rcc 0 180>;
+			resets = <&rst STM32F4_APB2_RESET(SPI5)>;
+			status = "disabled";
+		};
+
+		spi_6: spi@40015400 {
+			compatible = "st,stm32f4-spi";
+			reg = <0x40015400 0x400>;
+			interrupts = <86>;
+			clocks = <&rcc 0 181>;
+			resets = <&rst STM32F4_APB2_RESET(SPI6)>;
+			status = "disabled";
 		};
 
 		ltdc: ltdc@40016800 {
