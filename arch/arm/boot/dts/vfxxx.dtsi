@@ -432,7 +432,18 @@
 				#clock-cells = <1>;
 			};
 
-			usbdev0: usb@40034000 {
+			usbh0: usbh@40034000 {
+				compatible = "fsl,vf610-usb", "fsl,imx27-usb";
+				reg = <0x40034000 0x800>;
+				interrupts = <75 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&clks VF610_CLK_USBC0>;
+				fsl,usbphy = <&usbphy0>;
+				fsl,usbmisc = <&usbmisc0 0>;
+				dr_mode = "host";
+				status = "disabled";
+			};
+
+			usbdev0: usbd@40034000 {
 				compatible = "fsl,vf610-usb", "fsl,imx27-usb";
 				reg = <0x40034000 0x800>;
 				interrupts = <75 IRQ_TYPE_LEVEL_HIGH>;
@@ -443,7 +454,7 @@
 				status = "disabled";
 			};
 
-			usbmisc0: usb@40034800 {
+			usbmisc0: usbm@40034800 {
 				#index-cells = <1>;
 				compatible = "fsl,vf610-usbmisc";
 				reg = <0x40034800 0x200>;
@@ -562,7 +573,7 @@
 				status = "disabled";
 			};
 
-			usbh1: usb@400b4000 {
+			usbh1: usbh@400b4000 {
 				compatible = "fsl,vf610-usb", "fsl,imx27-usb";
 				reg = <0x400b4000 0x800>;
 				interrupts = <76 IRQ_TYPE_LEVEL_HIGH>;
@@ -573,7 +584,18 @@
 				status = "disabled";
 			};
 
-			usbmisc1: usb@400b4800 {
+			usbdev1: usbd@400b4000 {
+				compatible = "fsl,vf610-usb", "fsl,imx27-usb";
+				reg = <0x400b4000 0x800>;
+				interrupts = <76 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&clks VF610_CLK_USBC1>;
+				fsl,usbphy = <&usbphy1>;
+				fsl,usbmisc = <&usbmisc1 0>;
+				dr_mode = "peripheral";
+				status = "disabled";
+			};
+
+			usbmisc1: usbm@400b4800 {
 				#index-cells = <1>;
 				compatible = "fsl,vf610-usbmisc";
 				reg = <0x400b4800 0x200>;
