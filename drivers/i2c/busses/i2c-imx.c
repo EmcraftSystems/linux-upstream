@@ -1109,7 +1109,7 @@ static int i2c_imx_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int i2c_imx_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
@@ -1159,12 +1159,12 @@ static int i2c_imx_resume(struct device *dev)
 
 	return 0;
 }
+#endif /* CONFIG_PM_SLEEP */
 
 static const struct dev_pm_ops i2c_imx_pm_ops = {
-	.suspend = i2c_imx_suspend,
-	.resume = i2c_imx_resume,
+	SET_SYSTEM_SLEEP_PM_OPS(i2c_imx_suspend, i2c_imx_resume)
 };
-#endif /* CONFIG_PM */
+
 
 static struct platform_driver i2c_imx_driver = {
 	.probe = i2c_imx_probe,

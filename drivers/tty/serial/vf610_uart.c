@@ -1256,6 +1256,7 @@ static struct uart_driver imx_reg = {
 	.cons           = IMX_CONSOLE,
 };
 
+#ifdef CONFIG_PM_SLEEP
 static int serial_imx_suspend(struct device *dev)
 {
 	struct imx_port *sport = dev_get_drvdata(dev);
@@ -1289,6 +1290,7 @@ static int serial_imx_resume(struct device *dev)
 
 	return 0;
 }
+#endif /* CONFIG_PM_SLEEP */
 
 static int serial_imx_probe(struct platform_device *pdev)
 {
