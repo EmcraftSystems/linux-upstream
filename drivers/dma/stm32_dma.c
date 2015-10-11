@@ -49,21 +49,35 @@
  */
 #define STM32_INT_TCIF			(1 << 5)
 #define STM32_INT_HTIF			(1 << 4)
-#define STM32_INT_MSK			(STM32_INT_TCIF | STM32_INT_HTIF)
+#define STM32_INT_FEIF			(1 << 0)
+#define STM32_INT_MSK			(STM32_INT_TCIF | STM32_INT_HTIF |     \
+					 STM32_INT_FEIF)
 
 /*
  * CR register bits
  */
 #define STM32_DMA_CR_CHSEL_OFS		25
-#define STM32_DMA_CR_PL_HI		(2 << 16)
+#define STM32_DMA_CR_MBURST_OFS		23
+#define STM32_DMA_CR_PBURST_OFS		21
+#define STM32_DMA_CR_PL_HI		(3 << 16)
+#define STM32_DMA_CR_MSIZE_OFS		13
+#define STM32_DMA_CR_PSIZE_OFS		11
 #define STM32_DMA_CR_MINC		(1 << 10)
 #define STM32_DMA_CR_PINC		(1 << 9)
 #define STM32_DMA_CR_CIRC		(1 << 8)
 #define STM32_DMA_CR_DIR_P2M		(0 << 6)
 #define STM32_DMA_CR_DIR_M2P		(1 << 6)
+#define STM32_DMA_CR_PFCTRL		(1 << 5)
 #define STM32_DMA_CR_TCIE		(1 << 4)
 #define STM32_DMA_CR_HTIE		(1 << 3)
 #define STM32_DMA_CR_EN			(1 << 0)
+
+/*
+ * FCR register bits
+ */
+#define STM32_DMA_FCR_FEIE		(1 << 7)
+#define STM32_DMA_FCR_DMDIS		(1 << 2)
+#define STM32_DMA_FCR_FTH_OFS		0
 
 /******************************************************************************
  * C-types
@@ -125,7 +139,8 @@ struct stm32_dma_chan {
 	struct stm32_dma		*dev;
 	int				idx;
 
-	struct stm32_dma_ch_regs __iomem *regs;
+	struct stm32_dma_ch_regs __iomem *regs;	/* pointer to hw registers    */
+	struct stm32_dma_ch_regs	prep;	/* prepared register values   */
 
 	u32 __iomem			*isr_reg;
 	u32 __iomem			*ifcr_reg;
@@ -298,7 +313,15 @@ static dma_cookie_t stm_tx_submit(struct dma_async_tx_descriptor *tx)
 
 	cookie = dma_cookie_assign(tx);
 	*stm_chan->ifcr_reg = STM32_INT_MSK << stm_chan->i_ofs;
-	stm_chan->regs->cr |= STM32_DMA_CR_EN;
+
+	/*
+	 * Set-up hw using values formed in stm_prep_xxx()
+	 */
+	stm_chan->regs->m0ar = stm_chan->prep.m0ar;
+	stm_chan->regs->par  = stm_chan->prep.par;
+	stm_chan->regs->ndtr = stm_chan->prep.ndtr;
+	stm_chan->regs->fcr  = stm_chan->prep.fcr;
+	stm_chan->regs->cr   = stm_chan->prep.cr | STM32_DMA_CR_EN;
 
 	spin_unlock_irqrestore(&stm_chan->lock, flags);
 
@@ -317,7 +340,7 @@ static dma_cookie_t stm_tx_submit(struct dma_async_tx_descriptor *tx)
 static struct dma_async_tx_descriptor *
 stm_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
 		  unsigned int sg_len, enum dma_transfer_direction direction,
-		   unsigned long flags, void *context)
+		  unsigned long flags, void *context)
 {
 	struct stm32_dma_chan	*stm_chan = to_stm_dma_chan(chan);
 	struct stm32_dma_slave	*stm_slave = chan->private;
@@ -348,19 +371,53 @@ stm_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
 		return NULL;
 	}
 
-	stm_chan->regs->ndtr = len;
-	stm_chan->regs->m0ar = sg_dma_address(sgl);
-	stm_chan->regs->cr = STM32_DMA_CR_PL_HI | STM32_DMA_CR_MINC |
-			     STM32_DMA_CR_TCIE | stm_chan->cr_msk;
+	stm_chan->prep.m0ar = sg_dma_address(sgl);
+	stm_chan->prep.cr = STM32_DMA_CR_PL_HI | STM32_DMA_CR_MINC |
+			    stm_chan->cr_msk;
+
+	if (sconfig->device_fc) {
+		/*
+		 * Flow controller is peripheral. This is the special
+		 * case in STM32, and only SDIO supports this feature.
+		 * Thus we hardcode SDIO requirements here:
+		 * - 4-beats bursts
+		 * - disabled direct mode
+		 * - full FIFO threshold
+		 * - ndtr is ignored (SDIO completes transfer)
+		 */
+		stm_chan->prep.cr |= STM32_DMA_CR_PFCTRL |
+				     (1 << STM32_DMA_CR_MBURST_OFS) |
+				     (1 << STM32_DMA_CR_PBURST_OFS);
+		stm_chan->prep.fcr |= STM32_DMA_FCR_FEIE |
+				      STM32_DMA_FCR_DMDIS |
+				      (3 << STM32_DMA_FCR_FTH_OFS);
+		stm_chan->prep.ndtr = 0;
+	} else {
+		/*
+		 * Flow controller is DMA
+		 */
+		stm_chan->prep.cr |= STM32_DMA_CR_TCIE;
+		stm_chan->prep.ndtr = len;
+	}
 
 	switch (direction) {
 	case DMA_MEM_TO_DEV:
-		stm_chan->regs->par = sconfig->dst_addr;
-		stm_chan->regs->cr |= STM32_DMA_CR_DIR_M2P;
+		stm_chan->prep.par = sconfig->dst_addr;
+		stm_chan->prep.ndtr /= sconfig->dst_addr_width;
+		stm_chan->prep.cr |= STM32_DMA_CR_DIR_M2P |
+				     (__ffs(sconfig->src_addr_width) <<
+				      STM32_DMA_CR_MSIZE_OFS) |
+				     (__ffs(sconfig->dst_addr_width) <<
+				      STM32_DMA_CR_PSIZE_OFS);
 		break;
 	case DMA_DEV_TO_MEM:
-		stm_chan->regs->par = sconfig->src_addr;
-		stm_chan->regs->cr |= STM32_DMA_CR_DIR_P2M;
+		stm_chan->prep.par = sconfig->src_addr;
+		stm_chan->prep.ndtr /= sconfig->src_addr_width;
+		stm_chan->prep.cr |= STM32_DMA_CR_DIR_P2M |
+				     (__ffs(sconfig->src_addr_width) <<
+				      STM32_DMA_CR_PSIZE_OFS) |
+				     (__ffs(sconfig->dst_addr_width) <<
+				      STM32_DMA_CR_MSIZE_OFS);
 		break;
 	default:
 		return NULL;
@@ -409,14 +466,14 @@ stm_prep_dma_cyclic(struct dma_chan *chan, dma_addr_t buf_addr, size_t buf_len,
 		return NULL;
 	}
 
-	stm_chan->regs->ndtr = buf_len;
-	stm_chan->regs->par = sconfig->src_addr;
-	stm_chan->regs->m0ar = buf_addr;
-	stm_chan->regs->cr = STM32_DMA_CR_PL_HI | STM32_DMA_CR_MINC |
+	stm_chan->prep.ndtr = buf_len;
+	stm_chan->prep.par = sconfig->src_addr;
+	stm_chan->prep.m0ar = buf_addr;
+	stm_chan->prep.cr = STM32_DMA_CR_PL_HI | STM32_DMA_CR_MINC |
 			     STM32_DMA_CR_DIR_P2M | STM32_DMA_CR_TCIE |
 			     STM32_DMA_CR_CIRC | stm_chan->cr_msk;
 	if (periods == 2)
-		stm_chan->regs->cr |= STM32_DMA_CR_HTIE;
+		stm_chan->prep.cr |= STM32_DMA_CR_HTIE;
 
 	/* Client is in control of flags ack */
 	stm_chan->txd.cookie = -EBUSY;
