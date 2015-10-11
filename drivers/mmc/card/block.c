@@ -906,6 +906,14 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 		return ERR_NOMEDIUM;
 
 	/*
+	 * Some communication error, e.g. start-bit-error; let's retry to xfer
+	 * once more in this case. Number of MMC_BLK_RETRY retries is limited
+	 * in mmc_blk_issue_rw_rq()
+	 */
+	if (brq->data.error == -ECOMM)
+		return ERR_RETRY;
+
+	/*
 	 * Try to get card status which indicates both the card state
 	 * and why there was no response.  If the first attempt fails,
 	 * we can't be sure the returned status is for the r/w command.
