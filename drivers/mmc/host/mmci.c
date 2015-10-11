@@ -56,11 +56,13 @@ static unsigned int fmax = 515633;
  * @clkreg_8bit_bus_enable: enable value for 8 bit bus
  * @clkreg_neg_edge_enable: enable value for inverted data/cmd output
  * @datalength_bits: number of bits in the MMCIDATALENGTH register
+ * @dma_max_req: if set, then override 'datalength_bits' maximum request size
  * @fifosize: number of bytes that can be written when MMCI_TXFIFOEMPTY
  *	      is asserted (likewise for RX)
  * @fifohalfsize: number of bytes that can be written when MCI_TXFIFOHALFEMPTY
  *		  is asserted (likewise for RX)
  * @data_cmd_enable: enable value for data commands.
+ * @req_end_udelay: usec to insert before access MMCICMD reg upon req completion
  * @st_sdio: enable ST specific SDIO logic
  * @st_clkdiv: true if using a ST-specific clock divider algorithm
  * @datactrl_mask_ddrmode: ddr mode mask in datactrl register.
@@ -78,6 +80,9 @@ static unsigned int fmax = 515633;
  * @qcom_fifo: enables qcom specific fifo pio read logic.
  * @qcom_dml: enables qcom specific dma glue for dma transfers.
  * @reversed_irq_handling: handle data irq before cmd irq.
+ * @flow_controller: true if can act as flow-controller in DMA transfers.
+ * @no_sgio: true if DMA doesn't support SGIO
+ * @no_dma_warns: true if DMA may produce (recoverable) errors during xfer.
  */
 struct variant_data {
 	unsigned int		clkreg;
@@ -85,11 +90,13 @@ struct variant_data {
 	unsigned int		clkreg_8bit_bus_enable;
 	unsigned int		clkreg_neg_edge_enable;
 	unsigned int		datalength_bits;
+	unsigned int		dma_max_req;
 	unsigned int		fifosize;
 	unsigned int		fifohalfsize;
 	unsigned int		data_cmd_enable;
 	unsigned int		datactrl_mask_ddrmode;
 	unsigned int		datactrl_mask_sdio;
+	unsigned int		req_end_udelay;
 	bool			st_sdio;
 	bool			st_clkdiv;
 	bool			blksz_datactrl16;
@@ -104,6 +111,9 @@ struct variant_data {
 	bool			qcom_fifo;
 	bool			qcom_dml;
 	bool			reversed_irq_handling;
+	bool			flow_controller;
+	bool			no_sgio;
+	bool			no_dma_warns;
 };
 
 static struct variant_data variant_arm = {
@@ -200,6 +210,29 @@ static struct variant_data variant_ux500v2 = {
 	.pwrreg_clkgate		= true,
 	.busy_detect		= true,
 	.pwrreg_nopower		= true,
+};
+
+static struct variant_data variant_stm32f4 = {
+	.fifosize		= 32 * 4,
+	.fifohalfsize		= 8 * 4,
+	.clkreg			= MCI_CLK_ENABLE,
+	.clkreg_8bit_bus_enable = MCI_ST_8BIT_BUS,
+	.clkreg_neg_edge_enable	= MCI_ST_UX500_NEG_EDGE,
+	.datalength_bits	= 24,
+	.dma_max_req		= 262144, /* ((1 << 16) - 1) * 4 */
+	.datactrl_mask_sdio	= MCI_ST_DPSM_SDIOEN,
+	.req_end_udelay		= 1,
+	.st_sdio		= true,
+	.st_clkdiv		= true,
+	.pwrreg_powerup		= MCI_PWR_ON,
+	.f_max			= 100000000,
+	.signal_direction	= true,
+	.pwrreg_clkgate		= true,
+	.busy_detect		= true,
+	.pwrreg_nopower		= true,
+	.flow_controller	= true,
+	.no_sgio		= true,
+	.no_dma_warns		= true,
 };
 
 static struct variant_data variant_qcom = {
@@ -373,6 +406,11 @@ static void mmci_set_clkreg(struct mmci_host *host, unsigned int desired)
 static void
 mmci_request_end(struct mmci_host *host, struct mmc_request *mrq)
 {
+	struct variant_data *variant = host->variant;
+
+	if (variant->req_end_udelay)
+		udelay(variant->req_end_udelay);
+
 	writel(0, host->base + MMCICOMMAND);
 
 	BUG_ON(host->data);
@@ -498,7 +536,11 @@ static inline void mmci_dma_release(struct mmci_host *host)
 
 static void mmci_dma_data_error(struct mmci_host *host)
 {
-	dev_err(mmc_dev(host->mmc), "error during DMA transfer!\n");
+	struct variant_data *variant = host->variant;
+
+	if (likely(!variant->no_dma_warns))
+		dev_err(mmc_dev(host->mmc), "error during DMA transfer!\n");
+
 	dmaengine_terminate_all(host->dma_current);
 	host->dma_current = NULL;
 	host->dma_desc_current = NULL;
@@ -575,7 +617,7 @@ static int __mmci_dma_prep_data(struct mmci_host *host, struct mmc_data *data,
 		.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES,
 		.src_maxburst = variant->fifohalfsize >> 2, /* # of words */
 		.dst_maxburst = variant->fifohalfsize >> 2, /* # of words */
-		.device_fc = false,
+		.device_fc = variant->flow_controller,
 	};
 	struct dma_chan *chan;
 	struct dma_device *device;
@@ -898,7 +940,6 @@ mmci_start_command(struct mmci_host *host, struct mmc_command *cmd, u32 c)
 
 	if (mmc_cmd_type(cmd) == MMC_CMD_ADTC)
 		c |= host->variant->data_cmd_enable;
-
 	host->cmd = cmd;
 
 	writel(cmd->arg, base + MMCIARGUMENT);
@@ -1241,8 +1282,10 @@ static irqreturn_t mmci_irq(int irq, void *dev_id)
 		status = readl(host->base + MMCISTATUS);
 
 		if (host->singleirq) {
-			if (status & readl(host->base + MMCIMASK1))
+			if (status &
+			    (readl(host->base + MMCIMASK0) & MCI_IRQ1MASK)) {
 				mmci_pio_irq(irq, dev_id);
+			}
 
 			status &= ~MCI_IRQ1MASK;
 		}
@@ -1645,16 +1688,19 @@ static int mmci_probe(struct amba_device *dev,
 	mmc->pm_caps |= MMC_PM_KEEP_POWER;
 
 	/*
-	 * We can do SGIO
+	 * If can do SGIO
 	 */
-	mmc->max_segs = NR_SG;
+	mmc->max_segs = !variant->no_sgio ? NR_SG : 1;
 
 	/*
 	 * Since only a certain number of bits are valid in the data length
 	 * register, we must ensure that we don't exceed 2^num-1 bytes in a
 	 * single request.
 	 */
-	mmc->max_req_size = (1 << variant->datalength_bits) - 1;
+	if (unlikely(variant->dma_max_req))
+		mmc->max_req_size = variant->dma_max_req;
+	else
+		mmc->max_req_size = (1 << variant->datalength_bits) - 1;
 
 	/*
 	 * Set the maximum segment size.  Since we aren't doing DMA
@@ -1897,6 +1943,11 @@ static struct amba_id mmci_ids[] = {
 		.id     = 0x10480180,
 		.mask   = 0xf0ffffff,
 		.data	= &variant_ux500v2,
+	},
+	{
+		.id	= 0x40480180,	/* not 'official' value */
+		.mask	= 0xf0ffffff,
+		.data	= &variant_stm32f4,
 	},
 	/* Qualcomm variants */
 	{
