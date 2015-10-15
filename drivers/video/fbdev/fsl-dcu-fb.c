@@ -1007,6 +1007,7 @@ static void fsl_dcu_turn_on_lcd(struct dcu_fb_data *dcufb)
 		gpiod_set_value(dcufb->lcd_backlight_gpio, 1);
 }
 
+#ifdef CONFIG_PM_SLEEP
 static void fsl_dcu_turn_off_lcd(struct dcu_fb_data *dcufb)
 {
 	if (dcufb->lcd_enable_gpio)
@@ -1014,6 +1015,7 @@ static void fsl_dcu_turn_off_lcd(struct dcu_fb_data *dcufb)
 	if (dcufb->lcd_backlight_gpio)
 		gpiod_set_value(dcufb->lcd_backlight_gpio, 0);
 }
+#endif /* CONFIG_PM_SLEEP */
 
 #ifdef CONFIG_PM_RUNTIME
 static int fsl_dcu_runtime_suspend(struct device *dev)

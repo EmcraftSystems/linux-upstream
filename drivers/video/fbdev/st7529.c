@@ -1,9 +1,8 @@
 /*
- * Copyright 2015 EmCraft Systems
- *
- * Sergei Miroshnichenko <sergeimir@emcraft.com>
- *
  * Frame buffer driver for Sitronix ST7529 LCD controller
+ *
+ * Copyright (C) 2015 Emcraft Systems
+ * Author: Sergei Miroshnichenko <sergeimir@emcraft.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,13 +30,13 @@
 #include <linux/of_gpio.h>
 #include <linux/freezer.h>
 
-#define DRIVER_NAME		"lcd_st7529"
+#define DRIVER_NAME		"st7529"
 
 #define RAM_WIDTH		256
 #define RAM_HEIGHT		144
 
-#define GSET(gpio)		gpio_direction_output(gpio, 1);
-#define GUNSET(gpio)		gpio_direction_output(gpio, 0);
+#define A0_CMD_MODE		0
+#define A0_DATA_MODE		1
 
 #define CMD_EXT_IN		0x30
 #define CMD_EXT_OUT		0x31
@@ -82,11 +81,9 @@ struct mfb_info
 	struct task_struct	*task;
 	int			width;
 	int			height;
-	int			nres_gpio;
-	int			a0_gpio;
+	struct gpio_desc	*reset_gpio;
+	struct gpio_desc	*a0_gpio;
 };
-
-static struct fb_info *fb_info;
 
 static struct fb_ops st7529_ops = {
 	.owner		= THIS_MODULE,
@@ -95,13 +92,12 @@ static struct fb_ops st7529_ops = {
 	.fb_imageblit	= cfb_imageblit,
 };
 
-static int st7529_data(unsigned char *buf, int size)
+static int st7529_data(struct mfb_info *mfbi, unsigned char *buf, int size)
 {
 	int err = 0;
-	struct mfb_info *mfbi = fb_info->par;
 
 	if (size) {
-		GSET(mfbi->a0_gpio);
+		gpiod_set_value(mfbi->a0_gpio, A0_DATA_MODE);
 		err = spi_write(mfbi->spi, buf, size);
 	}
 
@@ -111,14 +107,14 @@ static int st7529_data(unsigned char *buf, int size)
 	return err;
 }
 
-static int st7529_command(unsigned char cmd, int args_cnt, ...)
+static int st7529_command(struct mfb_info *mfbi, unsigned char cmd,
+			  int args_cnt, ...)
 {
-	struct mfb_info *mfbi = fb_info->par;
 	unsigned char buf[1 + args_cnt];
 	int err;
 
 	buf[0] = cmd;
-	GUNSET(mfbi->a0_gpio);
+	gpiod_set_value(mfbi->a0_gpio, A0_CMD_MODE);
 	err = spi_write(mfbi->spi, buf, 1);
 
 	if (!err && args_cnt) {
@@ -135,7 +131,7 @@ static int st7529_command(unsigned char cmd, int args_cnt, ...)
 
 		va_end(ap);
 
-		err = st7529_data(buf, args_cnt);
+		err = st7529_data(mfbi, buf, args_cnt);
 	}
 
 	if (err)
@@ -146,51 +142,51 @@ static int st7529_command(unsigned char cmd, int args_cnt, ...)
 
 static void st7529_hw_init(struct mfb_info *mfbi)
 {
-	GUNSET(mfbi->nres_gpio);
+	gpiod_set_value(mfbi->reset_gpio, 1);
 	msleep(150);
-	GSET(mfbi->nres_gpio);
+	gpiod_set_value(mfbi->reset_gpio, 0);
 	msleep(150);
 
-	st7529_command(CMD_EXT_IN, 0);
-	st7529_command(CMD_SLEEP_OUT, 0);
-	st7529_command(CMD_OSC_ON, 0);
+	st7529_command(mfbi, CMD_EXT_IN, 0);
+	st7529_command(mfbi, CMD_SLEEP_OUT, 0);
+	st7529_command(mfbi, CMD_OSC_ON, 0);
 	/* Power Control Set: Booster must be on first */
-	st7529_command(CMD_PWRCTRL, 1, ARG_PWRCTRL_VB);
+	st7529_command(mfbi, CMD_PWRCTRL, 1, ARG_PWRCTRL_VB);
 	msleep(2);
-	st7529_command(CMD_PWRCTRL, 1,
+	st7529_command(mfbi, CMD_PWRCTRL, 1,
 		       ARG_PWRCTRL_VB | ARG_PWRCTRL_VF | ARG_PWRCTRL_VR);
-	st7529_command(CMD_VOLCTRL, 2,
+	st7529_command(mfbi, CMD_VOLCTRL, 2,
 		       ARG_VOLCTRL_12V_UP,
 		       ARG_VOLCTRL_12V_DOWN);
-	st7529_command(CMD_DISCTRL, 3,
+	st7529_command(mfbi, CMD_DISCTRL, 3,
 		       ARG_DISCTRL_CLK_RATIO_1,
 		       ARG_DISCTRL_DUTY_1_144,
 		       ARG_DISCTRL_INVERSE_SET);
-	st7529_command(CMD_DIS_NORMAL, 0);
-	st7529_command(CMD_COMSCN, 1,
+	st7529_command(mfbi, CMD_DIS_NORMAL, 0);
+	st7529_command(mfbi, CMD_COMSCN, 1,
 		       ARG_COMSCN_79_0_80_159);
-	st7529_command(CMD_DATSDR, 3,
+	st7529_command(mfbi, CMD_DATSDR, 3,
 		       ARG_DATSDR_COLUMN_NORM,
 		       ARG_DATSDR_ARRG_1_2_3,
 		       ARG_DATSDR_GRAY_3_BYTES);
-	st7529_command(CMD_EXT_OUT, 0);
-	st7529_command(CMD_ANASET, 3,
+	st7529_command(mfbi, CMD_EXT_OUT, 0);
+	st7529_command(mfbi, CMD_ANASET, 3,
 		       ARG_ANASET_OCS_12K,
 		       ARG_ANASET_BOOSTER_6K,
 		       ARG_ANASET_BIAS_1_12);
-	st7529_command(CMD_SWINT, 0);
-	st7529_command(CMD_SET_GRAY_1, 16,
+	st7529_command(mfbi, CMD_SWINT, 0);
+	st7529_command(mfbi, CMD_SET_GRAY_1, 16,
 		       0x0,  0x2,  0x4,  0x6,
 		       0x8,  0xA,  0xC,  0xE,
 		       0x10, 0x12, 0x14, 0x16,
 		       0x18, 0x1A, 0x1C, 0x1F);
-	st7529_command(CMD_SET_GRAY_2, 16,
+	st7529_command(mfbi, CMD_SET_GRAY_2, 16,
 		       0x0,  0x2,  0x4,  0x6,
 		       0x8,  0xA,  0xC,  0xE,
 		       0x10, 0x12, 0x14, 0x16,
 		       0x18, 0x1A, 0x1C, 0x1F);
-	st7529_command(CMD_EXT_IN, 0);
-	st7529_command(CMD_DISPLAY_ON, 0);
+	st7529_command(mfbi, CMD_EXT_IN, 0);
+	st7529_command(mfbi, CMD_DISPLAY_ON, 0);
 }
 
 static int st7529_task(void *param)
@@ -200,13 +196,13 @@ static int st7529_task(void *param)
 	set_freezable();
 
 	while (!kthread_should_stop()) {
-		st7529_command(CMD_EXT_IN, 0);
-		st7529_command(CMD_CASET, 2,
+		st7529_command(mfbi, CMD_EXT_IN, 0);
+		st7529_command(mfbi, CMD_CASET, 2,
 			       0, (mfbi->width / 3) - 1);
-		st7529_command(CMD_LASET, 2,
+		st7529_command(mfbi, CMD_LASET, 2,
 			       RAM_HEIGHT - mfbi->height, RAM_HEIGHT);
-		st7529_command(CMD_RAMWR, 0);
-		st7529_data(mfbi->buffer, mfbi->width * mfbi->height);
+		st7529_command(mfbi, CMD_RAMWR, 0);
+		st7529_data(mfbi, mfbi->buffer, mfbi->width * mfbi->height);
 
 		try_to_freeze();
 		schedule_timeout_interruptible(msecs_to_jiffies(1000));
@@ -217,13 +213,12 @@ static int st7529_task(void *param)
 
 static int st7529_probe(struct spi_device *spi)
 {
-	int err = 0;
-	struct mfb_info *mfbi;
-	int xres = 240, yres = 128, bits_per_pixel = 8, grayscale = 1;
-	int nres_gpio, a0_gpio;
+	int xres = -1, yres = -1, bits_per_pixel = -1, grayscale = -1;
 	struct device_node *node = spi->dev.of_node;
-
-	dev_dbg(&spi->dev, "%s\n", __func__);
+	struct fb_info *fb_info = NULL;
+	int nres_gpio, a0_gpio;
+	struct mfb_info *mfbi = NULL;
+	int err = 0;
 
 	if (NULL == node) {
 		dev_err(&spi->dev, "No device info\n");
@@ -231,39 +226,42 @@ static int st7529_probe(struct spi_device *spi)
 	}
 
 	if (of_property_read_u32(node, "xres", &xres))
-		dev_warn(&spi->dev, "x-resolution is not set, taking default (%d)\n", xres);
+		dev_err(&spi->dev, "failed to get x-resolution\n");
 	if (of_property_read_u32(node, "yres", &yres))
-		dev_warn(&spi->dev, "y-resolution is not set, taking default (%d)\n", yres);
+		dev_err(&spi->dev, "failed to get y-resolution\n");
 	if (of_property_read_u32(node, "bits_per_pixel", &bits_per_pixel))
-		dev_warn(&spi->dev, "color depth is not set, taking default (%d)\n", bits_per_pixel);
+		dev_err(&spi->dev, "failed to get color depth\n");
 	if (of_property_read_u32(node, "grayscale", &grayscale))
-		dev_warn(&spi->dev, "grayscale is not set, taking default (%d)\n", grayscale);
+		dev_err(&spi->dev, "failed to get if LCD is grayscale\n");
+
+	if (xres < 0 || yres < 0 || bits_per_pixel < 0 || grayscale < 0)
+		return -EINVAL;
 
 	nres_gpio = of_get_named_gpio(node, "nres-gpios", 0);
 	if (!gpio_is_valid(nres_gpio)) {
-		err = nres_gpio;
-		dev_err(&spi->dev, "Invalid nReset gpio %d: %d\n", nres_gpio, err);
-		return err;
+		dev_err(&spi->dev, "Invalid nReset gpio %d\n", nres_gpio);
+		return -EINVAL;
 	}
 
 	a0_gpio = of_get_named_gpio(node, "a0-gpios", 0);
 	if (!gpio_is_valid(a0_gpio)) {
-		err = a0_gpio;
-		dev_err(&spi->dev, "Invalid A0 gpio %d: %d\n", a0_gpio, err);
-		return err;
+		dev_err(&spi->dev, "Invalid A0 gpio %d\n", a0_gpio);
+		return -EINVAL;
 	}
 
 	err = devm_gpio_request_one(&spi->dev, nres_gpio,
 				    GPIOF_OUT_INIT_HIGH, "lcd_nreset");
 	if (err) {
-		dev_err(&spi->dev, "Invalid nReset gpio %d: %d\n", nres_gpio, err);
+		dev_err(&spi->dev, "Failed to request nReset gpio %d: %d\n",
+			nres_gpio, err);
 		return err;
 	}
 
 	err = devm_gpio_request_one(&spi->dev, a0_gpio,
 				    GPIOF_OUT_INIT_HIGH, "lcd_a0");
 	if (err) {
-		dev_err(&spi->dev, "Failed to request LCD A0 GPIO (%d): %d\n", a0_gpio, err);
+		dev_err(&spi->dev, "Failed to request A0 gpio %d: %d\n",
+			a0_gpio, err);
 		return err;
 	}
 
@@ -274,7 +272,7 @@ static int st7529_probe(struct spi_device *spi)
 	}
 
 	fb_info->screen_size = xres * yres;
-	fb_info->screen_base = kzalloc(fb_info->screen_size, GFP_KERNEL);
+	fb_info->screen_base = devm_kzalloc(&spi->dev, fb_info->screen_size, GFP_KERNEL);
 	if (NULL == fb_info->screen_base) {
 		dev_err(&spi->dev, "Failed to allocate framebuffer\n");
 		err = -ENOMEM;
@@ -307,8 +305,22 @@ static int st7529_probe(struct spi_device *spi)
 	mfbi->buffer			= fb_info->screen_base;
 	mfbi->width			= fb_info->var.xres;
 	mfbi->height			= fb_info->var.yres;
-	mfbi->nres_gpio			= nres_gpio;
-	mfbi->a0_gpio			= a0_gpio;
+
+	mfbi->reset_gpio = devm_gpiod_get_optional(&spi->dev,
+						   "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR_OR_NULL(mfbi->reset_gpio)) {
+		err = mfbi->reset_gpio ? PTR_ERR(mfbi->reset_gpio) : -EINVAL;
+		dev_err(&spi->dev, "Failed to get reset gpio: %d\n", err);
+		goto failed_install_fb;
+	}
+
+	mfbi->a0_gpio = devm_gpiod_get_optional(&spi->dev,
+						"a0", GPIOD_OUT_HIGH);
+	if (IS_ERR_OR_NULL(mfbi->a0_gpio)) {
+		err = mfbi->a0_gpio ? PTR_ERR(mfbi->a0_gpio) : -EINVAL;
+		dev_err(&spi->dev, "Failed to get A0 gpio: %d\n", err);
+		goto failed_install_fb;
+	}
 
 	st7529_hw_init(mfbi);
 
@@ -318,12 +330,14 @@ static int st7529_probe(struct spi_device *spi)
 		goto failed_install_fb;
 	}
 
-	mfbi->task = kthread_run(st7529_task, mfbi, "st7529");
+	mfbi->task = kthread_run(st7529_task, mfbi, DRIVER_NAME);
+
+	spi_set_drvdata(spi, fb_info);
 
 	return 0;
 
 failed_install_fb:
-	kfree(fb_info->screen_base);
+	devm_kfree(&spi->dev, fb_info->screen_base);
 failed_alloc_framebuffer:
 	framebuffer_release(fb_info);
 
@@ -332,49 +346,51 @@ failed_alloc_framebuffer:
 
 static int st7529_remove(struct spi_device *spi)
 {
+	struct fb_info *fb_info = spi_get_drvdata(spi);
 	struct mfb_info *mfbi = fb_info->par;
 
 	kthread_stop(mfbi->task);
 	unregister_framebuffer(fb_info);
-	kfree(fb_info->screen_base);
+	devm_kfree(&spi->dev, fb_info->screen_base);
 	framebuffer_release(fb_info);
 
 	return 0;
 }
 
-static const struct of_device_id st7529_of_match[] = {
-	{ .compatible = "emcraft,st7529", },
-	{},
-};
-
-MODULE_DEVICE_TABLE(of, st7529_of_match);
-
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int st7529_suspend(struct device *dev)
 {
 	struct spi_device *spi = to_spi_device(dev);
+	struct fb_info *fb_info = spi_get_drvdata(spi);
 	struct mfb_info *mfbi = fb_info->par;
 
-	st7529_command(CMD_DISPLAY_OFF, 0);
-	st7529_command(CMD_SLEEP_IN, 0);
+	st7529_command(mfbi, CMD_DISPLAY_OFF, 0);
+	st7529_command(mfbi, CMD_SLEEP_IN, 0);
 	return 0;
 }
 
 static int st7529_resume(struct device *dev)
 {
 	struct spi_device *spi = to_spi_device(dev);
+	struct fb_info *fb_info = spi_get_drvdata(spi);
 	struct mfb_info *mfbi = fb_info->par;
 
-	st7529_command(CMD_SLEEP_OUT, 0);
-	st7529_command(CMD_DISPLAY_ON, 0);
+	st7529_command(mfbi, CMD_SLEEP_OUT, 0);
+	st7529_command(mfbi, CMD_DISPLAY_ON, 0);
 	return 0;
 }
+#endif /* CONFIG_PM_SLEEP */
+
+static const struct of_device_id st7529_of_match[] = {
+	{ .compatible = "emcraft,st7529", },
+	{ /* sentinel */ },
+};
+
+MODULE_DEVICE_TABLE(of, st7529_of_match);
 
 static const struct dev_pm_ops st7529_pm_ops = {
-	.suspend = st7529_suspend,
-	.resume = st7529_resume,
+	SET_SYSTEM_SLEEP_PM_OPS(st7529_suspend, st7529_resume)
 };
-#endif /* CONFIG_PM */
 
 static struct spi_driver st7529_driver = {
 	.driver = {
@@ -389,6 +405,6 @@ static struct spi_driver st7529_driver = {
 
 module_spi_driver(st7529_driver);
 
-MODULE_AUTHOR("EmCraft Systems");
+MODULE_AUTHOR("Emcraft Systems");
 MODULE_DESCRIPTION("Sitronix ST7529 framebuffer driver");
 MODULE_LICENSE("GPL");
