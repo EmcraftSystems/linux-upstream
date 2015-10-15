@@ -1040,11 +1040,18 @@ static const struct i2c_device_id sx9500_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, sx9500_id);
 
+static const struct of_device_id sx9500_of_match[] = {
+	{ .compatible = "sx9500" },
+	{ /* sentinel */ }
+};
+MODULE_DEVICE_TABLE(of, sx9500_of_match);
+
 static struct i2c_driver sx9500_driver = {
 	.driver = {
 		.name	= SX9500_DRIVER_NAME,
 		.acpi_match_table = ACPI_PTR(sx9500_acpi_match),
 		.pm = &sx9500_pm_ops,
+		.of_match_table	= sx9500_of_match,
 	},
 	.probe		= sx9500_probe,
 	.remove		= sx9500_remove,

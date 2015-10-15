@@ -1546,12 +1546,21 @@ static const struct i2c_device_id ltr501_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, ltr501_id);
 
+static const struct of_device_id ltr_of_match[] = {
+	{ .compatible = "ltr501" },
+	{ .compatible = "ltr559" },
+	{ .compatible = "ltr301" },
+	{ /* sentinel */ }
+};
+MODULE_DEVICE_TABLE(of, _of_match);
+
 static struct i2c_driver ltr501_driver = {
 	.driver = {
 		.name   = LTR501_DRV_NAME,
 		.pm	= &ltr501_pm_ops,
 		.acpi_match_table = ACPI_PTR(ltr_acpi_match),
 		.owner  = THIS_MODULE,
+		.of_match_table	= ltr_of_match,
 	},
 	.probe  = ltr501_probe,
 	.remove	= ltr501_remove,

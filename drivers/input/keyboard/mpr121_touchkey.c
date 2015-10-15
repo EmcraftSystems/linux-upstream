@@ -192,20 +192,26 @@ static int mpr_touchkey_probe(struct i2c_client *client,
 	struct mpr121_touchkey *mpr121;
 	struct input_dev *input_dev;
 	int error;
-	int i;
+	int i, proplen, keymap_size, of_found = 0;
 
-	if (!pdata) {
+	if (of_find_property(client->dev.of_node, "linux,keymap",
+			     &proplen)) {
+		keymap_size = proplen / sizeof(u32);
+		of_found = 1;
+	} else if (pdata) {
+		if (!pdata->keymap || !pdata->keymap_size) {
+			dev_err(&client->dev, "missing keymap data\n");
+			return -EINVAL;
+		}
+
+		if (pdata->keymap_size > MPR121_MAX_KEY_COUNT) {
+			dev_err(&client->dev, "too many keys defined\n");
+			return -EINVAL;
+		}
+
+		keymap_size = pdata->keymap_size;
+	} else {
 		dev_err(&client->dev, "no platform data defined\n");
-		return -EINVAL;
-	}
-
-	if (!pdata->keymap || !pdata->keymap_size) {
-		dev_err(&client->dev, "missing keymap data\n");
-		return -EINVAL;
-	}
-
-	if (pdata->keymap_size > MPR121_MAX_KEY_COUNT) {
-		dev_err(&client->dev, "too many keys defined\n");
 		return -EINVAL;
 	}
 
@@ -225,7 +231,7 @@ static int mpr_touchkey_probe(struct i2c_client *client,
 
 	mpr121->client = client;
 	mpr121->input_dev = input_dev;
-	mpr121->keycount = pdata->keymap_size;
+	mpr121->keycount = keymap_size;
 
 	input_dev->name = "Freescale MPR121 Touchkey";
 	input_dev->id.bustype = BUS_I2C;
@@ -236,9 +242,22 @@ static int mpr_touchkey_probe(struct i2c_client *client,
 	input_dev->keycodesize = sizeof(mpr121->keycodes[0]);
 	input_dev->keycodemax = mpr121->keycount;
 
-	for (i = 0; i < pdata->keymap_size; i++) {
-		input_set_capability(input_dev, EV_KEY, pdata->keymap[i]);
-		mpr121->keycodes[i] = pdata->keymap[i];
+	if (of_found) {
+		for (i = 0; i < keymap_size; i++) {
+			u32 keycode;
+			error = of_property_read_u32_index(client->dev.of_node,
+							 "linux,keymap", i, &keycode);
+			if (error)
+				keycode = KEY_RESERVED;
+
+			input_set_capability(input_dev, EV_KEY, keycode);
+			mpr121->keycodes[i] = keycode;
+		}
+	} else {
+		for (i = 0; i < pdata->keymap_size; i++) {
+			input_set_capability(input_dev, EV_KEY, pdata->keymap[i]);
+			mpr121->keycodes[i] = pdata->keymap[i];
+		}
 	}
 
 	error = mpr121_phys_init(pdata, mpr121, client);
@@ -302,11 +321,18 @@ static const struct i2c_device_id mpr121_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, mpr121_id);
 
+static const struct of_device_id mpr121_of_match[] = {
+	{ .compatible = "fsl,mpr121" },
+	{ /* sentinel */ }
+};
+MODULE_DEVICE_TABLE(of, mpr121_of_match);
+
 static struct i2c_driver mpr_touchkey_driver = {
 	.driver = {
 		.name	= "mpr121",
 		.owner	= THIS_MODULE,
 		.pm	= &mpr121_touchkey_pm_ops,
+		.of_match_table	= mpr121_of_match,
 	},
 	.id_table	= mpr121_id,
 	.probe		= mpr_touchkey_probe,
