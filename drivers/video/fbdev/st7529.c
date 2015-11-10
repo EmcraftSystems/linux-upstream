@@ -306,16 +306,16 @@ static int st7529_probe(struct spi_device *spi)
 	mfbi->width			= fb_info->var.xres;
 	mfbi->height			= fb_info->var.yres;
 
-	mfbi->reset_gpio = devm_gpiod_get_optional(&spi->dev,
-						   "reset", GPIOD_OUT_HIGH);
+	mfbi->reset_gpio = devm_gpiod_get(&spi->dev,
+					  "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR_OR_NULL(mfbi->reset_gpio)) {
 		err = mfbi->reset_gpio ? PTR_ERR(mfbi->reset_gpio) : -EINVAL;
 		dev_err(&spi->dev, "Failed to get reset gpio: %d\n", err);
 		goto failed_install_fb;
 	}
 
-	mfbi->a0_gpio = devm_gpiod_get_optional(&spi->dev,
-						"a0", GPIOD_OUT_HIGH);
+	mfbi->a0_gpio = devm_gpiod_get(&spi->dev,
+				       "a0", GPIOD_OUT_HIGH);
 	if (IS_ERR_OR_NULL(mfbi->a0_gpio)) {
 		err = mfbi->a0_gpio ? PTR_ERR(mfbi->a0_gpio) : -EINVAL;
 		dev_err(&spi->dev, "Failed to get A0 gpio: %d\n", err);
