@@ -690,7 +690,7 @@
 			clock-names = "ltdc", "sai1";
 			status = "disabled";
 
-			display0: display {
+			display0: display0 {
 				bits-per-pixel = <32>;
 				display-timings {
 					native-mode = <&timing0>;

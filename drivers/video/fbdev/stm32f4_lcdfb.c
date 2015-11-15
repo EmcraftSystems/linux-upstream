@@ -317,7 +317,7 @@ static void update_lcdc(struct fb_info *info)
 	/* Configure PLLSAI prescalers for LCD */
 	rv = clk_set_rate(fb->pix_clk, PICOS2KHZ(var->pixclock) * 1000);
 	if (rv)
-		dev_warn(dev, "failed to set-up proper pix_clk\n");
+		dev_warn(dev, "assume proper pix_clk is set in bootloader\n");
 	clk_prepare_enable(fb->pix_clk);
 
 	/*
