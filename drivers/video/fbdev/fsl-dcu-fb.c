@@ -415,7 +415,7 @@ static int fsl_dcu_check_var(struct fb_var_screeninfo *var,
 		break;
 	case 24:
 		var->red.length = 8;
-		var->red.offset = 16;
+		var->red.offset = 0;
 		var->red.msb_right = 0;
 
 		var->green.length = 8;
@@ -423,7 +423,7 @@ static int fsl_dcu_check_var(struct fb_var_screeninfo *var,
 		var->green.msb_right = 0;
 
 		var->blue.length = 8;
-		var->blue.offset = 0;
+		var->blue.offset = 16;
 		var->blue.msb_right = 0;
 
 		var->transp.length = 0;
