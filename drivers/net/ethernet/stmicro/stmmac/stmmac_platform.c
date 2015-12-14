@@ -166,7 +166,7 @@ static int stmmac_probe_config_dt(struct platform_device *pdev,
 	if (of_property_read_u32(np, "snps,phy-addr", &plat->phy_addr) == 0)
 		dev_warn(&pdev->dev, "snps,phy-addr property is deprecated\n");
 
-	if (plat->phy_node || plat->phy_bus_name)
+	if ((plat->phy_node && !of_phy_is_fixed_link(np)) || plat->phy_bus_name)
 		plat->mdio_bus_data = NULL;
 	else
 		plat->mdio_bus_data =
