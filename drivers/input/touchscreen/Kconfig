@@ -1045,4 +1045,11 @@ config TOUCHSCREEN_CRTOUCH_MT
 	help
 	  Say Y here if you have a Freescale CRTouch-based
 	  touchscreen connected via I2C.
+
+config TOUCHSCREEN_FT5X46
+	tristate "FocalTech FT5X46 touch driver"
+	depends on I2C
+	help
+	  Say Y here if you have a Freescale CRTouch-based
+	  touchscreen connected via I2C.
 endif
