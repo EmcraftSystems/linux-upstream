@@ -561,7 +561,7 @@ struct fec_enet_private {
 	int pps_enable;
 	unsigned int next_counter;
 
-	int osc_en_gpio;
+	struct gpio_desc *osc_en_gpio;
 };
 
 void fec_ptp_init(struct platform_device *pdev);

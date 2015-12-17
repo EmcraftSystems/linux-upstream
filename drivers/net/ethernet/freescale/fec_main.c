@@ -1988,17 +1988,8 @@ static int fec_enet_mii_init(struct platform_device *pdev)
 	int err = -ENXIO, i;
 	u32 mii_speed, holdtime;
 
-	fep->osc_en_gpio = of_get_named_gpio(node, "osc-en-gpios", 0);
-
-	if (gpio_is_valid(fep->osc_en_gpio)) {
-		err = devm_gpio_request_one(&pdev->dev, fep->osc_en_gpio,
-					    GPIOF_OUT_INIT_HIGH, "osc_en_gpio");
-		msleep(1);
-		if (err) {
-			dev_err(&pdev->dev, "failed to get osc_en_gpio: %d\n", err);
-			fep->osc_en_gpio = -1;
-		}
-	}
+	fep->osc_en_gpio = devm_gpiod_get(&pdev->dev, "osc-en", GPIOD_OUT_HIGH);
+	msleep(1);
 
 	/*
 	 * The i.MX28 dual fec interfaces are not equal.
@@ -2919,6 +2910,11 @@ fec_enet_open(struct net_device *ndev)
 	if (IS_ERR_VALUE(ret))
 		return ret;
 
+	if (fep->osc_en_gpio) {
+		gpiod_set_value(fep->osc_en_gpio, 1);
+		msleep(1);
+	}
+
 	pinctrl_pm_select_default_state(&fep->pdev->dev);
 	ret = fec_enet_clk_enable(ndev, true);
 	if (ret)
@@ -2980,6 +2976,10 @@ fec_enet_close(struct net_device *ndev)
 	pinctrl_pm_select_sleep_state(&fep->pdev->dev);
 	pm_runtime_mark_last_busy(&fep->pdev->dev);
 	pm_runtime_put_autosuspend(&fep->pdev->dev);
+
+	if (fep->osc_en_gpio) {
+		gpiod_set_value(fep->osc_en_gpio, 0);
+	}
 
 	fec_enet_free_buffers(ndev);
 
@@ -3604,8 +3604,9 @@ static int __maybe_unused fec_suspend(struct device *dev)
 
 		/* If the device has WOL enabled, do not turn off oscillator */
 		phy_ethtool_get_wol(fep->phy_dev, &wol);
-		if (!wol.wolopts && gpio_is_valid(fep->osc_en_gpio))
-			gpio_set_value(fep->osc_en_gpio, 0);
+		if (!wol.wolopts && fep->osc_en_gpio) {
+			gpiod_set_value(fep->osc_en_gpio, 0);
+		}
 	}
 
 
@@ -3626,8 +3627,8 @@ static int __maybe_unused fec_resume(struct device *dev)
 	int ret;
 	int val;
 
-	if (gpio_is_valid(fep->osc_en_gpio)) {
-		gpio_set_value(fep->osc_en_gpio, 1);
+	if (fep->osc_en_gpio) {
+		gpiod_set_value(fep->osc_en_gpio, 1);
 		msleep(1);
 	}
 
