@@ -31,6 +31,7 @@
 #include <linux/tty.h>
 #include <linux/console.h>
 #include <linux/serial_core.h>
+#include <linux/of_gpio.h>
 
 #include "common.h"
 
@@ -102,6 +103,9 @@ enum vf610_cpu_pwr_mode {
 
 static void __iomem *ccm_base;
 static void __iomem *suspend_ocram_base;
+
+static int powerdown_gpio = -1;
+static bool powerdown_gpio_active_low;
 
 static u32 (*suspend_in_iram)(suspend_state_t state,
 			      unsigned long iram_paddr,
@@ -186,8 +190,14 @@ int vf610_set_lpm(enum vf610_cpu_pwr_mode mode)
 			uarts_reconfig();
 		}
 
+		if (gpio_is_valid(powerdown_gpio))
+			gpio_set_value(powerdown_gpio, !powerdown_gpio_active_low);
+
 		break;
 	case VF610_RUN:
+		if (gpio_is_valid(powerdown_gpio))
+			gpio_set_value(powerdown_gpio, powerdown_gpio_active_low);
+
 		if (!IS_ERR(pm_info->sys_sel_clk) && !IS_ERR(pm_info->sys_sel_clk_active)) {
 			clk_set_parent(pm_info->sys_sel_clk, pm_info->sys_sel_clk_active);
 			uarts_reconfig();
@@ -284,6 +294,31 @@ put_node:
 	of_node_put(node);
 out:
 	return ret;
+}
+
+static void __init vf610_get_power_pin(void)
+{
+	enum of_gpio_flags powerdown_gpio_flags;
+	struct device_node *node;
+	int err;
+
+	node = of_find_compatible_node(NULL, NULL, "emcraft,power");
+	if (!node)
+		return;
+
+	powerdown_gpio = of_get_named_gpio_flags(node, "powerdown-gpios", 0, &powerdown_gpio_flags);
+	if (!gpio_is_valid(powerdown_gpio))
+		return;
+
+	err = gpio_request(powerdown_gpio, "nPOWERDOWN");
+	if (err) {
+		pr_err("%s: can't request powerdown gpio %d: %d\n", __func__, powerdown_gpio, err);
+		powerdown_gpio = -1;
+		return;
+	}
+
+	powerdown_gpio_active_low = powerdown_gpio_flags & OF_GPIO_ACTIVE_LOW;
+	gpio_direction_output(powerdown_gpio, powerdown_gpio_active_low);
 }
 
 static int __init vf610_suspend_init(const struct vf610_pm_socdata *socdata)
@@ -406,6 +441,8 @@ put_node:
 static int __init vf610_pm_init(void)
 {
 	int err = 0;
+
+	vf610_get_power_pin();
 
 	if (IS_ENABLED(CONFIG_SUSPEND)) {
 		err = vf610_suspend_init(&vf610_pm_data);
