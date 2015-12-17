@@ -515,6 +515,10 @@ config VEXPRESS_SYSCFG
 	  bus. System Configuration interface is one of the possible means
 	  of generating transactions on this bus.
 
+config PROMATE_7_SEG_LCD
+	bool "Promate 7-Seg LCD driver"
+	depends on SPI && SYSFS
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
