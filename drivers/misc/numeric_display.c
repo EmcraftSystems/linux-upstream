@@ -91,7 +91,7 @@ static ssize_t numdisp_set_text(struct device *dev,
 {
 	struct spi_device *spi = to_spi_device(dev);
 	struct numdisp_info *numdisp = spi_get_drvdata(spi);
-	int len = strlen(buf);
+	int len = strlen(buf) ? (strlen(buf) - 1) : 0;
 
 	memset(numdisp->text, 0, sizeof(numdisp->text));
 	strncpy(numdisp->text, buf, (len > numdisp->width) ? numdisp->width : len);
@@ -118,16 +118,20 @@ static int numdisp_task(void *param)
 	set_freezable();
 
 	while (!kthread_should_stop()) {
-		int i;
-		int len = strlen(numdisp->text);
+		if (strlen(numdisp->text)) {
+			int i;
+			int len = strlen(numdisp->text);
 
-		for (i = 0; i < len; ++i) {
-			numdisp_set(numdisp, i, numdisp->text[i], false);
-			udelay(1000);
-		}
-		for (; i < numdisp->width; ++i) {
-			numdisp_set(numdisp, i, ' ', false);
-			udelay(1000);
+			for (i = 0; i < len; ++i) {
+				numdisp_set(numdisp, i, numdisp->text[i], false);
+				schedule_timeout_interruptible(msecs_to_jiffies(1));
+			}
+			for (; i < numdisp->width; ++i) {
+				numdisp_set(numdisp, i, ' ', false);
+				schedule_timeout_interruptible(msecs_to_jiffies(1));
+			}
+		} else {
+			schedule_timeout_interruptible(msecs_to_jiffies(1000));
 		}
 
 		try_to_freeze();
