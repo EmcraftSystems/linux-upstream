@@ -221,6 +221,9 @@
 				interrupts = <67 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&clks VF610_CLK_DSPI0>;
 				clock-names = "dspi";
+				dmas = <&edma0 0 12>,
+					<&edma0 0 13>;
+				dma-names = "rx","tx";
 				spi-num-chipselects = <5>;
 				status = "disabled";
 			};
@@ -233,6 +236,9 @@
 				interrupts = <68 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&clks VF610_CLK_DSPI1>;
 				clock-names = "dspi";
+				dmas = <&edma0 0 14>,
+					<&edma0 0 15>;
+				dma-names = "rx","tx";
 				spi-num-chipselects = <5>;
 				status = "disabled";
 			};
@@ -695,6 +701,8 @@
 				interrupts = <69 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&clks VF610_CLK_DSPI2>;
 				clock-names = "dspi";
+				dmas = <&edma1 0 10>,
+					<&edma1 0 11>;
 				spi-num-chipselects = <5>;
 				status = "disabled";
 			};
@@ -707,6 +715,9 @@
 				interrupts = <70 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&clks VF610_CLK_DSPI3>;
 				clock-names = "dspi";
+				dmas = <&edma1 0 12>,
+					<&edma1 0 13>;
+				dma-names = "rx","tx";
 				spi-num-chipselects = <5>;
 				status = "disabled";
 			};
