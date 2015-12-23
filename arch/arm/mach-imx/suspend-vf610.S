@@ -34,6 +34,14 @@
 #define DDRMC_CR81		0x144
 #define DDRMC_CR124		0x1F0
 
+#define PLL1_OFFSET		0x270
+#define PLL2_OFFSET		0x30
+#define PLL3_OFFSET		0x10
+#define PLL4_OFFSET		0x70
+#define PLL5_OFFSET		0xE0
+#define PLL6_OFFSET		0xA0
+#define PLL7_OFFSET		0x20
+
 /*************************************************************
 mvf_suspend:
 
@@ -134,6 +142,22 @@ r2: suspend_iram_base
 .endm /* prime_tlb */
 
 
+.macro disable_pll offset
+	get_base r3 ANATOP_VBASE_OFFSET
+	ldr     r4, [r3, #\offset]
+	bic     r4, r4, #0x2000
+	orr     r4, r4, #0x1000
+	str     r4, [r3, #\offset]
+.endm /* disable_pll */
+
+.macro enable_pll offset
+	get_base r3 ANATOP_VBASE_OFFSET
+	ldr     r4, [r3, #\offset]
+	orr     r4, r4, #0x2000
+	bic     r4, r4, #0x1000
+	str     r4, [r3, #\offset]
+.endm /* disable_pll */
+
 .macro ddr_enable_self_refresh
 	get_base r3 DDRMC_VBASE_OFFSET
 
@@ -164,10 +188,14 @@ wait_disable_dse:
 	cmp	r5, r6
 	bne	wait_disable_dse
 	nop
+
+	disable_pll PLL2_OFFSET
 .endm /* ddr_enable_self_refresh */
 
 
 .macro ddr_disable_self_refresh
+	enable_pll PLL2_OFFSET
+
 	/* Enable DSE=101 in all DDR iomux pins */
 	get_base r5 IOMUXC_VBASE_OFFSET
 	add	r5, #0x21C

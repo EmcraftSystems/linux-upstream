@@ -381,8 +381,8 @@ static int __init vf610_suspend_init(const struct vf610_pm_socdata *socdata)
 	if (node) {
 		pm_info->sys_sel_clk = of_clk_get_by_name(node, "sys-sel");
 		pm_info->sys_sel_clk_suspend = of_clk_get_by_name(node, "sys-sel-suspend");
-		if (!IS_ERR(pm_info->sys_sel_clk) && !IS_ERR(pm_info->sys_sel_clk_suspend))
-		    pm_info->sys_sel_clk_active = clk_get_parent(pm_info->sys_sel_clk);
+		if (!IS_ERR_OR_NULL(pm_info->sys_sel_clk) && !IS_ERR_OR_NULL(pm_info->sys_sel_clk_suspend))
+			pm_info->sys_sel_clk_active = clk_get_parent(pm_info->sys_sel_clk);
 	}
 
 	/*
