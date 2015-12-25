@@ -26,6 +26,7 @@
 #include <linux/console.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
+#include <linux/of_address.h>
 
 #define DRIVER_NAME			"fsl-dcu-fb"
 
@@ -171,6 +172,7 @@ struct mfb_info {
 	int x_layer_d;	/* layer display x offset to physical screen */
 	int y_layer_d;	/* layer display y offset to physical screen */
 	struct dcu_fb_data *parent;
+	unsigned int reserved_memory;
 };
 
 enum mfb_index {
@@ -527,10 +529,19 @@ static int map_video_memory(struct fb_info *info)
 	u32 smem_len = info->fix.line_length * info->var.yres_virtual;
 
 	info->fix.smem_len = smem_len;
+	info->screen_base = NULL;
 
-	info->screen_base = dma_alloc_writecombine(info->device,
-		info->fix.smem_len, (dma_addr_t *)&info->fix.smem_start,
-		GFP_KERNEL);
+	if (mfbi->reserved_memory) {
+		info->fix.smem_start = mfbi->reserved_memory;
+		info->screen_base = (void*)virt_to_phys((void*)info->fix.smem_start);
+	}
+
+	if (!info->screen_base)
+		info->screen_base = dma_alloc_writecombine(info->device,
+							   info->fix.smem_len,
+							   (dma_addr_t *)&info->fix.smem_start,
+							   GFP_KERNEL);
+
 	if (!info->screen_base) {
 		dev_err(dcufb->dev, "unable to allocate fb memory\n");
 		return -ENOMEM;
@@ -543,11 +554,14 @@ static int map_video_memory(struct fb_info *info)
 
 static void unmap_video_memory(struct fb_info *info)
 {
+	struct mfb_info *mfbi = info->par;
+
 	if (!info->screen_base)
 		return;
 
-	dma_free_writecombine(info->device, info->fix.smem_len,
-		info->screen_base, info->fix.smem_start);
+	if (!mfbi->reserved_memory)
+		dma_free_writecombine(info->device, info->fix.smem_len,
+				      info->screen_base, info->fix.smem_start);
 
 	info->screen_base = NULL;
 	info->fix.smem_start = 0;
@@ -1212,10 +1226,21 @@ static int fsl_dcu_probe(struct platform_device *pdev)
 		}
 
 		dcufb->fsl_dcu_info[i]->fix.smem_start = 0;
+		dcufb->fsl_dcu_info[i]->screen_base = 0;
 
 		mfbi = dcufb->fsl_dcu_info[i]->par;
 		memcpy(mfbi, &mfb_template[i], sizeof(struct mfb_info));
 		mfbi->parent = dcufb;
+
+		if (0 == i) {
+			struct device_node *memory = of_parse_phandle(dcufb->dev->of_node, "memory-region", 0);
+
+			if (memory)
+				mfbi->reserved_memory =
+					of_translate_address(memory, of_get_address(memory, 0, NULL, NULL));
+		} else {
+			mfbi->reserved_memory = 0;
+		}
 
 		ret = install_framebuffer(dcufb->fsl_dcu_info[i], option);
 		if (ret) {
