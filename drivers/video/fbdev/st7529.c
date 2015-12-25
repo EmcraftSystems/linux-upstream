@@ -28,7 +28,9 @@
 #include <linux/gpio.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/of_address.h>
 #include <linux/freezer.h>
+#include <linux/dma-mapping.h>
 
 #define DRIVER_NAME		"st7529"
 
@@ -48,8 +50,7 @@
 #define ARG_PWRCTRL_VF		0x2
 #define ARG_PWRCTRL_VR		0x1
 #define CMD_VOLCTRL		0x81
-#define ARG_VOLCTRL_12V_UP	0x38
-#define ARG_VOLCTRL_12V_DOWN	0x4
+#define VOLCTRL_DEFAULT		300
 #define CMD_DIS_NORMAL		0xA6
 #define CMD_DISPLAY_ON		0xAF
 #define CMD_DISPLAY_OFF		0xAE
@@ -77,12 +78,12 @@
 struct mfb_info
 {
 	struct spi_device	*spi;
-	unsigned char		*buffer;
 	struct task_struct	*task;
 	int			width;
 	int			height;
 	struct gpio_desc	*reset_gpio;
 	struct gpio_desc	*a0_gpio;
+	unsigned int		volctrl;
 };
 
 static struct fb_ops st7529_ops = {
@@ -140,6 +141,13 @@ static int st7529_command(struct mfb_info *mfbi, unsigned char cmd,
 	return err;
 }
 
+static void st7529_set_voltage(struct mfb_info *mfbi, unsigned int voltage) {
+	u8 v_down = voltage & 0x3F;
+	u8 v_up = (voltage >> 6) & 0x7;
+
+	st7529_command(mfbi, CMD_VOLCTRL, 2, v_down, v_up);
+}
+
 static void st7529_hw_init(struct mfb_info *mfbi)
 {
 	gpiod_set_value(mfbi->reset_gpio, 1);
@@ -155,9 +163,7 @@ static void st7529_hw_init(struct mfb_info *mfbi)
 	msleep(2);
 	st7529_command(mfbi, CMD_PWRCTRL, 1,
 		       ARG_PWRCTRL_VB | ARG_PWRCTRL_VF | ARG_PWRCTRL_VR);
-	st7529_command(mfbi, CMD_VOLCTRL, 2,
-		       ARG_VOLCTRL_12V_UP,
-		       ARG_VOLCTRL_12V_DOWN);
+	st7529_set_voltage(mfbi, mfbi->volctrl);
 	st7529_command(mfbi, CMD_DISCTRL, 3,
 		       ARG_DISCTRL_CLK_RATIO_1,
 		       ARG_DISCTRL_DUTY_1_144,
@@ -191,34 +197,93 @@ static void st7529_hw_init(struct mfb_info *mfbi)
 
 static int st7529_task(void *param)
 {
-	struct mfb_info *mfbi = (struct mfb_info*)param;
+	struct fb_info *fb_info = (struct fb_info *)param;
+	struct mfb_info *mfbi = fb_info->par;
+	int buf_size = mfbi->width * mfbi->height;
+	u8 *buf = devm_kzalloc(&mfbi->spi->dev, buf_size, GFP_KERNEL);
+	u8 *rgb_buf = fb_info->screen_base;
 
 	set_freezable();
 
 	while (!kthread_should_stop()) {
+		int i;
+
+		for (i = 0; i < buf_size; ++i) {
+			u8 *rgb_pix	= &rgb_buf[i*3];
+			u8 red		= rgb_pix[2];
+			u8 green	= rgb_pix[1];
+			u8 blue		= rgb_pix[0];
+
+			/* Formula:
+			 * gray = 0.2125*r + 0.7152*g + 0.0722*b
+			 */
+			buf[i] = ((red * 54) + (green * 183) + (blue * 18)) >> 8;
+		}
+
 		st7529_command(mfbi, CMD_EXT_IN, 0);
 		st7529_command(mfbi, CMD_CASET, 2,
 			       0, (mfbi->width / 3) - 1);
 		st7529_command(mfbi, CMD_LASET, 2,
 			       RAM_HEIGHT - mfbi->height, RAM_HEIGHT);
 		st7529_command(mfbi, CMD_RAMWR, 0);
-		st7529_data(mfbi, mfbi->buffer, mfbi->width * mfbi->height);
+		st7529_data(mfbi, buf, buf_size);
 
 		try_to_freeze();
 		schedule_timeout_interruptible(msecs_to_jiffies(1000));
 	}
 
+	devm_kfree(&mfbi->spi->dev, buf);
+
 	return 0;
 }
 
+static ssize_t st7529_get_volctrl(struct device *dev,
+				  struct device_attribute *attr,
+				  char *buf)
+{
+	struct spi_device *spi = to_spi_device(dev);
+	struct fb_info *fb_info = spi_get_drvdata(spi);
+	struct mfb_info *mfbi = fb_info->par;
+
+	return sprintf(buf, "%d\n", mfbi->volctrl);
+}
+
+static ssize_t st7529_set_volctrl(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t count)
+{
+	struct spi_device *spi = to_spi_device(dev);
+	struct fb_info *fb_info = spi_get_drvdata(spi);
+	struct mfb_info *mfbi = fb_info->par;
+	int volctrl = 0;
+
+	if (1 == sscanf(buf, "%d", &volctrl)) {
+		mfbi->volctrl = volctrl;
+		st7529_set_voltage(mfbi, volctrl);
+	}
+
+	return count;
+}
+
+static DEVICE_ATTR(volctrl, S_IWUSR | S_IRUGO, st7529_get_volctrl, st7529_set_volctrl);
+
+static struct attribute *dev_attrs[] = {
+	&dev_attr_volctrl.attr,
+	NULL
+};
+
+static struct attribute_group dev_attr_grp = {
+	.attrs = dev_attrs,
+};
+
 static int st7529_probe(struct spi_device *spi)
 {
-	int xres = -1, yres = -1, bits_per_pixel = -1, grayscale = -1;
+	int xres = -1, yres = -1, bits_per_pixel = -1;
 	struct device_node *node = spi->dev.of_node;
 	struct fb_info *fb_info = NULL;
-	int nres_gpio, a0_gpio;
 	struct mfb_info *mfbi = NULL;
 	int err = 0;
+	dma_addr_t dma_handle;
 
 	if (NULL == node) {
 		dev_err(&spi->dev, "No device info\n");
@@ -231,39 +296,9 @@ static int st7529_probe(struct spi_device *spi)
 		dev_err(&spi->dev, "failed to get y-resolution\n");
 	if (of_property_read_u32(node, "bits_per_pixel", &bits_per_pixel))
 		dev_err(&spi->dev, "failed to get color depth\n");
-	if (of_property_read_u32(node, "grayscale", &grayscale))
-		dev_err(&spi->dev, "failed to get if LCD is grayscale\n");
 
-	if (xres < 0 || yres < 0 || bits_per_pixel < 0 || grayscale < 0)
+	if (xres < 0 || yres < 0 || bits_per_pixel < 0)
 		return -EINVAL;
-
-	nres_gpio = of_get_named_gpio(node, "nres-gpios", 0);
-	if (!gpio_is_valid(nres_gpio)) {
-		dev_err(&spi->dev, "Invalid nReset gpio %d\n", nres_gpio);
-		return -EINVAL;
-	}
-
-	a0_gpio = of_get_named_gpio(node, "a0-gpios", 0);
-	if (!gpio_is_valid(a0_gpio)) {
-		dev_err(&spi->dev, "Invalid A0 gpio %d\n", a0_gpio);
-		return -EINVAL;
-	}
-
-	err = devm_gpio_request_one(&spi->dev, nres_gpio,
-				    GPIOF_OUT_INIT_HIGH, "lcd_nreset");
-	if (err) {
-		dev_err(&spi->dev, "Failed to request nReset gpio %d: %d\n",
-			nres_gpio, err);
-		return err;
-	}
-
-	err = devm_gpio_request_one(&spi->dev, a0_gpio,
-				    GPIOF_OUT_INIT_HIGH, "lcd_a0");
-	if (err) {
-		dev_err(&spi->dev, "Failed to request A0 gpio %d: %d\n",
-			a0_gpio, err);
-		return err;
-	}
 
 	fb_info = framebuffer_alloc(sizeof(struct mfb_info), &spi->dev);
 	if (NULL == fb_info) {
@@ -271,8 +306,15 @@ static int st7529_probe(struct spi_device *spi)
 		return -ENOMEM;
 	}
 
-	fb_info->screen_size = xres * yres;
-	fb_info->screen_base = devm_kzalloc(&spi->dev, fb_info->screen_size, GFP_KERNEL);
+	fb_info->var.xres		= xres;
+	fb_info->var.yres		= yres;
+	fb_info->var.bits_per_pixel	= bits_per_pixel;
+	fb_info->var.xres_virtual	= fb_info->var.xres;
+	fb_info->var.yres_virtual	= fb_info->var.yres;
+	fb_info->fix.line_length	= fb_info->var.xres * fb_info->var.bits_per_pixel / 8;
+	fb_info->screen_size		= fb_info->fix.line_length * fb_info->var.yres_virtual;
+	fb_info->screen_base = dma_alloc_coherent(NULL, PAGE_ALIGN(fb_info->screen_size), &dma_handle, GFP_KERNEL);
+
 	if (NULL == fb_info->screen_base) {
 		dev_err(&spi->dev, "Failed to allocate framebuffer\n");
 		err = -ENOMEM;
@@ -282,29 +324,27 @@ static int st7529_probe(struct spi_device *spi)
 	strcpy(fb_info->fix.id, DRIVER_NAME);
 
 	fb_info->fbops			= &st7529_ops;
-	fb_info->var.xres		= xres;
-	fb_info->var.yres		= yres;
-	fb_info->var.bits_per_pixel	= bits_per_pixel;
-	fb_info->var.grayscale		= grayscale;
-	fb_info->var.xres_virtual	= fb_info->var.xres;
-	fb_info->var.yres_virtual	= fb_info->var.yres;
+	fb_info->var.grayscale		= 0;
 	fb_info->var.vmode		= FB_VMODE_NONINTERLACED;
 	fb_info->var.red.length		= 8;
+	fb_info->var.red.offset		= 16;
 	fb_info->var.green.length	= 8;
+	fb_info->var.green.offset	= 8;
 	fb_info->var.blue.length	= 8;
-	fb_info->var.transp.length	= 8;
+	fb_info->var.blue.offset	= 0;
+	fb_info->var.transp.length	= 0;
+	fb_info->var.transp.offset	= 0;
 	fb_info->fix.type		= FB_TYPE_PACKED_PIXELS;
 	fb_info->fix.visual		= FB_VISUAL_TRUECOLOR;
 	fb_info->fix.accel		= FB_ACCEL_NONE;
-	fb_info->fix.line_length	= fb_info->var.xres * fb_info->var.bits_per_pixel / 8;
-	fb_info->fix.smem_start		= virt_to_phys(fb_info->screen_base);
+	fb_info->fix.smem_start		= dma_handle;
 	fb_info->fix.smem_len		= fb_info->screen_size;
 
 	mfbi				= fb_info->par;
 	mfbi->spi			= spi;
-	mfbi->buffer			= fb_info->screen_base;
 	mfbi->width			= fb_info->var.xres;
 	mfbi->height			= fb_info->var.yres;
+	mfbi->volctrl			= VOLCTRL_DEFAULT;
 
 	mfbi->reset_gpio = devm_gpiod_get(&spi->dev,
 					  "reset", GPIOD_OUT_HIGH);
@@ -330,7 +370,9 @@ static int st7529_probe(struct spi_device *spi)
 		goto failed_install_fb;
 	}
 
-	mfbi->task = kthread_run(st7529_task, mfbi, DRIVER_NAME);
+	mfbi->task = kthread_run(st7529_task, fb_info, DRIVER_NAME);
+
+	err = sysfs_create_group(&spi->dev.kobj, &dev_attr_grp);
 
 	spi_set_drvdata(spi, fb_info);
 
