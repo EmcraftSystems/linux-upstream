@@ -703,6 +703,7 @@
 				clock-names = "dspi";
 				dmas = <&edma1 0 10>,
 					<&edma1 0 11>;
+				dma-names = "rx","tx";
 				spi-num-chipselects = <5>;
 				status = "disabled";
 			};

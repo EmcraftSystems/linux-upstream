@@ -109,6 +109,9 @@ struct spi_device {
 	 */
 };
 
+typedef size_t (*spi_cmd_cb_t)(struct spi_device *spi, const u8 *cmd, size_t cmd_len, u8 **resp);
+typedef void (*spi_resp_cb_t)(struct spi_device *spi, u8 *resp, int err);
+
 static inline struct spi_device *to_spi_device(struct device *dev)
 {
 	return dev ? container_of(dev, struct spi_device, dev) : NULL;
@@ -459,7 +462,30 @@ struct spi_master {
 	/* dummy data for full duplex devices */
 	void			*dummy_rx;
 	void			*dummy_tx;
+
+	void (*register_slave)(struct spi_device *spi, spi_cmd_cb_t cmd_cb, spi_resp_cb_t resp_cb);
+	void (*unregister_slave)(struct spi_device *spi);
 };
+
+static inline int spi_register_slave(struct spi_device *spi, spi_cmd_cb_t cmd_cb, spi_resp_cb_t resp_cb)
+{
+	if (spi->master->register_slave) {
+		spi->master->register_slave(spi, cmd_cb, resp_cb);
+		return 0;
+	} else {
+		return -ENOTSUPP;
+	}
+}
+
+static inline int spi_unregister_slave(struct spi_device *spi)
+{
+	if (spi->master->unregister_slave) {
+		spi->master->unregister_slave(spi);
+		return 0;
+	} else {
+		return -ENOTSUPP;
+	}
+}
 
 static inline void *spi_master_get_devdata(struct spi_master *master)
 {
