@@ -71,6 +71,14 @@ static DECLARE_BITMAP(minors, N_SPI_MINORS);
 				| SPI_LSB_FIRST | SPI_3WIRE | SPI_LOOP \
 				| SPI_NO_CS | SPI_READY | SPI_TX_DUAL \
 				| SPI_TX_QUAD | SPI_RX_DUAL | SPI_RX_QUAD)
+#define RECV_BUF_SIZE	64
+#define CMD_ADD		0xAB
+#define CMD_ADD_RESP	0xBB
+
+struct spislave_data {
+	u8 recv_buf[RECV_BUF_SIZE];
+	size_t recv_bytes;
+};
 
 struct spidev_data {
 	dev_t			devt;
@@ -84,6 +92,7 @@ struct spidev_data {
 	u8			*tx_buffer;
 	u8			*rx_buffer;
 	u32			speed_hz;
+	struct spislave_data	*slave;
 };
 
 static LIST_HEAD(device_list);
@@ -700,6 +709,72 @@ static const struct of_device_id spidev_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, spidev_dt_ids);
 #endif
 
+static size_t spislave_cmd_cb(struct spi_device *spi, const u8 *cmd, size_t cmd_len, u8 **resp)
+{
+	struct spidev_data *spidev = spi_get_drvdata(spi);
+	struct spislave_data *slave = spidev->slave;
+
+	if (slave->recv_bytes == 0) {
+		/* Skip until known command */
+		while (cmd_len) {
+			if (cmd[0] == CMD_ADD) {
+				break;
+			} else {
+				++cmd;
+				--cmd_len;
+			}
+		}
+	}
+
+	if (cmd_len == 0)
+		return 0;
+
+	if ((slave->recv_bytes + cmd_len) > RECV_BUF_SIZE) {
+		dev_err(&spi->dev, "Buffer overflow: too long command: %d bytes\n", slave->recv_bytes + cmd_len);
+		slave->recv_bytes = 0;
+		return 0;
+	}
+
+	memcpy(&slave->recv_buf[slave->recv_bytes], cmd, cmd_len);
+	slave->recv_bytes += cmd_len;
+
+	if ((slave->recv_bytes >= 4) && (slave->recv_buf[0] == CMD_ADD)) {
+		size_t resp_size = 4;
+		u8 *buf = kzalloc(resp_size, GFP_KERNEL);
+		int i;
+		*resp = buf;
+
+		if (!buf) {
+			dev_err(&spi->dev, "Can't allocate buffer for response\n");
+			return 0;
+		}
+
+		buf[0] = CMD_ADD_RESP;
+		buf[1] = slave->recv_buf[1];
+		for (i = 2; i < resp_size; ++i) {
+			buf[i] = slave->recv_buf[i] + buf[1];
+		}
+
+		slave->recv_bytes = 0;
+
+		return resp_size;
+	} else if (slave->recv_bytes >= 4) {
+		dev_err(&spi->dev, "Command format does not match\n");
+		slave->recv_bytes = 0;
+	}
+
+	return 0;
+}
+
+static void spislave_resp_cb(struct spi_device *spi, u8 *resp, int err)
+{
+	if (resp)
+		kfree(resp);
+
+	if (err)
+		dev_err(&spi->dev, "Failed to send responce: %d\n", err);
+}
+
 /*-------------------------------------------------------------------------*/
 
 static int spidev_probe(struct spi_device *spi)
@@ -707,6 +782,7 @@ static int spidev_probe(struct spi_device *spi)
 	struct spidev_data	*spidev;
 	int			status;
 	unsigned long		minor;
+	struct device_node *np = spi->dev.of_node;
 
 	/*
 	 * spidev should never be referenced in DT without a specific
@@ -756,8 +832,24 @@ static int spidev_probe(struct spi_device *spi)
 
 	spidev->speed_hz = spi->max_speed_hz;
 
-	if (status == 0)
+	if (status == 0) {
 		spi_set_drvdata(spi, spidev);
+
+		if (of_property_read_bool(np, "slave-mode")) {
+			int err;
+			err = spi_register_slave(spi, spislave_cmd_cb, spislave_resp_cb);
+
+			if (!err) {
+				spidev->slave = devm_kzalloc(&spi->dev, sizeof(*spidev->slave), GFP_KERNEL);
+				if (!spidev->slave)
+					dev_err(&spi->dev, "No memory for slave mode\n");
+				else
+					dev_info(&spi->dev, "Set up slave mode\n");
+			} else {
+				dev_err(&spi->dev, "Slave mode is not supported\n");
+			}
+		}
+	}
 	else
 		kfree(spidev);
 
@@ -767,6 +859,12 @@ static int spidev_probe(struct spi_device *spi)
 static int spidev_remove(struct spi_device *spi)
 {
 	struct spidev_data	*spidev = spi_get_drvdata(spi);
+
+	if (spidev->slave) {
+		spi_unregister_slave(spidev->spi);
+		devm_kfree(&spidev->spi->dev, spidev->slave);
+		spidev->slave = NULL;
+	}
 
 	/* make sure ops on existing fds can abort cleanly */
 	spin_lock_irq(&spidev->spi_lock);
