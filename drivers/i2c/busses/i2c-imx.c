@@ -638,6 +638,7 @@ static irqreturn_t i2c_imx_isr(int irq, void *dev_id)
 		if (i2c_imx->in_master_mode) {
 			wake_up(&i2c_imx->queue);
 		} else if (i2c_imx->slave_client) {
+#if IS_ENABLED(CONFIG_I2C_SLAVE)
 			unsigned int cr = imx_i2c_read_reg(i2c_imx, IMX_I2C_I2CR);
 			bool arbitration_lost = !!(i2c_imx->i2csr & I2SR_IAL);
 			bool iaas = !!(i2c_imx->i2csr & I2SR_IAAS);
@@ -676,6 +677,7 @@ static irqreturn_t i2c_imx_isr(int irq, void *dev_id)
 					i2c_slave_event(i2c_imx->slave_client, I2C_SLAVE_WRITE_RECEIVED, &value);
 				}
 			}
+#endif /* CONFIG_I2C_SLAVE */
 		}
 
 		return IRQ_HANDLED;
@@ -1056,6 +1058,7 @@ static u32 i2c_imx_func(struct i2c_adapter *adapter)
 		| I2C_FUNC_SLAVE;
 }
 
+#if IS_ENABLED(CONFIG_I2C_SLAVE)
 static int i2c_imx_reg_slave(struct i2c_client *slave)
 {
 	struct imx_i2c_struct *i2c_imx = i2c_get_adapdata(slave->adapter);
@@ -1085,12 +1088,15 @@ static int i2c_imx_unreg_slave(struct i2c_client *slave)
 
 	return 0;
 }
+#endif /* CONFIG_I2C_SLAVE */
 
 static struct i2c_algorithm i2c_imx_algo = {
 	.master_xfer	= i2c_imx_xfer,
 	.functionality	= i2c_imx_func,
+#if IS_ENABLED(CONFIG_I2C_SLAVE)
 	.reg_slave	= i2c_imx_reg_slave,
 	.unreg_slave	= i2c_imx_unreg_slave,
+#endif
 };
 
 static int i2c_imx_probe(struct platform_device *pdev)
