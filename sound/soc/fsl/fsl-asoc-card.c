@@ -23,6 +23,7 @@
 
 #include "../codecs/sgtl5000.h"
 #include "../codecs/wm8962.h"
+#include "../codecs/wm8985.h"
 
 #define RX 0
 #define TX 1
@@ -43,6 +44,7 @@ struct codec_priv {
 	u32 mclk_id;
 	u32 fll_id;
 	u32 pll_id;
+	int *lrclk_divs;
 };
 
 /**
@@ -113,6 +115,8 @@ static const struct snd_soc_dapm_widget fsl_asoc_card_dapm_widgets[] = {
 	SND_SOC_DAPM_MIC("AMIC", NULL),
 	SND_SOC_DAPM_MIC("DMIC", NULL),
 };
+
+static u32 wm8985_lrc_divs[] = { 128, 192, 256, 384, 512, 768, 1024, 1536, 0 };
 
 static int fsl_asoc_card_hw_params(struct snd_pcm_substream *substream,
 				   struct snd_pcm_hw_params *params)
@@ -216,6 +220,7 @@ static int fsl_asoc_card_set_bias_level(struct snd_soc_card *card,
 	struct device *dev = card->dev;
 	unsigned int pll_out;
 	int ret;
+	int i;
 
 	if (dapm->dev != codec_dai->dev)
 		return 0;
@@ -225,14 +230,29 @@ static int fsl_asoc_card_set_bias_level(struct snd_soc_card *card,
 		if (dapm->bias_level != SND_SOC_BIAS_STANDBY)
 			break;
 
-		if (priv->sample_format == SNDRV_PCM_FORMAT_S24_LE)
-			pll_out = priv->sample_rate * 384;
-		else
-			pll_out = priv->sample_rate * 256;
+		if (codec_priv->lrclk_divs != NULL) {
+			for (i = 0; codec_priv->lrclk_divs[i] != 0; i ++) {
+				pll_out = priv->sample_rate * codec_priv->lrclk_divs[i];
+				ret = snd_soc_dai_set_pll(codec_dai, codec_priv->pll_id,
+							  codec_priv->mclk_id,
+							  codec_priv->mclk_freq, pll_out);
+				if (ret == 0) {
+					break;
+				}
+			}
+		} else {
+			if (priv->sample_format == SNDRV_PCM_FORMAT_S24_LE) {
+				pll_out = priv->sample_rate * 384;
+			} else {
+				pll_out = priv->sample_rate * 256;
+			}
 
-		ret = snd_soc_dai_set_pll(codec_dai, codec_priv->pll_id,
-					  codec_priv->mclk_id,
-					  codec_priv->mclk_freq, pll_out);
+			ret = snd_soc_dai_set_pll(codec_dai, codec_priv->pll_id,
+						  codec_priv->mclk_id,
+						  codec_priv->mclk_freq, pll_out);
+
+		}
+
 		if (ret) {
 			dev_err(dev, "failed to start FLL: %d\n", ret);
 			return ret;
@@ -475,6 +495,21 @@ static int fsl_asoc_card_probe(struct platform_device *pdev)
 		priv->codec_priv.fll_id = WM8962_SYSCLK_FLL;
 		priv->codec_priv.pll_id = WM8962_FLL;
 		priv->dai_fmt |= SND_SOC_DAIFMT_CBM_CFM;
+	} else if (of_device_is_compatible(np, "fsl,imx-audio-wm8985")) {
+		/* wm8985 codec can generate bclk and lrclk in such a way
+		   that the bclk/lrclk ratio is always a power of 2.
+		   Use DSP_A base format since FSL SAI
+		   doesn't propelry generate data in I2S format when
+		   bclk/lrclk is not equal to the frame size, that happends
+		   when frame size is not a power of 2 in case of wm8985 codec.
+		*/
+		priv->dai_fmt = (SND_SOC_DAIFMT_DSP_A | SND_SOC_DAIFMT_NB_NF);
+		priv->card.set_bias_level = fsl_asoc_card_set_bias_level;
+		priv->codec_priv.mclk_id = WM8985_CLKSRC_MCLK;
+		priv->codec_priv.fll_id = WM8985_CLKSRC_PLL;
+		priv->codec_priv.pll_id = WM8985_CLKSRC_PLL;
+		priv->dai_fmt |= SND_SOC_DAIFMT_CBM_CFM;
+		priv->codec_priv.lrclk_divs = wm8985_lrc_divs;
 	} else {
 		dev_err(&pdev->dev, "unknown Device Tree compatible\n");
 		return -EINVAL;
@@ -503,19 +538,23 @@ static int fsl_asoc_card_probe(struct platform_device *pdev)
 	priv->card.dev = &pdev->dev;
 	priv->card.name = priv->name;
 	priv->card.dai_link = priv->dai_link;
-	priv->card.dapm_routes = audio_map;
 	priv->card.late_probe = fsl_asoc_card_late_probe;
-	priv->card.num_dapm_routes = ARRAY_SIZE(audio_map);
-	priv->card.dapm_widgets = fsl_asoc_card_dapm_widgets;
-	priv->card.num_dapm_widgets = ARRAY_SIZE(fsl_asoc_card_dapm_widgets);
+	if (asrc_pdev) {
+		priv->card.dapm_routes = audio_map;
+		priv->card.num_dapm_routes = ARRAY_SIZE(audio_map);
+		priv->card.dapm_widgets = fsl_asoc_card_dapm_widgets;
+		priv->card.num_dapm_widgets = ARRAY_SIZE(fsl_asoc_card_dapm_widgets);
+	}
 
 	memcpy(priv->dai_link, fsl_asoc_card_dai,
 	       sizeof(struct snd_soc_dai_link) * ARRAY_SIZE(priv->dai_link));
 
-	ret = snd_soc_of_parse_audio_routing(&priv->card, "audio-routing");
-	if (ret) {
-		dev_err(&pdev->dev, "failed to parse audio-routing: %d\n", ret);
-		goto asrc_fail;
+	if (asrc_pdev) {
+		ret = snd_soc_of_parse_audio_routing(&priv->card, "audio-routing");
+		if (ret) {
+			dev_err(&pdev->dev, "failed to parse audio-routing: %d\n", ret);
+			goto asrc_fail;
+		}
 	}
 
 	/* Normal DAI Link */
@@ -578,6 +617,7 @@ static const struct of_device_id fsl_asoc_card_dt_ids[] = {
 	{ .compatible = "fsl,imx-audio-cs42888", },
 	{ .compatible = "fsl,imx-audio-sgtl5000", },
 	{ .compatible = "fsl,imx-audio-wm8962", },
+	{ .compatible = "fsl,imx-audio-wm8985", },
 	{}
 };
 
