@@ -32,10 +32,11 @@
 
 struct numdisp_info {
 	int			width;
+	int			count;
 	struct gpio_desc	*le_gpio;
 	struct gpio_desc	*oe_gpio;
 	struct spi_device	*spi;
-	char			text[10];
+	char			text[128];
 };
 
 static char syms[] = { ' ', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'C', 'E', 'F', 'H', 'L', 'P', 'R', 'U' };
@@ -91,10 +92,11 @@ static ssize_t numdisp_set_text(struct device *dev,
 {
 	struct spi_device *spi = to_spi_device(dev);
 	struct numdisp_info *numdisp = spi_get_drvdata(spi);
+	int full_len = numdisp->width * numdisp->count;
 	int len = strlen(buf) ? (strlen(buf) - 1) : 0;
 
 	memset(numdisp->text, 0, sizeof(numdisp->text));
-	strncpy(numdisp->text, buf, (len > numdisp->width) ? numdisp->width : len);
+	strncpy(numdisp->text, buf, (len > full_len) ? full_len : len);
 
 	return count;
 }
@@ -114,6 +116,8 @@ static int numdisp_task(void *param)
 {
 	struct spi_device *spi = (struct spi_device *)param;
 	struct numdisp_info *numdisp = spi_get_drvdata(spi);
+	int full_len = numdisp->width * numdisp->count;
+	static char buf[sizeof(numdisp->text)];
 
 	set_freezable();
 
@@ -122,12 +126,17 @@ static int numdisp_task(void *param)
 			int i;
 			int len = strlen(numdisp->text);
 
-			for (i = 0; i < len; ++i) {
-				numdisp_set(numdisp, i, numdisp->text[i], false);
-				schedule_timeout_interruptible(msecs_to_jiffies(1));
-			}
-			for (; i < numdisp->width; ++i) {
-				numdisp_set(numdisp, i, ' ', false);
+			if (len > full_len)
+				break;
+
+			memset(buf, ' ', full_len);
+			buf[full_len] = '\0';
+			strcpy(buf + (full_len - len), numdisp->text);
+
+			for (i = 0; i < numdisp->width; ++i) {
+				int j;
+				for (j = 0; j < numdisp->count; ++j)
+					numdisp_set(numdisp, (i % numdisp->width), buf[i + j * numdisp->width], false);
 				schedule_timeout_interruptible(msecs_to_jiffies(1));
 			}
 		} else {
@@ -150,6 +159,10 @@ static int numdisp_probe(struct spi_device *spi)
 	if (err) {
 		dev_err(&spi->dev, "Can't get width of LCD: %d\n", err);
 		return err;
+	}
+	err = of_property_read_u32(node, "count", &numdisp->count);
+	if (err) {
+		numdisp->count = 1;
 	}
 	numdisp->le_gpio = devm_gpiod_get(&spi->dev, "le", GPIOD_OUT_LOW);
 	numdisp->oe_gpio = devm_gpiod_get(&spi->dev, "oe", GPIOD_OUT_LOW);
