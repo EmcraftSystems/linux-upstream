@@ -1249,6 +1249,8 @@ static int ds1307_suspend(struct device *dev)
 
 	if (device_may_wakeup(dev))
 		enable_irq_wake(ds1307->client->irq);
+	else
+		disable_irq(ds1307->client->irq);
 
 	return 0;
 }
@@ -1258,7 +1260,9 @@ static int ds1307_resume(struct device *dev)
 	struct ds1307 *ds1307 = dev_get_drvdata(dev);
 
 	if (device_may_wakeup(dev))
-		return disable_irq_wake(ds1307->client->irq);
+		disable_irq_wake(ds1307->client->irq);
+	else
+		enable_irq(ds1307->client->irq);
 
 	return 0;
 }
