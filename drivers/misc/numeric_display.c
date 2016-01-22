@@ -86,6 +86,28 @@ static ssize_t numdisp_get_text(struct device *dev,
 	return strlen(buf_orig);
 }
 
+static void numdisp_print(struct numdisp_info *numdisp, const char *msg)
+{
+	int full_len = numdisp->width * numdisp->count;
+	static char buf[sizeof(numdisp->text)];
+	int len = strlen(msg);
+	int i;
+
+	if (len > full_len)
+		len = full_len;
+
+	memset(buf, ' ', full_len);
+	buf[full_len] = '\0';
+	strncpy(buf + (full_len - len), msg, len);
+
+	for (i = 0; i < numdisp->width; ++i) {
+		int j;
+		for (j = 0; j < numdisp->count; ++j)
+			numdisp_set(numdisp, (i % numdisp->width), buf[i + j * numdisp->width], false);
+		schedule_timeout_interruptible(msecs_to_jiffies(1));
+	}
+}
+
 static ssize_t numdisp_set_text(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf, size_t count)
@@ -96,7 +118,11 @@ static ssize_t numdisp_set_text(struct device *dev,
 	int len = strlen(buf) ? (strlen(buf) - 1) : 0;
 
 	memset(numdisp->text, 0, sizeof(numdisp->text));
-	strncpy(numdisp->text, buf, (len > full_len) ? full_len : len);
+	if (len) {
+		strncpy(numdisp->text, buf, (len > full_len) ? full_len : len);
+	} else {
+		numdisp_print(numdisp, "");
+	}
 
 	return count;
 }
@@ -116,32 +142,14 @@ static int numdisp_task(void *param)
 {
 	struct spi_device *spi = (struct spi_device *)param;
 	struct numdisp_info *numdisp = spi_get_drvdata(spi);
-	int full_len = numdisp->width * numdisp->count;
-	static char buf[sizeof(numdisp->text)];
 
 	set_freezable();
 
 	while (!kthread_should_stop()) {
-		if (strlen(numdisp->text)) {
-			int i;
-			int len = strlen(numdisp->text);
-
-			if (len > full_len)
-				break;
-
-			memset(buf, ' ', full_len);
-			buf[full_len] = '\0';
-			strcpy(buf + (full_len - len), numdisp->text);
-
-			for (i = 0; i < numdisp->width; ++i) {
-				int j;
-				for (j = 0; j < numdisp->count; ++j)
-					numdisp_set(numdisp, (i % numdisp->width), buf[i + j * numdisp->width], false);
-				schedule_timeout_interruptible(msecs_to_jiffies(1));
-			}
-		} else {
+		if (strlen(numdisp->text))
+			numdisp_print(numdisp, numdisp->text);
+		else
 			schedule_timeout_interruptible(msecs_to_jiffies(1000));
-		}
 
 		try_to_freeze();
 	}
