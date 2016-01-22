@@ -1236,8 +1236,12 @@ static int i2c_imx_suspend(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct imx_i2c_struct *i2c_imx = platform_get_drvdata(pdev);
 
-	if (!device_may_wakeup(&i2c_imx->adapter.dev))
+	if (device_may_wakeup(&i2c_imx->adapter.dev)) {
+		enable_irq_wake(i2c_imx->irq);
+	} else {
+		disable_irq(i2c_imx->irq);
 		clk_disable_unprepare(i2c_imx->clk);
+	}
 
 	return 0;
 }
@@ -1247,8 +1251,12 @@ static int i2c_imx_resume(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct imx_i2c_struct *i2c_imx = platform_get_drvdata(pdev);
 
-	if (!device_may_wakeup(&i2c_imx->adapter.dev))
+	if (device_may_wakeup(&i2c_imx->adapter.dev)) {
+		disable_irq_wake(i2c_imx->irq);
+	} else {
 		clk_prepare_enable(i2c_imx->clk);
+		enable_irq(i2c_imx->irq);
+	}
 
 	return 0;
 }
