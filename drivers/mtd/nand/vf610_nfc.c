@@ -417,6 +417,9 @@ static void vf610_nfc_command(struct mtd_info *mtd, unsigned command,
 	nfc->buf_offset = max(column, 0);
 	nfc->alt_buf = ALT_BUF_DATA;
 
+	if (command != NAND_CMD_READ0)
+		nfc->last_page = -1;
+
 	switch (command) {
 	case NAND_CMD_SEQIN:
 		/* Use valid column/page from preread... */
