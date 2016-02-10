@@ -107,7 +107,9 @@ config CLKSRC_EFM32
 	  event device.
 
 config CLKSRC_LPC32XX
-	bool
+	bool "Clocksource for LPC32XX" if COMPILE_TEST
+	depends on GENERIC_CLOCKEVENTS && HAS_IOMEM
+	depends on ARM
 	select CLKSRC_MMIO
 	select CLKSRC_OF
 
