@@ -132,6 +132,9 @@
 #define BPP_16_RGB565			4
 #define BPP_24_RGB888			5
 #define BPP_32_ARGB8888			6
+#define BPP_YUV422			0x0e
+
+#define NONSTD_UYVY_FLAG		1
 
 #define TCON_CTRL1			0x0000
 #define TCON_BYPASS_ENABLE		(1 << 29)
@@ -269,20 +272,24 @@ static int enable_panel(struct fb_info *info)
 	addr = fsl_dcu_get_offset(info);
 	writel(addr, dcufb->reg_base + DCU_CTRLDESCLN_3(mfbi->index));
 
-	switch (var->bits_per_pixel) {
-	case 16:
-		bpp = BPP_16_RGB565;
-		break;
-	case 24:
-		bpp = BPP_24_RGB888;
-		break;
-	case 32:
-		bpp = BPP_32_ARGB8888;
-		break;
-	default:
-		dev_err(dcufb->dev, "unsupported color depth: %u\n",
-			var->bits_per_pixel);
-		return -EINVAL;
+	if (var->nonstd & NONSTD_UYVY_FLAG) {
+		bpp = BPP_YUV422;
+	}else {
+		switch (var->bits_per_pixel) {
+		case 16:
+			bpp = BPP_16_RGB565;
+			break;
+		case 24:
+			bpp = BPP_24_RGB888;
+			break;
+		case 32:
+			bpp = BPP_32_ARGB8888;
+			break;
+		default:
+			dev_err(dcufb->dev, "unsupported color depth: %u\n",
+				var->bits_per_pixel);
+			return -EINVAL;
+		}
 	}
 
 	writel(DCU_CTRLDESCLN_4_EN |
@@ -383,7 +390,7 @@ static int fsl_dcu_check_var(struct fb_var_screeninfo *var,
 	struct mfb_info *mfbi = info->par;
 	struct dcu_fb_data *dcufb = mfbi->parent;
 
-	if (var->grayscale || var->rotate || var->nonstd)
+	if (var->grayscale || var->rotate)
 		return -EINVAL;
 
 	if (var->xres_virtual < var->xres)
@@ -575,6 +582,12 @@ static int fsl_dcu_set_par(struct fb_info *info)
 	struct fb_fix_screeninfo *fix = &info->fix;
 	struct mfb_info *mfbi = info->par;
 	struct dcu_fb_data *dcufb = mfbi->parent;
+
+	if (var->nonstd & NONSTD_UYVY_FLAG) {
+		var->bits_per_pixel = 16;
+	} else {
+		var->bits_per_pixel = dcufb->bits_per_pixel;
+	}
 
 	fix->line_length = var->xres_virtual * var->bits_per_pixel / 8;
 	fix->type = FB_TYPE_PACKED_PIXELS;
