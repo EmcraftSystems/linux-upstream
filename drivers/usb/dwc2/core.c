@@ -764,10 +764,17 @@ static void dwc2_gusbcfg_init(struct dwc2_hsotg *hsotg)
  */
 int dwc2_core_init(struct dwc2_hsotg *hsotg, bool select_phy, int irq)
 {
-	u32 usbcfg, otgctl;
+	u32 usbcfg, otgctl, ggpio;
 	int retval;
 
 	dev_dbg(hsotg->dev, "%s(%p)\n", __func__, hsotg);
+
+	/* Set GGPIO if needed */
+	if (hsotg->core_params->ggpio) {
+		ggpio = readl(hsotg->regs + GGPIO);
+		ggpio |= hsotg->core_params->ggpio;
+		writel(ggpio, hsotg->regs + GGPIO);
+	}
 
 	usbcfg = readl(hsotg->regs + GUSBCFG);
 

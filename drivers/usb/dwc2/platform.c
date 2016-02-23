@@ -115,6 +115,7 @@ static const struct dwc2_core_params params_rk3066 = {
 /*
  * STM32 USB FS has 1.25 * 1024 bytes, that means a total
  * of 320 words. No periodic for now.
+ * GCCFG is mapped to GGPIO on STM32, set NOVBUSSENS | PWRDWN
  */
 static const struct dwc2_core_params params_stm32 = {
 	.otg_cap			= -1,
@@ -134,7 +135,7 @@ static const struct dwc2_core_params params_stm32 = {
 	.phy_utmi_width			= -1,
 	.phy_ulpi_ddr			= -1,
 	.phy_ulpi_ext_vbus		= -1,
-	.i2c_enable			= -1,
+	.i2c_enable			=  0,
 	.ulpi_fs_ls			= -1,
 	.host_support_fs_ls_low_power	= -1,
 	.host_ls_low_power_phy_clk	= -1,
@@ -144,6 +145,7 @@ static const struct dwc2_core_params params_stm32 = {
 	.uframe_sched			= -1,
 	.external_id_pin_ctl		= -1,
 	.hibernation			= -1,
+	.ggpio				= (1 << 21) | (1 << 16),
 };
 
 /**
@@ -180,6 +182,7 @@ static const struct of_device_id dwc2_of_match_table[] = {
 	{ .compatible = "snps,dwc2", .data = NULL },
 	{ .compatible = "samsung,s3c6400-hsotg", .data = NULL},
 	{ .compatible = "st,stm32-otg-hs", .data = &params_stm32 },
+	{ .compatible = "st,stm32-otg-fs", .data = &params_stm32 },
 	{},
 };
 MODULE_DEVICE_TABLE(of, dwc2_of_match_table);
@@ -204,6 +207,7 @@ static int dwc2_driver_probe(struct platform_device *dev)
 	struct dwc2_hsotg *hsotg;
 	struct resource *res;
 	struct phy *phy;
+	struct clk *clk;
 	struct usb_phy *uphy;
 	int retval;
 	int irq;
@@ -260,12 +264,16 @@ static int dwc2_driver_probe(struct platform_device *dev)
 	dev_dbg(&dev->dev, "mapped PA %08lx to VA %p\n",
 		(unsigned long)res->start, hsotg->regs);
 
-	hsotg->core_clk = devm_clk_get(&dev->dev, "core_clk");
-	if (hsotg->core_clk)
+	clk = devm_clk_get(&dev->dev, "core_clk");
+	if (!IS_ERR(clk)) {
+		hsotg->core_clk = clk;
 		clk_prepare_enable(hsotg->core_clk);
-	hsotg->ulpi_clk = devm_clk_get(&dev->dev, "ulpi_clk");
-	if (hsotg->ulpi_clk)
+	}
+	clk = devm_clk_get(&dev->dev, "ulpi_clk");
+	if (!IS_ERR(clk)) {
+		hsotg->ulpi_clk = clk;
 		clk_prepare_enable(hsotg->ulpi_clk);
+	}
 
 	hsotg->dr_mode = of_usb_get_dr_mode(dev->dev.of_node);
 

@@ -385,6 +385,17 @@
 			};
 		};
 
+		usb_fs {
+			pinctrl_usb_fs: usb_fs-0 {
+				st,pins {
+					dm = <&gpioa 11 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+					dp = <&gpioa 12 ALT10
+						NO_PULL PUSH_PULL HIGH_SPEED>;
+				};
+			};
+		};
+
 		ltdc {
 			pinctrl_ltdc: ltdc-0 {
 				st,pins {
@@ -763,6 +774,15 @@
 			interrupts = <77>;
 			clocks = <&rcc 0 29>, <&rcc 0 30>;
 			clock-names = "core_clk", "ulpi_clk";
+			status = "disabled";
+		};
+
+		usb_fs: usb@50000000 {
+			compatible = "st,stm32-otg-fs";
+			reg = <0x50000000 0x40000>;
+			interrupts = <67>;
+			clocks = <&rcc 0 39>;
+			clock-names = "core_clk";
 			status = "disabled";
 		};
 	};

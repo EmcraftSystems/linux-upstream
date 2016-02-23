@@ -342,6 +342,8 @@ enum dwc2_ep0_state {
  *			needed.
  *			0 - No (default)
  *			1 - Yes
+ * @ggpio:		Specifies GGPIO content. This register may be used on
+ *			some platforms for specific settings
  *
  * The following parameters may be specified when starting the module. These
  * parameters define how the DWC_otg controller should be configured. A
@@ -381,6 +383,7 @@ struct dwc2_core_params {
 	int uframe_sched;
 	int external_id_pin_ctl;
 	int hibernation;
+	int ggpio;
 };
 
 /**
