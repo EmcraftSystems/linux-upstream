@@ -677,6 +677,7 @@ struct dwc2_hregs_backup {
  * @test_mode:          USB test mode requested by the host
  * @last_rst:           Time of last reset
  * @eps:                The endpoints being supplied to the gadget framework
+ * @g_gpio:             GGPIO content
  * @g_using_dma:          Indicate if dma usage is enabled
  * @g_rx_fifo_sz:         Contains rx fifo size value
  * @g_np_g_tx_fifo_sz:      Contains Non-Periodic tx fifo size value
@@ -822,6 +823,7 @@ struct dwc2_hsotg {
 	unsigned long last_rst;
 	struct s3c_hsotg_ep *eps_in[MAX_EPS_CHANNELS];
 	struct s3c_hsotg_ep *eps_out[MAX_EPS_CHANNELS];
+	u32 g_gpio;
 	u32 g_using_dma;
 	u32 g_rx_fifo_sz;
 	u32 g_np_g_tx_fifo_sz;

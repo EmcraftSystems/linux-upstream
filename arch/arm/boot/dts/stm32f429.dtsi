@@ -785,6 +785,16 @@
 			clock-names = "core_clk";
 			status = "disabled";
 		};
+
+		usb_phy_hs: phy_hs {
+			compatible = "usb-nop-xceiv";
+			#phy-cells = <0>;
+		};
+
+		usb_phy_fs: phy_fs {
+			compatible = "usb-nop-xceiv";
+			#phy-cells = <0>;
+		};
 	};
 };
 

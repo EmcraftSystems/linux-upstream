@@ -38,6 +38,9 @@
 #include "core.h"
 #include "hw.h"
 
+/* Number of DWC2 UDC controllers enabled */
+static int dwc2_udc_instances;
+
 /* conversion functions */
 static inline struct s3c_hsotg_req *our_req(struct usb_request *req)
 {
@@ -2079,7 +2082,7 @@ static void s3c_hsotg_irq_enumdone(struct dwc2_hsotg *hsotg)
 	 */
 
 	/* catch both EnumSpd_FS and EnumSpd_FS48 */
-	switch (dsts & DSTS_ENUMSPD_MASK) {
+	switch ((dsts & DSTS_ENUMSPD_MASK) >> DSTS_ENUMSPD_SHIFT) {
 	case DSTS_ENUMSPD_FS:
 	case DSTS_ENUMSPD_FS48:
 		hsotg->gadget.speed = USB_SPEED_FULL;
@@ -2295,8 +2298,10 @@ void s3c_hsotg_core_init_disconnected(struct dwc2_hsotg *hsotg,
 
 	/* set the PLL on, remove the HNP/SRP and set the PHY */
 	val = (hsotg->phyif == GUSBCFG_PHYIF8) ? 9 : 5;
-	writel(hsotg->phyif | GUSBCFG_TOUTCAL(7) |
-	       (val << GUSBCFG_USBTRDTIM_SHIFT), hsotg->regs + GUSBCFG);
+	val = val << GUSBCFG_USBTRDTIM_SHIFT;
+	val |= readl(hsotg->regs + GUSBCFG) & GUSBCFG_FORCEDEVMODE;
+	writel(hsotg->phyif | GUSBCFG_TOUTCAL(7) | val,
+	       hsotg->regs + GUSBCFG);
 
 	s3c_hsotg_init_fifo(hsotg);
 
@@ -2718,6 +2723,8 @@ static int s3c_hsotg_ep_enable(struct usb_ep *ep,
 		for (i = 1; i < hsotg->num_of_eps; ++i) {
 			if (hsotg->fifo_map & (1<<i))
 				continue;
+			if (!hsotg->g_tx_fifo_sz[i])
+				continue;
 			val = readl(hsotg->regs + DPTXFSIZN(i));
 			val = (val >> FIFOSIZE_DEPTH_SHIFT)*4;
 			if (val < size)
@@ -2994,6 +3001,11 @@ static void s3c_hsotg_phy_disable(struct dwc2_hsotg *hsotg)
 static void s3c_hsotg_init(struct dwc2_hsotg *hsotg)
 {
 	u32 trdtim;
+
+	/* Set GGPIO if needed */
+	if (hsotg->g_gpio)
+		writel(hsotg->g_gpio, hsotg->regs + GGPIO);
+
 	/* unmask subset of endpoint interrupts */
 
 	writel(DIEPMSK_TIMEOUTMSK | DIEPMSK_AHBERRMSK |
@@ -3019,8 +3031,9 @@ static void s3c_hsotg_init(struct dwc2_hsotg *hsotg)
 
 	/* set the PLL on, remove the HNP/SRP and set the PHY */
 	trdtim = (hsotg->phyif == GUSBCFG_PHYIF8) ? 9 : 5;
-	writel(hsotg->phyif | GUSBCFG_TOUTCAL(7) |
-		(trdtim << GUSBCFG_USBTRDTIM_SHIFT),
+	trdtim = trdtim << GUSBCFG_USBTRDTIM_SHIFT;
+	trdtim |= readl(hsotg->regs + GUSBCFG) & GUSBCFG_FORCEDEVMODE;
+	writel(hsotg->phyif | GUSBCFG_TOUTCAL(7) | trdtim,
 		hsotg->regs + GUSBCFG);
 
 	if (using_dma(hsotg))
@@ -3453,6 +3466,9 @@ rx_fifo:
 	/* Register NPTX fifo size */
 	of_property_read_u32(np, "g-np-tx-fifo-size",
 						&hsotg->g_np_g_tx_fifo_sz);
+
+	/* Get GGPIO content */
+	of_property_read_u32(np, "g-gpio", &hsotg->g_gpio);
 }
 #else
 static inline void s3c_hsotg_of_probe(struct dwc2_hsotg *hsotg) { }
@@ -3471,6 +3487,11 @@ int dwc2_gadget_init(struct dwc2_hsotg *hsotg, int irq)
 	int ret;
 	int i;
 	u32 p_tx_fifo[] = DWC2_G_P_LEGACY_TX_FIFO_SIZE;
+
+	if (dwc2_udc_instances++) {
+		dev_warn(dev, "Multiple UDCs detected, USB Gadget subsystem "
+			"doesn't support this.\n");
+	}
 
 	/* Set default UTMI width */
 	hsotg->phyif = GUSBCFG_PHYIF16;
@@ -3577,8 +3598,10 @@ int dwc2_gadget_init(struct dwc2_hsotg *hsotg, int irq)
 
 	s3c_hsotg_init(hsotg);
 
+#if defined(CONFIG_USB_DWC2_DUAL_ROLE)
 	/* Switch back to default configuration */
 	__bic32(hsotg->regs + GUSBCFG, GUSBCFG_FORCEDEVMODE);
+#endif
 
 	hsotg->ctrl_buff = devm_kzalloc(hsotg->dev,
 			DWC2_CTRL_BUFF_SIZE, GFP_KERNEL);
@@ -3672,6 +3695,7 @@ err_clk:
  */
 int s3c_hsotg_remove(struct dwc2_hsotg *hsotg)
 {
+	dwc2_udc_instances--;
 	usb_del_gadget_udc(&hsotg->gadget);
 	clk_disable_unprepare(hsotg->clk);
 
