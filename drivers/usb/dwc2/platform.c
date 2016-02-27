@@ -113,11 +113,49 @@ static const struct dwc2_core_params params_rk3066 = {
 };
 
 /*
- * STM32 USB FS has 1.25 * 1024 bytes, that means a total
- * of 320 words. No periodic for now.
- * GCCFG is mapped to GGPIO on STM32, set NOVBUSSENS | PWRDWN
+ * STM32 USB HS has ~4KB FIFO, that means a total
+ * of 1012 words. No periodic for now.
  */
-static const struct dwc2_core_params params_stm32 = {
+static const struct dwc2_core_params params_stm32_hs = {
+	.otg_cap			= -1,
+	.otg_ver			= -1,
+	.dma_enable			= -1,
+	.dma_desc_enable		=  0,
+	.speed				= -1,
+	.enable_dynamic_fifo		= -1,
+	.en_multiple_tx_fifo		= -1,
+	.host_rx_fifo_size		=  506,
+	.host_nperio_tx_fifo_size	=  506,
+	.host_perio_tx_fifo_size	=  0,
+	.max_transfer_size		= -1,
+	.max_packet_count		= -1,
+	.host_channels			= -1,
+	.phy_type			= -1,
+	.phy_utmi_width			= -1,
+	.phy_ulpi_ddr			= -1,
+	.phy_ulpi_ext_vbus		= -1,
+	.i2c_enable			=  0,
+	.ulpi_fs_ls			= -1,
+	.host_support_fs_ls_low_power	= -1,
+	.host_ls_low_power_phy_clk	= -1,
+	.ts_dline			= -1,
+	.reload_ctl			= -1,
+	.ahbcfg				= -1,
+	.uframe_sched			= -1,
+	.external_id_pin_ctl		= -1,
+	.hibernation			= -1,
+
+	/*
+	 * GCCFG: NOVBUSSENS
+	 */
+	.ggpio				= (1 << 21),
+};
+
+/*
+ * STM32 USB FS has 1.25KB FIFO, that means a total
+ * of 320 words. No periodic for now.
+ */
+static const struct dwc2_core_params params_stm32_fs = {
 	.otg_cap			= -1,
 	.otg_ver			= -1,
 	.dma_enable			= -1,
@@ -145,6 +183,10 @@ static const struct dwc2_core_params params_stm32 = {
 	.uframe_sched			= -1,
 	.external_id_pin_ctl		= -1,
 	.hibernation			= -1,
+
+	/*
+	 * GCCFG: NOVBUSSENS | PWRDWN
+	 */
 	.ggpio				= (1 << 21) | (1 << 16),
 };
 
@@ -181,8 +223,8 @@ static const struct of_device_id dwc2_of_match_table[] = {
 	{ .compatible = "rockchip,rk3066-usb", .data = &params_rk3066 },
 	{ .compatible = "snps,dwc2", .data = NULL },
 	{ .compatible = "samsung,s3c6400-hsotg", .data = NULL},
-	{ .compatible = "st,stm32-otg-hs", .data = &params_stm32 },
-	{ .compatible = "st,stm32-otg-fs", .data = &params_stm32 },
+	{ .compatible = "st,stm32-otg-hs", .data = &params_stm32_hs },
+	{ .compatible = "st,stm32-otg-fs", .data = &params_stm32_fs },
 	{},
 };
 MODULE_DEVICE_TABLE(of, dwc2_of_match_table);

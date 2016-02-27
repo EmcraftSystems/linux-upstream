@@ -3003,6 +3003,11 @@ static void dwc2_set_param_hibernation(struct dwc2_hsotg *hsotg,
 	hsotg->core_params->hibernation = val;
 }
 
+static void dwc2_set_param_ggpio(struct dwc2_hsotg *hsotg, int val)
+{
+	hsotg->core_params->ggpio = val;
+}
+
 /*
  * This function is called during module intialization to pass module parameters
  * for the DWC_otg core.
@@ -3049,6 +3054,7 @@ void dwc2_set_parameters(struct dwc2_hsotg *hsotg,
 	dwc2_set_param_uframe_sched(hsotg, params->uframe_sched);
 	dwc2_set_param_external_id_pin_ctl(hsotg, params->external_id_pin_ctl);
 	dwc2_set_param_hibernation(hsotg, params->hibernation);
+	dwc2_set_param_ggpio(hsotg, params->ggpio);
 }
 
 /**
