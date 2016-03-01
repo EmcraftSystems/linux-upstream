@@ -71,10 +71,17 @@ struct goodix_ts_data {
 #define GOODIX_READ_COOR_ADDR		0x814E
 #define GOODIX_REG_CONFIG_DATA		0x8047
 #define GOODIX_REG_ID			0x8140
+#define GOODIX_REG_HW_INFO		0x4220
 
 #define RESOLUTION_LOC		1
 #define MAX_CONTACTS_LOC	5
 #define TRIGGER_LOC		6
+
+#define GTP_MAX_HEIGHT		800
+#define GTP_MAX_WIDTH		480
+#define GTP_INT_RISING		0
+#define GTP_INT_FALLING		1
+#define GTP_INT_TRIGGER		GTP_INT_RISING
 
 static const unsigned long goodix_irq_flags[] = {
 	IRQ_TYPE_EDGE_RISING,
@@ -116,7 +123,7 @@ static const struct dmi_system_id rotated_screen[] = {
  * @len: length of the buffer to write
  */
 static int goodix_i2c_read(struct i2c_client *client,
-			   u16 reg, u8 *buf, int len)
+			   u16 reg, void *buf, int len)
 {
 	struct i2c_msg msgs[2];
 	u16 wbuf = cpu_to_be16(reg);
@@ -182,6 +189,7 @@ static int goodix_get_cfg_len(u16 id)
 	case 9110:
 	case 927:
 	case 928:
+	case 970:
 		return GOODIX_CONFIG_911_LENGTH;
 
 	case 912:
@@ -483,6 +491,7 @@ static void goodix_read_config(struct goodix_ts_data *ts)
 {
 	u8 config[GOODIX_CONFIG_MAX_LENGTH];
 	int error;
+	int i, check_sum = 0;
 
 	error = goodix_i2c_read(ts->client, GOODIX_REG_CONFIG_DATA,
 				config, ts->cfg_len);
@@ -498,6 +507,30 @@ static void goodix_read_config(struct goodix_ts_data *ts)
 		ts->max_touch_num = GOODIX_MAX_CONTACTS;
 		return;
 	}
+
+	config[RESOLUTION_LOC] = (u8) GTP_MAX_WIDTH;
+	config[RESOLUTION_LOC + 1] = (u8) (GTP_MAX_WIDTH >> 8);
+	config[RESOLUTION_LOC + 2] = (u8) GTP_MAX_HEIGHT;
+	config[RESOLUTION_LOC + 3] = (u8) (GTP_MAX_HEIGHT >> 8);
+	config[0] = 'A';
+
+	if (GTP_INT_TRIGGER == 0)
+		config[TRIGGER_LOC] &= 0xfe;
+	else if (GTP_INT_TRIGGER == 1)
+		config[TRIGGER_LOC] |= 0x01;
+
+	for (i = 0; i < ts->cfg_len - 3; i++)
+		check_sum += config[i];
+	config[ts->cfg_len - 2] = (~check_sum) + 1;
+	config[ts->cfg_len - 1] = config[ts->cfg_len - 1] + 1;
+
+	error = goodix_i2c_write(ts->client, GOODIX_REG_CONFIG_DATA, config, ts->cfg_len);
+	if (error) {
+		dev_err(&ts->client->dev,
+			 "Config update failed (%d)\n", error);
+		return;
+	}
+	goodix_int_sync(ts);
 
 	ts->abs_x_max = get_unaligned_le16(&config[RESOLUTION_LOC]);
 	ts->abs_y_max = get_unaligned_le16(&config[RESOLUTION_LOC + 2]);
@@ -562,12 +595,13 @@ static int goodix_i2c_test(struct i2c_client *client)
 {
 	int retry = 0;
 	int error;
-	u8 test;
+	u32 hw_info = 0;
 
 	while (retry++ < 2) {
-		error = goodix_i2c_read(client, GOODIX_REG_CONFIG_DATA,
-					&test, 1);
-		if (!error)
+		error = goodix_i2c_read(client, GOODIX_REG_HW_INFO,
+					&hw_info, sizeof(hw_info));
+
+		if (!error && (hw_info == 0x00900600))
 			return 0;
 
 		dev_err(&client->dev, "i2c test failed attempt %d: %d\n",
