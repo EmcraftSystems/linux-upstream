@@ -72,6 +72,8 @@
 		spi4 = &spi_5;
 		spi5 = &spi_6;
 		ethernet0 = &mac;
+		serial0 = &usart1;
+		serial6 = &usart7;
 	};
 
 	clocks {

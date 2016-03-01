@@ -562,7 +562,7 @@ static int stm32_prepare_rx_dma(struct uart_port *port)
 	dma->dsc = dsc;
 	dma->cookie = dmaengine_submit(dsc);
 
-	dev_info(port->dev, "using %s for rx DMA transfers\n",
+	dev_dbg(port->dev, "using %s for rx DMA transfers\n",
 		 dma_chan_name(dma->chan));
 	return 0;
 chan_err:
@@ -693,7 +693,7 @@ static int stm32_prepare_tx_dma(struct uart_port *port)
 	dma->chan = dma_request_slave_channel(port->dev, "tx");
 	if (!dma->chan)
 		goto chan_err;
-	dev_info(port->dev, "using %s for tx DMA transfers\n",
+	dev_dbg(port->dev, "using %s for tx DMA transfers\n",
 		dma_chan_name(dma->chan));
 
 	spin_lock_init(&dma->lock);
