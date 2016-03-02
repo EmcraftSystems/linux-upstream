@@ -45,6 +45,7 @@
 #include <asm/irq.h>
 #include <linux/of_device.h>
 #include <linux/of_dma.h>
+#include <linux/of_gpio.h>
 
 #define DRIVER_NAME	"vf610-uart"
 #define DEV_NAME	"ttymxc"
@@ -292,6 +293,9 @@
 #define MXC_SLAVE_BUF_SIZE	(4 * 1024)
 #define MXC_DMA_RX_TIMEOUT	msecs_to_jiffies(20)
 
+#define RS485_CTS_SEND		1
+#define RS485_CTS_RECV		0
+
 struct imx_port {
 	struct uart_port	port;
 	unsigned int		old_status;
@@ -319,6 +323,7 @@ struct imx_port {
 	dma_cookie_t		dma_rx_cookie;
 	int			dma_rx_prev_residue;
 	struct timer_list	dma_rx_timer;
+	struct gpio_desc	*cts_gpio;
 };
 
 static const struct of_device_id imx_uart_dt_ids[] = {
@@ -340,6 +345,9 @@ static void imx_stop_tx(struct uart_port *port)
 	temp = readb(sport->port.membase + MXC_UARTCR2);
 	writeb(temp & ~(MXC_UARTCR2_TIE | MXC_UARTCR2_TCIE),
 	       sport->port.membase + MXC_UARTCR2);
+
+	if (sport->cts_gpio)
+		gpiod_set_value(sport->cts_gpio, RS485_CTS_RECV);
 }
 
 /*
@@ -602,6 +610,8 @@ static void dma_tx_work(struct work_struct *w)
 		dma_map_sg(sport->port.dev, &sport->tx_sgl, 1, DMA_TO_DEVICE);
 		/* fire it */
 		tx_uart_dmarun(sport);
+	} else if (sport->cts_gpio) {
+		gpiod_set_value(sport->cts_gpio, RS485_CTS_RECV);
 	}
 
 	spin_unlock_irqrestore(&sport->port.lock, flags);
@@ -616,6 +626,9 @@ static void imx_start_tx(struct uart_port *port)
 {
 	struct imx_port *sport = (struct imx_port *)port;
 	unsigned char temp;
+
+	if (sport->cts_gpio)
+		gpiod_set_value(sport->cts_gpio, RS485_CTS_SEND);
 
 	temp = readb(sport->port.membase + MXC_UARTCR2);
 	writeb(temp | MXC_UARTCR2_TIE,
@@ -1491,6 +1504,14 @@ static int serial_imx_probe(struct platform_device *pdev)
 
 	if (of_get_property(np, "fsl,uart-has-rtscts", NULL))
 		sport->have_rtscts = 1;
+
+	sport->cts_gpio = devm_gpiod_get(&pdev->dev,
+					 "cts", GPIOD_OUT_LOW);
+	if (IS_ERR_OR_NULL(sport->cts_gpio)) {
+		int cts_err = sport->cts_gpio ? PTR_ERR(sport->cts_gpio) : -EINVAL;
+		sport->cts_gpio = NULL;
+		dev_info(&pdev->dev, "No CTS gpio required for RS-485 mode: err %d\n", cts_err);
+	}
 
 	platform_set_drvdata(pdev, &sport->port);
 

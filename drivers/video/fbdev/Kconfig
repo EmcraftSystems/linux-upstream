@@ -1979,6 +1979,12 @@ config FB_FSL_DCU
 	---help---
 	  Framebuffer driver for the Freescale SoC DCU
 
+config FB_PROMATE_ILITEK98
+	tristate "Promate/Ilitek ILI9806E"
+	depends on FB_FSL_DCU && SPI
+	---help---
+	  Initialization (not framebuffer) driver for Promate RF-20150132_H01
+
 config FB_ST7529
 	tristate "Sitronix ST7529 framebuffer support"
 	depends on FB && SPI

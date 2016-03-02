@@ -88,7 +88,7 @@
 				 PAD_CTL_SPEED_HIGH |	\
 				 PAD_CTL_SRE_FAST)
 
-#define VF610_DSPI_PAD_CTRL	(PAD_CTL_DSE_37ohm |	\
+#define VF610_DSPI_PAD_CTRL	(PAD_CTL_DSE_50ohm |	\
 				 PAD_CTL_PUS_100K_UP |	\
 				 PAD_CTL_SPEED_MED |	\
 				 PAD_CTL_HYS)

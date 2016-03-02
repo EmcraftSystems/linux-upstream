@@ -201,10 +201,8 @@ static int pcf8563_get_datetime(struct i2c_client *client, struct rtc_time *tm)
 		return err;
 
 	if (buf[PCF8563_REG_SC] & PCF8563_SC_LV) {
-		pcf8563->voltage_low = 1;
-		dev_err(&client->dev,
+		dev_warn(&client->dev,
 			"low voltage detected, date/time is not reliable.\n");
-		return -EINVAL;
 	}
 
 	dev_dbg(&client->dev,
