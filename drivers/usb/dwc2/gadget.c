@@ -3598,10 +3598,10 @@ int dwc2_gadget_init(struct dwc2_hsotg *hsotg, int irq)
 
 	s3c_hsotg_init(hsotg);
 
-#if defined(CONFIG_USB_DWC2_DUAL_ROLE)
-	/* Switch back to default configuration */
-	__bic32(hsotg->regs + GUSBCFG, GUSBCFG_FORCEDEVMODE);
-#endif
+	if (hsotg->dr_mode == USB_DR_MODE_OTG) {
+		/* Switch back to default configuration */
+		__bic32(hsotg->regs + GUSBCFG, GUSBCFG_FORCEDEVMODE);
+	}
 
 	hsotg->ctrl_buff = devm_kzalloc(hsotg->dev,
 			DWC2_CTRL_BUFF_SIZE, GFP_KERNEL);
