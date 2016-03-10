@@ -512,6 +512,7 @@ static void goodix_read_config(struct goodix_ts_data *ts)
 	config[RESOLUTION_LOC + 1] = (u8) (GTP_MAX_WIDTH >> 8);
 	config[RESOLUTION_LOC + 2] = (u8) GTP_MAX_HEIGHT;
 	config[RESOLUTION_LOC + 3] = (u8) (GTP_MAX_HEIGHT >> 8);
+	config[MAX_CONTACTS_LOC] = GOODIX_MAX_CONTACTS;
 	config[0] = 'A';
 
 	if (GTP_INT_TRIGGER == 0)
