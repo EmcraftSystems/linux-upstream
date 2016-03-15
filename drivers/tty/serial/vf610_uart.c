@@ -767,10 +767,8 @@ static irqreturn_t imx_int(int irq, void *dev_id)
 	if (sts & MXC_UARTSR1_OR)
 		imx_overrun_int(irq, dev_id);
 
-	if (!sport->dma_chan_rx) {
-		if (sts & MXC_UARTSR1_RDRF)
-			imx_rxint(irq, dev_id);
-	}
+	if (sts & MXC_UARTSR1_RDRF)
+		imx_rxint(irq, dev_id);
 
 	if (sts & MXC_UARTSR1_TDRE &&
 	    !(readb(sport->port.membase + MXC_UARTCR5) &
@@ -1363,8 +1361,15 @@ static int serial_imx_suspend(struct device *dev)
 
 		uart_suspend_port(&imx_reg, &sport->port);
 
-		if (!may_wakeup)
+		if (may_wakeup) {
+			/* Disable DMA on RX */
+			unsigned long temp;
+			temp = readb(sport->port.membase + MXC_UARTCR5);
+			temp &= ~MXC_UARTCR5_RDMAS;
+			writeb(temp, sport->port.membase + MXC_UARTCR5);
+		} else {
 			clk_disable_unprepare(sport->clk);
+		}
 	}
 
 	return 0;
@@ -1378,8 +1383,15 @@ static int serial_imx_resume(struct device *dev)
 		struct tty_struct *tty = tty_port_tty_get(&sport->port.state->port);
 		int may_wakeup = (tty ? device_may_wakeup(tty->dev) : 0);
 
-		if (!may_wakeup)
+		if (may_wakeup) {
+			/* Restore DMA settings */
+			unsigned long temp;
+			temp = readb(sport->port.membase + MXC_UARTCR5);
+			temp |= MXC_UARTCR5_RDMAS;
+			writeb(temp, sport->port.membase + MXC_UARTCR5);
+		} else {
 			clk_prepare_enable(sport->clk);
+		}
 
 		uart_resume_port(&imx_reg, &sport->port);
 	}
