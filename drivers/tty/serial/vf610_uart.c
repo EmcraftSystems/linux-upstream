@@ -47,6 +47,8 @@
 #include <linux/of_dma.h>
 #include <linux/of_gpio.h>
 
+#include "serial_mctrl_gpio.h"
+
 #define DRIVER_NAME	"vf610-uart"
 #define DEV_NAME	"ttymxc"
 #define UART_NR		6
@@ -299,7 +301,9 @@
 struct imx_port {
 	struct uart_port	port;
 	unsigned int		old_status;
-	unsigned int		have_rtscts:1;
+	bool			have_rts;
+	bool			have_cts;
+	bool			rts_inverted;
 	unsigned int		fifo_en:1; /* enable FIFO mode */
 	struct clk		*clk;
 	unsigned int		tx_fifo_size, rx_fifo_size;
@@ -323,7 +327,8 @@ struct imx_port {
 	dma_cookie_t		dma_rx_cookie;
 	int			dma_rx_prev_residue;
 	struct timer_list	dma_rx_timer;
-	struct gpio_desc	*cts_gpio;
+	struct gpio_desc	*rs485_ctrl_gpio;
+	struct mctrl_gpios	*gpios;
 };
 
 static const struct of_device_id imx_uart_dt_ids[] = {
@@ -346,8 +351,8 @@ static void imx_stop_tx(struct uart_port *port)
 	writeb(temp & ~(MXC_UARTCR2_TIE | MXC_UARTCR2_TCIE),
 	       sport->port.membase + MXC_UARTCR2);
 
-	if (sport->cts_gpio)
-		gpiod_set_value(sport->cts_gpio, RS485_CTS_RECV);
+	if (sport->rs485_ctrl_gpio)
+		gpiod_set_value(sport->rs485_ctrl_gpio, RS485_CTS_RECV);
 }
 
 /*
@@ -610,8 +615,8 @@ static void dma_tx_work(struct work_struct *w)
 		dma_map_sg(sport->port.dev, &sport->tx_sgl, 1, DMA_TO_DEVICE);
 		/* fire it */
 		tx_uart_dmarun(sport);
-	} else if (sport->cts_gpio) {
-		gpiod_set_value(sport->cts_gpio, RS485_CTS_RECV);
+	} else if (sport->rs485_ctrl_gpio) {
+		gpiod_set_value(sport->rs485_ctrl_gpio, RS485_CTS_RECV);
 	}
 
 	spin_unlock_irqrestore(&sport->port.lock, flags);
@@ -627,8 +632,8 @@ static void imx_start_tx(struct uart_port *port)
 	struct imx_port *sport = (struct imx_port *)port;
 	unsigned char temp;
 
-	if (sport->cts_gpio)
-		gpiod_set_value(sport->cts_gpio, RS485_CTS_SEND);
+	if (sport->rs485_ctrl_gpio)
+		gpiod_set_value(sport->rs485_ctrl_gpio, RS485_CTS_SEND);
 
 	temp = readb(sport->port.membase + MXC_UARTCR2);
 	writeb(temp | MXC_UARTCR2_TIE,
@@ -797,10 +802,13 @@ static unsigned int imx_get_mctrl(struct uart_port *port)
 	struct imx_port *sport = (struct imx_port *)port;
 	unsigned int tmp = 0;
 
+	if (sport->gpios)
+		mctrl_gpio_get(sport->gpios, &tmp);
+
 	if (readb(sport->port.membase + MXC_UARTMODEM) & MXC_UARTMODEM_TXCTSE)
 		tmp |= TIOCM_CTS;
 
-	if (readb(sport->port.membase + MXC_UARTMODEM) & MXC_UARTMODEM_RXRTSE)
+	if (readb(sport->port.membase + MXC_UARTMODEM) & MXC_UARTMODEM_TXRTSE)
 		tmp |= TIOCM_RTS;
 
 	return tmp;
@@ -811,11 +819,14 @@ static void imx_set_mctrl(struct uart_port *port, unsigned int mctrl)
 	struct imx_port *sport = (struct imx_port *)port;
 	unsigned long temp;
 
+	if (sport->gpios)
+		mctrl_gpio_set(sport->gpios, mctrl);
+
 	temp = readb(sport->port.membase + MXC_UARTMODEM) &
-		~MXC_UARTMODEM_RXRTSE;
+		~(MXC_UARTMODEM_RXRTSE | MXC_UARTMODEM_TXRTSE);
 
 	if (mctrl & TIOCM_RTS)
-		temp |= MXC_UARTMODEM_RXRTSE;
+		temp |= MXC_UARTMODEM_TXRTSE;
 
 	writeb(temp, sport->port.membase + MXC_UARTMODEM);
 }
@@ -1017,14 +1028,17 @@ imx_set_termios(struct uart_port *port, struct ktermios *termios,
 		cr1 |= MXC_UARTCR1_M;
 	}
 
-	if (termios->c_cflag & CRTSCTS) {
-		if (sport->have_rtscts)
-			modem |= (MXC_UARTMODEM_RXRTSE | MXC_UARTMODEM_TXCTSE);
-
-	} else {
-		termios->c_cflag &= ~CRTSCTS;
-		modem &= ~(MXC_UARTMODEM_RXRTSE | MXC_UARTMODEM_TXCTSE);
+	modem &= ~(MXC_UARTMODEM_RXRTSE | MXC_UARTMODEM_TXRTSE | MXC_UARTMODEM_TXCTSE);
+	if (sport->have_rts) {
+		modem |= MXC_UARTMODEM_TXRTSE;
+		if (sport->rts_inverted)
+			modem |= MXC_UARTMODEM_TXRTSPOL;
+		else
+			modem &= ~MXC_UARTMODEM_TXRTSPOL;
 	}
+
+	if (sport->have_cts)
+		modem |= MXC_UARTMODEM_TXCTSE;
 
 	if (termios->c_cflag & CSTOPB)
 		termios->c_cflag &= ~CSTOPB;
@@ -1514,15 +1528,32 @@ static int serial_imx_probe(struct platform_device *pdev)
 
 	serial_setup_dma_rx(sport);
 
-	if (of_get_property(np, "fsl,uart-has-rtscts", NULL))
-		sport->have_rtscts = 1;
+	sport->have_rts = false;
+	sport->have_cts = false;
+	sport->rts_inverted = false;
 
-	sport->cts_gpio = devm_gpiod_get(&pdev->dev,
-					 "cts", GPIOD_OUT_LOW);
-	if (IS_ERR_OR_NULL(sport->cts_gpio)) {
-		int cts_err = sport->cts_gpio ? PTR_ERR(sport->cts_gpio) : -EINVAL;
-		sport->cts_gpio = NULL;
-		dev_info(&pdev->dev, "No CTS gpio required for RS-485 mode: err %d\n", cts_err);
+	if (of_find_property(np, "fsl,uart-has-rtscts", NULL))
+		sport->have_rts = sport->have_cts = true;
+
+	if (of_find_property(np, "fsl,uart-has-rts", NULL))
+		sport->have_rts = true;
+
+	if (of_find_property(np, "fsl,uart-has-cts", NULL))
+		sport->have_cts = true;
+
+	if (of_find_property(np, "fsl,uart-rts-inverted", NULL))
+		sport->rts_inverted = true;
+
+	sport->gpios = mctrl_gpio_init(&pdev->dev, 0);
+	if (IS_ERR_OR_NULL(sport->gpios))
+		sport->gpios = NULL;
+
+	sport->rs485_ctrl_gpio = devm_gpiod_get(&pdev->dev,
+						"rs485-ctrl", GPIOD_OUT_LOW);
+	if (IS_ERR_OR_NULL(sport->rs485_ctrl_gpio)) {
+		int cts_err = sport->rs485_ctrl_gpio ? PTR_ERR(sport->rs485_ctrl_gpio) : -EINVAL;
+		sport->rs485_ctrl_gpio = NULL;
+		dev_info(&pdev->dev, "No gpio for RS-485 mode: err %d\n", cts_err);
 	}
 
 	platform_set_drvdata(pdev, &sport->port);

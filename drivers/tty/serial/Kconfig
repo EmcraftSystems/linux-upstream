@@ -1638,6 +1638,6 @@ config SERIAL_STM32_CONSOLE
 endmenu
 
 config SERIAL_MCTRL_GPIO
-	tristate
+	tristate "Support for GPIO-based RTS/CTS"
 
 endif # TTY
