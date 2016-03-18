@@ -293,6 +293,15 @@ int gpiochip_add(struct gpio_chip *chip)
 	status = gpiochip_sysfs_register(chip);
 	if (status)
 		goto err_remove_chip;
+	for (id = 0; id < chip->ngpio; id++) {
+		struct gpio_desc *desc = &descs[id];
+
+		if (test_bit(FLAG_IS_HOGGED, &desc->flags)) {
+			int err = gpiod_export(desc, true);
+			if (err)
+				dev_err(chip->dev, "unable to export gpio %d: %d\n", desc_to_gpio(desc), err);
+		}
+	}
 
 	pr_debug("%s: registered GPIOs %d to %d on device: %s\n", __func__,
 		chip->base, chip->base + chip->ngpio - 1,

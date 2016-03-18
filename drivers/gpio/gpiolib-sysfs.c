@@ -605,6 +605,9 @@ int gpiod_export(struct gpio_desc *desc, bool direction_may_change)
 	if (chip->names && chip->names[offset])
 		ioname = chip->names[offset];
 
+	if (desc->label && strcmp("sysfs", desc->label))
+		ioname = desc->label;
+
 	dev = device_create_with_groups(&gpio_class, chip->dev,
 					MKDEV(0, 0), data, gpio_groups,
 					ioname ? ioname : "gpio%u",
