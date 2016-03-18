@@ -196,4 +196,12 @@ config MCP4922
 	  To compile this driver as a module, choose M here: the module
 	  will be called mcp4922.
 
+config VF610_DAC
+	tristate "Vybrid vf610 DAC driver"
+	help
+	  Say yes here to support Vybrid board digital-to-analog converter.
+
+	  This driver can also be built as a module. If so, the module will
+	  be called vf610_dac.
+
 endmenu
