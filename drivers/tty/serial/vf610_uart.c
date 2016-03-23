@@ -562,6 +562,17 @@ static void tx_uart_dmarun(struct imx_port *sport)
 	dma_async_issue_pending(sport->dma_chan_tx);
 }
 
+/*
+ * Return TIOCSER_TEMT when transmitter is not busy.
+ */
+static unsigned int imx_tx_empty(struct uart_port *port)
+{
+	struct imx_port *sport = (struct imx_port *)port;
+
+	return (readb(sport->port.membase + MXC_UARTSR1) & MXC_UARTSR1_TC) ?
+		TIOCSER_TEMT : 0;
+}
+
 /****************************************************************************/
 static void dma_tx_callback(void *data)
 {
@@ -578,6 +589,18 @@ static void dma_tx_callback(void *data)
 	xmit->tail = (xmit->tail + sport->tx_bytes) & (UART_XMIT_SIZE - 1);
 	sport->port.icount.tx += sport->tx_bytes;
 	spin_unlock(&sport->port.lock);
+
+	/* !!! FEEXME !!!
+	   Apparently, DMA generates interrupts right after the data is sent
+	   to the UART controller, however it doesn't wait while the data is
+	   physically transferred to the serial line. This can lead to mysterious
+	   loss of last character or even 2 or 4 KB block in the transfer.
+	   Added workaround to wait for the transfer is actually complete prior
+	   to clean the dma_is_txing flag.
+	*/
+	while (!imx_tx_empty(&sport->port)) {
+		udelay(10);
+	}
 
 	sport->dma_is_txing = 0;
 
@@ -781,17 +804,6 @@ static irqreturn_t imx_int(int irq, void *dev_id)
 		imx_txint(irq, dev_id);
 
 	return IRQ_HANDLED;
-}
-
-/*
- * Return TIOCSER_TEMT when transmitter is not busy.
- */
-static unsigned int imx_tx_empty(struct uart_port *port)
-{
-	struct imx_port *sport = (struct imx_port *)port;
-
-	return (readb(sport->port.membase + MXC_UARTSR1) & MXC_UARTSR1_TC) ?
-		TIOCSER_TEMT : 0;
 }
 
 /*
