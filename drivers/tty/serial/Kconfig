@@ -1551,6 +1551,7 @@ config SERIAL_VF610_UART
 	tristate "Freescale Vybrid serial port support"
 	depends on HAS_DMA
 	select SERIAL_CORE
+	select SERIAL_MCTRL_GPIO
 
 config SERIAL_VF610_UART_CONSOLE
 	bool "Console on Vybeid serial port"
