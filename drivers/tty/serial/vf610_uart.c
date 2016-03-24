@@ -792,6 +792,10 @@ static irqreturn_t imx_int(int irq, void *dev_id)
 
 	sts = readb(sport->port.membase + MXC_UARTSR1);
 
+	if (sts & MXC_UARTSR1_FE) {
+		readb(sport->port.membase + MXC_UARTDR);
+	}
+
 	if (sts & MXC_UARTSR1_OR)
 		imx_overrun_int(irq, dev_id);
 
@@ -946,6 +950,10 @@ static int imx_startup(struct uart_port *port)
 	/*
 	 * Finally, clear and enable interrupts
 	 */
+
+	temp = readb(sport->port.membase + MXC_UARTCR3);
+	temp |= MXC_UARTCR3_FEIE;
+	writeb(temp, sport->port.membase + MXC_UARTCR3);
 
 	temp = readb(sport->port.membase + MXC_UARTCR2);
 	temp |= MXC_UARTCR2_RIE | MXC_UARTCR2_TIE |
