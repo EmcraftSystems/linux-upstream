@@ -295,8 +295,8 @@
 #define MXC_SLAVE_BUF_SIZE	(4 * 1024)
 #define MXC_DMA_RX_TIMEOUT	msecs_to_jiffies(20)
 
-#define RS485_CTS_SEND		1
-#define RS485_CTS_RECV		0
+#define RS384_HALF_DUPLEX_SEND	1
+#define RS485_HALF_DUPLEX_RECV	0
 
 struct imx_port {
 	struct uart_port	port;
@@ -329,6 +329,7 @@ struct imx_port {
 	struct timer_list	dma_rx_timer;
 	struct gpio_desc	*rs485_ctrl_gpio;
 	struct mctrl_gpios	*gpios;
+	volatile int		tx_done;
 };
 
 static const struct of_device_id imx_uart_dt_ids[] = {
@@ -351,8 +352,22 @@ static void imx_stop_tx(struct uart_port *port)
 	writeb(temp & ~(MXC_UARTCR2_TIE | MXC_UARTCR2_TCIE),
 	       sport->port.membase + MXC_UARTCR2);
 
-	if (sport->rs485_ctrl_gpio)
-		gpiod_set_value(sport->rs485_ctrl_gpio, RS485_CTS_RECV);
+	if (sport->rs485_ctrl_gpio) {
+		unsigned char c2;
+
+		c2 = readb(sport->port.membase + MXC_UARTCR2);
+		c2 &= ~(MXC_UARTCR2_RE | MXC_UARTCR2_TE | MXC_UARTCR2_TIE |
+			MXC_UARTCR2_TCIE | MXC_UARTCR2_RIE);
+		writeb(c2, sport->port.membase + MXC_UARTCR2);
+
+		gpiod_set_value(sport->rs485_ctrl_gpio, RS485_HALF_DUPLEX_RECV);
+
+		writeb(MXC_UARTCFIFO_RXFLUSH, sport->port.membase + MXC_UARTCFIFO);
+		c2 |= MXC_UARTCR2_RIE | MXC_UARTCR2_RE;
+		writeb(c2, sport->port.membase + MXC_UARTCR2);
+
+		sport->tx_done = 1;
+	}
 }
 
 /*
@@ -615,12 +630,30 @@ static void dma_tx_work(struct work_struct *w)
 	struct imx_port *sport = container_of(w, struct imx_port, tsk_dma_tx);
 	struct circ_buf *xmit = &sport->port.state->xmit;
 	unsigned long flags;
+	int tx_left;
 
 	if (sport->dma_is_txing)
 		return;
 
+	if (sport->rs485_ctrl_gpio && sport->tx_done) {
+		unsigned char c2;
+
+		sport->tx_done = 0;
+
+		c2 = readb(sport->port.membase + MXC_UARTCR2);
+		c2 &= ~(MXC_UARTCR2_RE | MXC_UARTCR2_TE | MXC_UARTCR2_TIE |
+			MXC_UARTCR2_TCIE | MXC_UARTCR2_RIE);
+		writeb(c2, sport->port.membase + MXC_UARTCR2);
+		writeb(MXC_UARTCFIFO_RXFLUSH, sport->port.membase + MXC_UARTCFIFO);
+
+		gpiod_set_value(sport->rs485_ctrl_gpio, RS384_HALF_DUPLEX_SEND);
+
+		c2 |= MXC_UARTCR2_TIE | MXC_UARTCR2_TE;
+		writeb(c2, sport->port.membase + MXC_UARTCR2);
+	}
+
 	spin_lock_irqsave(&sport->port.lock, flags);
-	sport->tx_bytes = uart_circ_chars_pending(xmit);
+	tx_left = sport->tx_bytes = uart_circ_chars_pending(xmit);
 
 	if (sport->tx_bytes > 0) {
 		sport->dma_tx_nents = 0;
@@ -638,11 +671,26 @@ static void dma_tx_work(struct work_struct *w)
 		dma_map_sg(sport->port.dev, &sport->tx_sgl, 1, DMA_TO_DEVICE);
 		/* fire it */
 		tx_uart_dmarun(sport);
-	} else if (sport->rs485_ctrl_gpio) {
-		gpiod_set_value(sport->rs485_ctrl_gpio, RS485_CTS_RECV);
 	}
 
 	spin_unlock_irqrestore(&sport->port.lock, flags);
+
+	if (!tx_left && sport->rs485_ctrl_gpio) {
+		unsigned char c2;
+
+		c2 = readb(sport->port.membase + MXC_UARTCR2);
+		c2 &= ~(MXC_UARTCR2_RE | MXC_UARTCR2_TE | MXC_UARTCR2_TIE |
+			MXC_UARTCR2_TCIE | MXC_UARTCR2_RIE);
+		writeb(c2, sport->port.membase + MXC_UARTCR2);
+
+		gpiod_set_value(sport->rs485_ctrl_gpio, RS485_HALF_DUPLEX_RECV);
+
+		writeb(MXC_UARTCFIFO_RXFLUSH, sport->port.membase + MXC_UARTCFIFO);
+		c2 |= MXC_UARTCR2_RIE | MXC_UARTCR2_RE;
+		writeb(c2, sport->port.membase + MXC_UARTCR2);
+
+		sport->tx_done = 1;
+	}
 
 	return;
 }
@@ -653,14 +701,6 @@ static void dma_tx_work(struct work_struct *w)
 static void imx_start_tx(struct uart_port *port)
 {
 	struct imx_port *sport = (struct imx_port *)port;
-	unsigned char temp;
-
-	if (sport->rs485_ctrl_gpio)
-		gpiod_set_value(sport->rs485_ctrl_gpio, RS485_CTS_SEND);
-
-	temp = readb(sport->port.membase + MXC_UARTCR2);
-	writeb(temp | MXC_UARTCR2_TIE,
-	       sport->port.membase + MXC_UARTCR2);
 
 	if (sport->enable_dma) {
 		schedule_work(&sport->tsk_dma_tx);
@@ -1520,6 +1560,7 @@ static int serial_imx_probe(struct platform_device *pdev)
 	sport->port.ops		= &imx_pops;
 	sport->port.flags	= UPF_BOOT_AUTOCONF;
 	sport->fifo_en		= 1;
+	sport->tx_done		= 1;
 
 	sport->clk = devm_clk_get(&pdev->dev, "ipg");
 	if (IS_ERR(sport->clk)) {
