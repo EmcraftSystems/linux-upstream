@@ -3580,6 +3580,7 @@ static int __maybe_unused fec_suspend(struct device *dev)
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct fec_enet_private *fep = netdev_priv(ndev);
 	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
+	struct gpio_desc *inv_fix_gpio;
 
 	rtnl_lock();
 	if (netif_running(ndev)) {
@@ -3615,6 +3616,19 @@ static int __maybe_unused fec_suspend(struct device *dev)
 	 */
 	if (fep->clk_enet_out || fep->reg_phy)
 		fep->link = 0;
+
+	/*
+	   Some PHYs stop to respond after suspend
+	   if the h/w includes an inverter on the RMII clock pin
+	   to work-around VF6 errata e8052 "RMII TX hold time too
+	   small when processor provides RMII reference clock".
+	   In case if the inverter is used, set clock pin to high
+	   before going to suspend.
+	*/
+	inv_fix_gpio = gpiod_get(dev, "vf610,rmii-inverter-fix",
+		GPIOD_OUT_HIGH);
+	if (inv_fix_gpio)
+		gpiod_put(inv_fix_gpio);
 
 	return 0;
 }
