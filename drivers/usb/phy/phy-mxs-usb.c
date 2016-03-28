@@ -24,6 +24,8 @@
 #include <linux/regmap.h>
 #include <linux/mfd/syscon.h>
 #include <linux/of_gpio.h>
+#include <linux/device.h>
+#include <linux/stat.h>
 
 #define DRIVER_NAME "mxs_phy"
 
@@ -454,6 +456,34 @@ static int mxs_phy_on_disconnect(struct usb_phy *phy,
 	return 0;
 }
 
+ssize_t pwr_en_gpio_show(struct device *dev, struct attribute *attr,
+	char *buffer)
+{
+	struct mxs_phy *mxs_phy = dev_get_drvdata(dev);
+
+	buffer[0] = 0;
+	if (gpio_is_valid(mxs_phy->pwr_en_gpio)) {
+		buffer[0] = gpio_get_value(mxs_phy->pwr_en_gpio) + '0';
+		buffer[1] = 0;
+	}
+
+	return 0;
+}
+
+ssize_t pwr_en_gpio_store(struct device *dev, struct attribute *attr,
+	const char *buffer, size_t size)
+{
+	struct mxs_phy *mxs_phy = dev_get_drvdata(dev);
+	if (buffer[0] != '0' && buffer[0] != '1')
+		return -EINVAL;
+	if (gpio_is_valid(mxs_phy->pwr_en_gpio)) {
+		gpio_set_value(mxs_phy->pwr_en_gpio, buffer[0] - '0');
+	}
+	return size;
+}
+
+DEVICE_ATTR_RW(pwr_en_gpio);
+
 static int mxs_phy_probe(struct platform_device *pdev)
 {
 	struct resource *res;
@@ -498,6 +528,11 @@ static int mxs_phy_probe(struct platform_device *pdev)
 		if (ret < 0) {
 			dev_err(&pdev->dev, "failed to request gpio: %d\n", mxs_phy->pwr_en_gpio);
 			mxs_phy->pwr_en_gpio = -1;
+		}
+
+		ret = device_create_file(&pdev->dev, &dev_attr_pwr_en_gpio);
+		if (ret < 0) {
+			dev_err(&pdev->dev, "cannot create pwr-en-gpio attr\n");
 		}
 	} else {
 		dev_warn(&pdev->dev, "Invalid GPIO: %d\n", mxs_phy->pwr_en_gpio);
