@@ -106,6 +106,9 @@ static irqreturn_t pit_timer_interrupt(int irq, void *dev_id)
 {
 	struct clock_event_device *evt = dev_id;
 
+	if (!(__raw_readl(clkevt_base + PITTFLG) & PITTFLG_TIF))
+		return IRQ_HANDLED;
+
 	pit_irq_acknowledge();
 
 	/*
