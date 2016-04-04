@@ -1593,7 +1593,7 @@ int ubi_update_fastmap(struct ubi_device *ubi)
 		}
 	} else {
 		if (!tmp_e) {
-			ubi_err(ubi, "could not find any anchor PEB");
+			ubi_warn(ubi, "could not find any anchor PEB");
 
 			for (i = 1; i < new_fm->used_blocks; i++) {
 				ubi_wl_put_fm_peb(ubi, new_fm->e[i], i, 0);
