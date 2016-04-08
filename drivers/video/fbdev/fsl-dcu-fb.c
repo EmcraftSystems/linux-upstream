@@ -554,7 +554,8 @@ static int map_video_memory(struct fb_info *info)
 		return -ENOMEM;
 	}
 
-	memset(info->screen_base, 0, info->fix.smem_len);
+	if (!mfbi->reserved_memory)
+		memset(info->screen_base, 0, info->fix.smem_len);
 
 	return 0;
 }
@@ -607,13 +608,15 @@ static int fsl_dcu_set_par(struct fb_info *info)
 		}
 	}
 
-	/* Only layer 0 could update LCD controller */
-	if (mfbi->index == LAYER0) {
-		update_controller(info);
-		enable_controller(info);
-	}
+	if (!mfbi->reserved_memory) {
+		/* Only layer 0 could update LCD controller */
+		if (mfbi->index == LAYER0) {
+			update_controller(info);
+			enable_controller(info);
+		}
 
-	enable_panel(info);
+		enable_panel(info);
+	}
 	return 0;
 }
 
