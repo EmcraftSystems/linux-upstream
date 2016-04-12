@@ -98,6 +98,13 @@
 				 PAD_CTL_PUS_100K_UP |	\
 				 PAD_CTL_SPEED_MED)
 
+#define VF610_GPIO_KEY_CTRL	(PAD_CTL_PKE |		\
+				 PAD_CTL_PUE |		\
+				 PAD_CTL_PUS_22K_UP |	\
+				 PAD_CTL_SPEED_MED |	\
+				 PAD_CTL_HYS |		\
+				 PAD_CTL_IBE_ENABLE)
+
 #define VF610_DCU_PAD_CTRL	(PAD_CTL_DSE_37ohm |	\
 				 PAD_CTL_OBE_ENABLE)
 
