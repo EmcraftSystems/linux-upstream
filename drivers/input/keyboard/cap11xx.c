@@ -17,6 +17,7 @@
 #include <linux/regmap.h>
 #include <linux/i2c.h>
 #include <linux/gpio/consumer.h>
+#include <linux/delay.h>
 
 #define CAP11XX_REG_MAIN_CONTROL	0x00
 #define CAP11XX_REG_MAIN_CONTROL_GAIN_SHIFT	(6)
@@ -87,6 +88,8 @@ struct cap11xx_priv {
 
 	struct cap11xx_led *leds;
 	int num_leds;
+
+	struct gpio_desc *reset_gpio;
 
 	/* config */
 	u32 keycodes[];
@@ -362,6 +365,13 @@ static int cap11xx_i2c_probe(struct i2c_client *i2c_client,
 			    GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
+
+	priv->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
+	if (priv->reset_gpio) {
+		msleep(1);
+		gpiod_set_value(priv->reset_gpio, 0);
+		msleep(10);
+	}
 
 	priv->regmap = devm_regmap_init_i2c(i2c_client, &cap11xx_regmap_config);
 	if (IS_ERR(priv->regmap))
