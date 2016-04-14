@@ -23,6 +23,7 @@
 #define CAP11XX_REG_MAIN_CONTROL_GAIN_SHIFT	(6)
 #define CAP11XX_REG_MAIN_CONTROL_GAIN_MASK	(0xc0)
 #define CAP11XX_REG_MAIN_CONTROL_DLSEEP		BIT(4)
+#define CAP11XX_REG_MAIN_CONTROL_INT		BIT(0)
 #define CAP11XX_REG_GENERAL_STATUS	0x02
 #define CAP11XX_REG_SENSOR_INPUT	0x03
 #define CAP11XX_REG_NOISE_FLAG_STATUS	0x0a
@@ -120,12 +121,12 @@ static const struct reg_default cap11xx_reg_defaults[] = {
 	{ CAP11XX_REG_NOISE_FLAG_STATUS,	0x00 },
 	{ CAP11XX_REG_SENSITIVITY_CONTROL,	0x2f },
 	{ CAP11XX_REG_CONFIG,			0x20 },
-	{ CAP11XX_REG_SENSOR_ENABLE,		0x3f },
+	{ CAP11XX_REG_SENSOR_ENABLE,		0xff },
 	{ CAP11XX_REG_SENSOR_CONFIG,		0xa4 },
 	{ CAP11XX_REG_SENSOR_CONFIG2,		0x07 },
 	{ CAP11XX_REG_SAMPLING_CONFIG,		0x39 },
 	{ CAP11XX_REG_CALIBRATION,		0x00 },
-	{ CAP11XX_REG_INT_ENABLE,		0x3f },
+	{ CAP11XX_REG_INT_ENABLE,		0xff },
 	{ CAP11XX_REG_REPEAT_RATE,		0x3f },
 	{ CAP11XX_REG_MT_CONFIG,		0x80 },
 	{ CAP11XX_REG_MT_PATTERN_CONFIG,	0x00 },
@@ -137,6 +138,8 @@ static const struct reg_default cap11xx_reg_defaults[] = {
 	{ CAP11XX_REG_SENSOR_THRESH(3),		0x40 },
 	{ CAP11XX_REG_SENSOR_THRESH(4),		0x40 },
 	{ CAP11XX_REG_SENSOR_THRESH(5),		0x40 },
+	{ CAP11XX_REG_SENSOR_THRESH(6),		0x40 },
+	{ CAP11XX_REG_SENSOR_THRESH(7),		0x40 },
 	{ CAP11XX_REG_SENSOR_NOISE_THRESH,	0x01 },
 	{ CAP11XX_REG_STANDBY_CHANNEL,		0x00 },
 	{ CAP11XX_REG_STANDBY_CONFIG,		0x39 },
@@ -491,7 +494,11 @@ static int cap11xx_i2c_probe(struct i2c_client *i2c_client,
 	if (error)
 		return error;
 
-	return 0;
+	error = regmap_update_bits(priv->regmap,
+				   CAP11XX_REG_MAIN_CONTROL,
+				   CAP11XX_REG_MAIN_CONTROL_INT,
+				   0);
+	return error;
 }
 
 static const struct of_device_id cap11xx_dt_ids[] = {
