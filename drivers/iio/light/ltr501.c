@@ -1212,7 +1212,9 @@ static int ltr501_write_contr(struct ltr501_data *data, u8 als_val, u8 ps_val)
 	if (ret < 0)
 		return ret;
 
-	return regmap_write(data->regmap, LTR501_PS_CONTR, ps_val);
+	if (data->chip_info->ps_gain)
+		return regmap_write(data->regmap, LTR501_PS_CONTR, ps_val);
+	return ret;
 }
 
 static irqreturn_t ltr501_trigger_handler(int irq, void *p)
@@ -1306,19 +1308,22 @@ static int ltr501_init(struct ltr501_data *data)
 
 	data->als_contr = status | data->chip_info->als_mode_active;
 
-	ret = regmap_read(data->regmap, LTR501_PS_CONTR, &status);
-	if (ret < 0)
-		return ret;
+	if (data->chip_info->ps_gain) {
+		ret = regmap_read(data->regmap, LTR501_PS_CONTR, &status);
+		if (ret < 0)
+			return ret;
 
-	data->ps_contr = status | LTR501_CONTR_ACTIVE;
+		data->ps_contr = status | LTR501_CONTR_ACTIVE;
 
-	ret = ltr501_read_intr_prst(data, IIO_INTENSITY, &data->als_period);
-	if (ret < 0)
-		return ret;
+		ret = ltr501_read_intr_prst(data, IIO_INTENSITY, &data->als_period);
+		if (ret < 0)
+			return ret;
 
-	ret = ltr501_read_intr_prst(data, IIO_PROXIMITY, &data->ps_period);
-	if (ret < 0)
-		return ret;
+		ret = ltr501_read_intr_prst(data, IIO_PROXIMITY, &data->ps_period);
+		if (ret < 0)
+			return ret;
+	}
+
 
 	return ltr501_write_contr(data, data->als_contr, data->ps_contr);
 }
