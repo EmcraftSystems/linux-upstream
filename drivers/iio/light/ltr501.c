@@ -35,7 +35,9 @@
 #define LTR501_PART_ID 0x86
 #define LTR501_MANUFAC_ID 0x87
 #define LTR501_ALS_DATA1 0x88 /* 16-bit, little endian */
+#define LTR501_ALS_DATA1_MSB 0x89
 #define LTR501_ALS_DATA0 0x8a /* 16-bit, little endian */
+#define LTR501_ALS_DATA0_MSB 0x8b
 #define LTR501_ALS_PS_STATUS 0x8c
 #define LTR501_PS_DATA 0x8d /* 16-bit, little endian */
 #define LTR501_INTR 0x8f /* output mode, polarity, mode */
@@ -1325,7 +1327,9 @@ static bool ltr501_is_volatile_reg(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
 	case LTR501_ALS_DATA1:
+	case LTR501_ALS_DATA1_MSB:
 	case LTR501_ALS_DATA0:
+	case LTR501_ALS_DATA0_MSB:
 	case LTR501_ALS_PS_STATUS:
 	case LTR501_PS_DATA:
 		return true;
