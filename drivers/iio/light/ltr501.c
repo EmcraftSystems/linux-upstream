@@ -99,6 +99,7 @@ enum {
 	ltr501 = 0,
 	ltr559,
 	ltr301,
+	ltr329,
 };
 
 struct ltr501_gain {
@@ -615,6 +616,18 @@ static const struct iio_chan_spec ltr301_channels[] = {
 	LTR501_INTENSITY_CHANNEL(0, LTR501_ALS_DATA0, IIO_MOD_LIGHT_BOTH, 0,
 				 ltr501_als_event_spec,
 				 ARRAY_SIZE(ltr501_als_event_spec)),
+	LTR501_INTENSITY_CHANNEL(1, LTR501_ALS_DATA1, IIO_MOD_LIGHT_IR,
+				 BIT(IIO_CHAN_INFO_SCALE) |
+				 BIT(IIO_CHAN_INFO_INT_TIME) |
+				 BIT(IIO_CHAN_INFO_SAMP_FREQ),
+				 NULL, 0),
+	IIO_CHAN_SOFT_TIMESTAMP(2),
+};
+
+static const struct iio_chan_spec ltr329_channels[] = {
+	LTR501_LIGHT_CHANNEL(),
+	LTR501_INTENSITY_CHANNEL(0, LTR501_ALS_DATA0, IIO_MOD_LIGHT_CLEAR, 0,
+				 NULL, 0),
 	LTR501_INTENSITY_CHANNEL(1, LTR501_ALS_DATA1, IIO_MOD_LIGHT_IR,
 				 BIT(IIO_CHAN_INFO_SCALE) |
 				 BIT(IIO_CHAN_INFO_INT_TIME) |
@@ -1202,6 +1215,18 @@ static struct ltr501_chip_info ltr501_chip_info_tbl[] = {
 		.channels = ltr301_channels,
 		.no_channels = ARRAY_SIZE(ltr301_channels),
 	},
+	[ltr329] = {
+		.partid = 0x0a,
+		.als_gain = ltr559_als_gain_tbl,
+		.als_gain_tbl_size = ARRAY_SIZE(ltr559_als_gain_tbl),
+		.als_mode_active = BIT(0),
+		.als_gain_mask = BIT(2) | BIT(3) | BIT(4),
+		.als_gain_shift = 2,
+		.info = &ltr301_info,
+		.info_no_irq = &ltr301_info_no_irq,
+		.channels = ltr329_channels,
+		.no_channels = ARRAY_SIZE(ltr329_channels),
+	},
 };
 
 static int ltr501_write_contr(struct ltr501_data *data, u8 als_val, u8 ps_val)
@@ -1543,6 +1568,7 @@ static const struct acpi_device_id ltr_acpi_match[] = {
 	{"LTER0501", ltr501},
 	{"LTER0559", ltr559},
 	{"LTER0301", ltr301},
+	{"LTR0329", ltr329},
 	{ },
 };
 MODULE_DEVICE_TABLE(acpi, ltr_acpi_match);
@@ -1551,6 +1577,7 @@ static const struct i2c_device_id ltr501_id[] = {
 	{ "ltr501", ltr501},
 	{ "ltr559", ltr559},
 	{ "ltr301", ltr301},
+	{ "ltr329", ltr329},
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, ltr501_id);
@@ -1559,6 +1586,7 @@ static const struct of_device_id ltr501_of_match[] = {
 	{ .compatible = "ltr501" },
 	{ .compatible = "ltr559" },
 	{ .compatible = "ltr301" },
+	{ .compatible = "ltr329" },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, ltr501_of_match);
