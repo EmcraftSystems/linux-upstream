@@ -370,7 +370,7 @@ static int cap11xx_i2c_probe(struct i2c_client *i2c_client,
 		return -ENOMEM;
 
 	priv->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
-	if (priv->reset_gpio) {
+	if (!IS_ERR_OR_NULL(priv->reset_gpio)) {
 		msleep(1);
 		gpiod_set_value(priv->reset_gpio, 0);
 		msleep(10);
