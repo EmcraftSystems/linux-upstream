@@ -186,8 +186,6 @@ static int vf610_dac_probe(struct platform_device *pdev)
 	struct resource *mem;
 	int ret;
 
-	printk("ZZZ %s++\n", __func__);
-
 	indio_dev = devm_iio_device_alloc(&pdev->dev,
 					sizeof(struct vf610_dac));
 	if (!indio_dev) {
@@ -234,8 +232,6 @@ static int vf610_dac_probe(struct platform_device *pdev)
 	}
 
 	vf610_dac_init(info);
-
-	printk("ZZZ %s: OK\n", __func__);
 
 	return 0;
 
