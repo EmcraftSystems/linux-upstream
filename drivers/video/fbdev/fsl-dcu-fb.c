@@ -832,7 +832,7 @@ static int fsl_dcu_release(struct fb_info *info, int user)
 	int ret = 0;
 
 	mfbi->count--;
-	if (mfbi->count == 0)
+	if (mfbi->count == 0 && !mfbi->reserved_memory)
 		ret = disable_panel(info);
 
 	return ret;
