@@ -1989,6 +1989,8 @@ static int fec_enet_mii_init(struct platform_device *pdev)
 	u32 mii_speed, holdtime;
 
 	fep->osc_en_gpio = devm_gpiod_get(&pdev->dev, "osc-en", GPIOD_OUT_HIGH);
+	if (!IS_ERR_OR_NULL(fep->osc_en_gpio))
+		fep->osc_en_gpio = NULL;
 	msleep(1);
 
 	/*
