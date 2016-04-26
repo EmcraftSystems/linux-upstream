@@ -1596,8 +1596,6 @@ static struct i2c_driver ltr501_driver = {
 		.name   = LTR501_DRV_NAME,
 		.pm	= &ltr501_pm_ops,
 		.acpi_match_table = ACPI_PTR(ltr_acpi_match),
-		.owner  = THIS_MODULE,
-		.of_match_table = ltr501_of_match,
 	},
 	.probe  = ltr501_probe,
 	.remove	= ltr501_remove,
