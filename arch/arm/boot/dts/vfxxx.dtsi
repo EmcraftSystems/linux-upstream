@@ -757,9 +757,6 @@
 					<&edma1 0 13>;
 				dma-names = "rx","tx";
 				spi-num-chipselects = <5>;
-				dmas = <&edma0 1 38>,
-					<&edma0 1 39>;
-				dma-names = "rx","tx";
 				status = "disabled";
 			};
 		};
