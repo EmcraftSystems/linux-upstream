@@ -19,8 +19,8 @@
 #include <linux/cpu_pm.h>
 #include <linux/io.h>
 #include <linux/irq.h>
-#include <linux/irqdomain.h>
 #include <linux/irqchip.h>
+#include <linux/irqdomain.h>
 #include <linux/mfd/syscon.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <linux/of.h>
@@ -52,52 +52,56 @@ static int vf610_gpc_irq_set_wake(struct irq_data *d, unsigned int on)
 	return 0;
 }
 
-static void vf610_gpc_enable_parent(struct irq_data *data)
-{
-	data = data->parent_data;
-	data->chip->irq_enable(data);
-}
-
-static void vf610_gpc_disable_parent(struct irq_data *data)
-{
-	data = data->parent_data;
-	data->chip->irq_disable(data);
-}
-
 static struct irq_chip vf610_gpc_chip = {
 	.name			= "vf610-gpc",
 	.irq_mask		= irq_chip_mask_parent,
 	.irq_unmask		= irq_chip_unmask_parent,
-	.irq_enable		= vf610_gpc_enable_parent,
-	.irq_disable		= vf610_gpc_disable_parent,
+	.irq_enable		= irq_chip_enable_parent,
+	.irq_disable		= irq_chip_disable_parent,
 	.irq_eoi		= irq_chip_eoi_parent,
 	.irq_retrigger		= irq_chip_retrigger_hierarchy,
 	.irq_set_wake		= vf610_gpc_irq_set_wake,
 };
 
 static int vf610_gpc_domain_alloc(struct irq_domain *domain, unsigned int virq,
-				  unsigned int nr_irqs, void *data)
+				  unsigned int nr_irqs, void *arg)
 {
-	struct of_phandle_args *args = data;
-	struct of_phandle_args parent_args;
-	irq_hw_number_t hwirq;
 	int i;
+	irq_hw_number_t hwirq;
+	struct irq_fwspec *fwspec = arg;
+	struct irq_fwspec parent_fwspec;
 
-	if (args->args_count != 2)
+	if (!irq_domain_get_of_node(domain->parent))
 		return -EINVAL;
 
-	hwirq = args->args[0];
+	if (fwspec->param_count != 2)
+		return -EINVAL;
+
+	hwirq = fwspec->param[0];
 	for (i = 0; i < nr_irqs; i++)
 		irq_domain_set_hwirq_and_chip(domain, virq + i, hwirq + i,
 					      &vf610_gpc_chip, NULL);
 
-	parent_args = *args;
-	parent_args.np = domain->parent->of_node;
-	return irq_domain_alloc_irqs_parent(domain, virq, nr_irqs, &parent_args);
+	parent_fwspec = *fwspec;
+	parent_fwspec.fwnode = domain->parent->fwnode;
+	return irq_domain_alloc_irqs_parent(domain, virq, nr_irqs,
+					    &parent_fwspec);
+}
+
+static int vf610_gpc_domain_translate(struct irq_domain *d,
+					  struct irq_fwspec *fwspec,
+					  unsigned long *hwirq,
+					  unsigned int *type)
+{
+	if (WARN_ON(fwspec->param_count < 2))
+		return -EINVAL;
+	*hwirq = fwspec->param[0];
+	*type = fwspec->param[1] & IRQ_TYPE_SENSE_MASK;
+	return 0;
 }
 
 static const struct irq_domain_ops gpc_irq_domain_ops = {
-	.xlate = irq_domain_xlate_twocell,
+	.translate = vf610_gpc_domain_translate,
 	.alloc = vf610_gpc_domain_alloc,
 	.free = irq_domain_free_irqs_common,
 };
