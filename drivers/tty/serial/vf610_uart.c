@@ -1605,7 +1605,7 @@ static int serial_imx_probe(struct platform_device *pdev)
 	if (of_find_property(np, "fsl,uart-rts-inverted", NULL))
 		sport->rts_inverted = true;
 
-	sport->gpios = mctrl_gpio_init(&pdev->dev, 0);
+	sport->gpios = mctrl_gpio_init_noauto(&pdev->dev, 0);
 	if (IS_ERR_OR_NULL(sport->gpios))
 		sport->gpios = NULL;
 
