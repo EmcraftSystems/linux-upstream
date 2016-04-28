@@ -224,7 +224,7 @@
 				dmas = <&edma0 0 12>,
 					<&edma0 0 13>;
 				dma-names = "rx","tx";
-				spi-num-chipselects = <5>;
+				spi-num-chipselects = <6>;
 				status = "disabled";
 			};
 
@@ -239,7 +239,7 @@
 				dmas = <&edma0 0 14>,
 					<&edma0 0 15>;
 				dma-names = "rx","tx";
-				spi-num-chipselects = <5>;
+				spi-num-chipselects = <4>;
 				status = "disabled";
 			};
 
@@ -247,8 +247,10 @@
 				compatible = "fsl,vf610-sai";
 				reg = <0x40031000 0x1000>;
 				interrupts = <86 IRQ_TYPE_LEVEL_HIGH>;
-				clocks = <&clks VF610_CLK_SAI2>;
-				clock-names = "sai";
+				clocks = <&clks VF610_CLK_SAI2>,
+					<&clks VF610_CLK_SAI2_DIV>,
+					<&clks 0>, <&clks 0>;
+				clock-names = "bus", "mclk1", "mclk2", "mclk3";
 				dma-names = "tx", "rx";
 				dmas = <&edma0 0 21>,
 					<&edma0 0 20>;
@@ -559,6 +561,8 @@
 				clock-names = "adc";
 				#io-channel-cells = <1>;
 				status = "disabled";
+				fsl,adck-max-frequency = <30000000>, <40000000>,
+							<20000000>;
 			};
 
 			esdhc0: esdhc@400b1000 {
@@ -570,8 +574,6 @@
 					<&clks VF610_CLK_ESDHC0>;
 				clock-names = "ipg", "ahb", "per";
 				status = "disabled";
-				fsl,adck-max-frequency = <30000000>, <40000000>,
-							<20000000>;
 			};
 
 			esdhc1: esdhc@400b2000 {

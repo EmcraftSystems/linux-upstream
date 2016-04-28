@@ -35,6 +35,7 @@
 #include <linux/mtd/partitions.h>
 #include <linux/of_mtd.h>
 #include <linux/of_device.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 
@@ -433,15 +434,13 @@ static void vf610_nfc_command(struct mtd_info *mtd, unsigned command,
 		return;
 	case NAND_CMD_PAGEPROG:
 		trfr_sz += nfc->write_sz;
-
+		vf610_nfc_transfer_size(nfc, trfr_sz);
+		vf610_nfc_send_commands(nfc, NAND_CMD_SEQIN,
+					command, PROGRAM_PAGE_CMD_CODE);
 		if (nfc->use_hw_ecc)
 			vf610_nfc_ecc_mode(nfc, nfc->ecc_mode);
 		else
 			vf610_nfc_ecc_mode(nfc, ECC_BYPASS);
-
-		vf610_nfc_transfer_size(nfc, trfr_sz);
-		vf610_nfc_send_commands(nfc, NAND_CMD_SEQIN,
-					command, PROGRAM_PAGE_CMD_CODE);
 		break;
 
 	case NAND_CMD_RESET:
@@ -468,8 +467,7 @@ static void vf610_nfc_command(struct mtd_info *mtd, unsigned command,
 		trfr_sz = 3 * sizeof(struct nand_onfi_params);
 		vf610_nfc_transfer_size(nfc, trfr_sz);
 		vf610_nfc_send_command(nfc, command, READ_ONFI_PARAM_CMD_CODE);
-		vf610_nfc_set_field(nfc, NFC_ROW_ADDR, ROW_ADDR_MASK,
-				    ROW_ADDR_SHIFT, column);
+		vf610_nfc_addr_cycle(nfc, -1, column);
 		vf610_nfc_ecc_mode(nfc, ECC_BYPASS);
 		break;
 
@@ -485,8 +483,7 @@ static void vf610_nfc_command(struct mtd_info *mtd, unsigned command,
 		nfc->buf_offset = 0;
 		vf610_nfc_transfer_size(nfc, 0);
 		vf610_nfc_send_command(nfc, command, READ_ID_CMD_CODE);
-		vf610_nfc_set_field(nfc, NFC_ROW_ADDR, ROW_ADDR_MASK,
-				    ROW_ADDR_SHIFT, column);
+		vf610_nfc_addr_cycle(nfc, -1, column);
 		break;
 
 	case NAND_CMD_STATUS:
@@ -617,7 +614,6 @@ static inline int vf610_nfc_correct_data(struct mtd_info *mtd, uint8_t *dat,
 	u32 ecc_status_off = NFC_MAIN_AREA(0) + ECC_SRAM_ADDR + ECC_STATUS;
 	u8 ecc_status;
 	u8 ecc_count;
-	int flips;
 	int flips_threshold = nfc->chip.ecc.strength / 2;
 
 	ecc_status = vf610_nfc_read(nfc, ecc_status_off) & 0xff;
@@ -634,16 +630,9 @@ static inline int vf610_nfc_correct_data(struct mtd_info *mtd, uint8_t *dat,
 	 * On an erased page, bit count (including OOB) should be zero or
 	 * at least less then half of the ECC strength.
 	 */
-	flips = count_written_bits(dat, nfc->chip.ecc.size, flips_threshold);
-	flips += count_written_bits(oob, mtd->oobsize, flips_threshold);
-
-	if (unlikely(flips > flips_threshold))
-		return -EINVAL;
-
-	/* Erased page. */
-	memset(dat, 0xff, nfc->chip.ecc.size);
-	memset(oob, 0xff, mtd->oobsize);
-	return flips;
+	return nand_check_erased_ecc_chunk(dat, nfc->chip.ecc.size, oob,
+					   mtd->oobsize, NULL, 0,
+					   flips_threshold);
 }
 
 static int vf610_nfc_read_page(struct mtd_info *mtd, struct nand_chip *chip,
@@ -668,7 +657,7 @@ static int vf610_nfc_read_page(struct mtd_info *mtd, struct nand_chip *chip,
 }
 
 static int vf610_nfc_write_page(struct mtd_info *mtd, struct nand_chip *chip,
-			       const uint8_t *buf, int oob_required)
+				const uint8_t *buf, int oob_required, int page)
 {
 	struct vf610_nfc *nfc = mtd_to_nfc(mtd);
 
@@ -730,7 +719,7 @@ static int vf610_nfc_probe(struct platform_device *pdev)
 	struct nand_chip *chip;
 	struct device_node *child;
 	const struct of_device_id *of_id;
-	int err = 0;
+	int err;
 	int irq;
 
 	nfc = devm_kzalloc(&pdev->dev, sizeof(*nfc), GFP_KERNEL);
@@ -773,24 +762,24 @@ static int vf610_nfc_probe(struct platform_device *pdev)
 	for_each_available_child_of_node(nfc->dev->of_node, child) {
 		if (of_device_is_compatible(child, "fsl,vf610-nfc-nandcs")) {
 
-			if (chip->dn) {
+			if (chip->flash_node) {
 				dev_err(nfc->dev,
 					"Only one NAND chip supported!\n");
 				err = -EINVAL;
 				goto error;
 			}
 
-			chip->dn = child;
+			chip->flash_node = child;
 		}
 	}
 
-	if (!chip->dn) {
+	if (!chip->flash_node) {
 		dev_err(nfc->dev, "NAND chip sub-node missing!\n");
 		err = -ENODEV;
 		goto err_clk;
 	}
 
-	nfc->use_read_cache_cmd = of_property_read_bool(chip->dn,
+	nfc->use_read_cache_cmd = of_property_read_bool(chip->flash_node,
 		"nand-use-read-cache");
 
 	chip->dev_ready = vf610_nfc_dev_ready;
@@ -882,12 +871,12 @@ static int vf610_nfc_probe(struct platform_device *pdev)
 	/* Register device in MTD */
 	return mtd_device_parse_register(mtd, NULL,
 		&(struct mtd_part_parser_data){
-			.of_node = chip->dn,
+			.of_node = chip->flash_node,
 		},
 		NULL, 0);
 
 error:
-	of_node_put(chip->dn);
+	of_node_put(chip->flash_node);
 err_clk:
 	clk_disable_unprepare(nfc->clk);
 	return err;
