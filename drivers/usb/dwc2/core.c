@@ -784,6 +784,18 @@ int dwc2_core_init(struct dwc2_hsotg *hsotg, bool select_phy, int irq)
 				DWC2_PHY_ULPI_EXTERNAL_VBUS)
 		usbcfg |= GUSBCFG_ULPI_EXT_VBUS_DRV;
 
+	/* Set ULPI overcurrent indicator if needed */
+	usbcfg &= ~GUSBCFG_ULPI_INT_VBUS_IND;
+	if (hsotg->core_params->phy_ulpi_ovc_ind ==
+				DWC2_PHY_ULPI_EXTERNAL_OVC_IND)
+		usbcfg |= GUSBCFG_ULPI_INT_VBUS_IND;
+
+	/* Set ULPI overcurrent indicator passthrough if needed */
+	usbcfg &= ~GUSBCFG_INDICATORPASSTHROUGH;
+	if (hsotg->core_params->phy_ulpi_ind_pass ==
+				DWC2_PHY_ULPI_IND_PASS_THROUGH)
+		usbcfg |= GUSBCFG_INDICATORPASSTHROUGH;
+
 	/* Set external TS Dline pulsing bit if needed */
 	usbcfg &= ~GUSBCFG_TERMSELDLPULSE;
 	if (hsotg->core_params->ts_dline > 0)
@@ -2785,6 +2797,38 @@ void dwc2_set_param_phy_ulpi_ext_vbus(struct dwc2_hsotg *hsotg, int val)
 	hsotg->core_params->phy_ulpi_ext_vbus = val;
 }
 
+void dwc2_set_param_phy_ulpi_ovc_ind(struct dwc2_hsotg *hsotg, int val)
+{
+	if (DWC2_OUT_OF_BOUNDS(val, 0, 1)) {
+		if (val >= 0) {
+			dev_err(hsotg->dev,
+				"Wrong value for phy_ulpi_ovc_ind\n");
+			dev_err(hsotg->dev,
+				"phy_ulpi_ovc_ind must be 0 or 1\n");
+		}
+		val = 0;
+		dev_dbg(hsotg->dev, "Setting phy_ulpi_ovc_ind to %d\n", val);
+	}
+
+	hsotg->core_params->phy_ulpi_ovc_ind = val;
+}
+
+void dwc2_set_param_phy_ulpi_ind_pass(struct dwc2_hsotg *hsotg, int val)
+{
+	if (DWC2_OUT_OF_BOUNDS(val, 0, 1)) {
+		if (val >= 0) {
+			dev_err(hsotg->dev,
+				"Wrong value for phy_ulpi_ind_pass\n");
+			dev_err(hsotg->dev,
+				"phy_ulpi_ind_pass must be 0 or 1\n");
+		}
+		val = 0;
+		dev_dbg(hsotg->dev, "Setting phy_ulpi_ind_pass to %d\n", val);
+	}
+
+	hsotg->core_params->phy_ulpi_ind_pass = val;
+}
+
 void dwc2_set_param_phy_utmi_width(struct dwc2_hsotg *hsotg, int val)
 {
 	int valid = 0;
@@ -3042,6 +3086,10 @@ void dwc2_set_parameters(struct dwc2_hsotg *hsotg,
 	dwc2_set_param_phy_ulpi_ddr(hsotg, params->phy_ulpi_ddr);
 	dwc2_set_param_phy_ulpi_ext_vbus(hsotg,
 			params->phy_ulpi_ext_vbus);
+	dwc2_set_param_phy_ulpi_ovc_ind(hsotg,
+			params->phy_ulpi_ovc_ind);
+	dwc2_set_param_phy_ulpi_ind_pass(hsotg,
+			params->phy_ulpi_ind_pass);
 	dwc2_set_param_phy_utmi_width(hsotg, params->phy_utmi_width);
 	dwc2_set_param_ulpi_fs_ls(hsotg, params->ulpi_fs_ls);
 	dwc2_set_param_ts_dline(hsotg, params->ts_dline);

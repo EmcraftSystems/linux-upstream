@@ -293,6 +293,14 @@ enum dwc2_ep0_state {
  *                      external supply to drive the VBus
  *                       0 - Internal supply (default)
  *                       1 - External supply
+ * @phy_ulpi_ovc_ind:   For a ULPI phy, specifies whether to use the internal or
+ *                      external overcurrent indicator
+ *                       0 - Internal comparator is used (default)
+ *                       1 - External comparator is used
+ * @phy_ulpi_ind_pass:  For a ULPI phy, specifies whether indicator signal is
+ *                      qualified with the internal comparator or nor
+ *                       0 - no indicator pass through (default)
+ *                       1 - indicator pass through
  * @i2c_enable:         Specifies whether to use the I2Cinterface for a full
  *                      speed PHY. This parameter is only applicable if phy_type
  *                      is FS.
@@ -373,6 +381,8 @@ struct dwc2_core_params {
 	int phy_utmi_width;
 	int phy_ulpi_ddr;
 	int phy_ulpi_ext_vbus;
+	int phy_ulpi_ovc_ind;
+	int phy_ulpi_ind_pass;
 	int i2c_enable;
 	int ulpi_fs_ls;
 	int host_support_fs_ls_low_power;
@@ -1060,6 +1070,23 @@ extern void dwc2_set_param_phy_ulpi_ddr(struct dwc2_hsotg *hsotg, int val);
 extern void dwc2_set_param_phy_ulpi_ext_vbus(struct dwc2_hsotg *hsotg, int val);
 #define DWC2_PHY_ULPI_INTERNAL_VBUS	0
 #define DWC2_PHY_ULPI_EXTERNAL_VBUS	1
+
+/*
+ * Specifies whether to use the internal or external overcurrent
+ * indicator with a ULPI phy.
+ */
+extern void dwc2_set_param_phy_ulpi_ovc_ind(struct dwc2_hsotg *hsotg, int val);
+#define DWC2_PHY_ULPI_INTERNAL_OVC_IND	0
+#define DWC2_PHY_ULPI_EXTERNAL_OVC_IND	1
+
+/*
+ * Specifies whether complement output signal is qualified or
+ * not qualified with the internal vbus valid comparator with
+ * a ULPI phy.
+ */
+extern void dwc2_set_param_phy_ulpi_ind_pass(struct dwc2_hsotg *hsotg, int val);
+#define DWC2_PHY_ULPI_IND_QUALIFIED	0
+#define DWC2_PHY_ULPI_IND_PASS_THROUGH	1
 
 /*
  * Specifies whether to use the I2Cinterface for full speed PHY. This
