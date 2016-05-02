@@ -271,7 +271,8 @@ void of_fixed_clk_setup(struct device_node *np);
  * struct clk_gate - gating clock
  *
  * @hw:		handle between common and hardware-specific interfaces
- * @reg:	register controlling gate
+ * @reg:	register controlling gate clock
+ * @rst:	register controlling gate reset
  * @bit_idx:	single bit controlling gate
  * @flags:	hardware-specific flags
  * @lock:	register lock
@@ -286,10 +287,13 @@ void of_fixed_clk_setup(struct device_node *np);
  *	of this register, and mask of gate bits are in higher 16-bit of this
  *	register.  While setting the gate bits, higher 16-bit should also be
  *	updated to indicate changing gate bits.
+ * CLK_GATE_RESET - The gate must be reset before disabling, and unreset after
+ *	enabling.
  */
 struct clk_gate {
 	struct clk_hw hw;
 	void __iomem	*reg;
+	void __iomem	*rst;
 	u8		bit_idx;
 	u8		flags;
 	spinlock_t	*lock;
@@ -297,11 +301,16 @@ struct clk_gate {
 
 #define CLK_GATE_SET_TO_DISABLE		BIT(0)
 #define CLK_GATE_HIWORD_MASK		BIT(1)
+#define CLK_GATE_RESET			BIT(2)
 
 extern const struct clk_ops clk_gate_ops;
 struct clk *clk_register_gate(struct device *dev, const char *name,
 		const char *parent_name, unsigned long flags,
 		void __iomem *reg, u8 bit_idx,
+		u8 clk_gate_flags, spinlock_t *lock);
+struct clk *clk_register_gate_ext(struct device *dev, const char *name,
+		const char *parent_name, unsigned long flags,
+		void __iomem *reg, void __iomem *rst, u8 bit_idx,
 		u8 clk_gate_flags, spinlock_t *lock);
 void clk_unregister_gate(struct clk *clk);
 

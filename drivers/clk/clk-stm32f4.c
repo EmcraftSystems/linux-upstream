@@ -26,98 +26,111 @@
 
 #define STM32F4_RCC_PLLCFGR		0x04
 #define STM32F4_RCC_CFGR		0x08
+
+#define STM32F4_RCC_AHB1RSTR		0x10
+#define STM32F4_RCC_AHB2RSTR		0x14
+#define STM32F4_RCC_AHB3RSTR		0x18
+#define STM32F4_RCC_APB1RSTR		0x20
+#define STM32F4_RCC_APB2RSTR		0x24
+
 #define STM32F4_RCC_AHB1ENR		0x30
 #define STM32F4_RCC_AHB2ENR		0x34
 #define STM32F4_RCC_AHB3ENR		0x38
 #define STM32F4_RCC_APB1ENR		0x40
 #define STM32F4_RCC_APB2ENR		0x44
 
+#define STM32F4_RCC(x)			STM32F4_RCC_ ## x ## ENR, \
+					STM32F4_RCC_ ## x ## RSTR
+
 struct stm32f4_gate_data {
-	u8	offset;
+	u8	enr_offset;
+	u8	rstr_offset;
 	u8	bit_idx;
 	const char *name;
 	const char *parent_name;
 	unsigned long flags;
+	unsigned char gate_flags;
 };
 
 static const struct stm32f4_gate_data stm32f4_gates[] __initconst = {
-	{ STM32F4_RCC_AHB1ENR,  0,	"gpioa",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR,  1,	"gpiob",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR,  2,	"gpioc",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR,  3,	"gpiod",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR,  4,	"gpioe",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR,  5,	"gpiof",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR,  6,	"gpiog",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR,  7,	"gpioh",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR,  8,	"gpioi",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR,  9,	"gpioj",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 10,	"gpiok",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 12,	"crc",		"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 18,	"bkpsra",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 20,	"ccmdatam",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 21,	"dma1",		"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 22,	"dma2",		"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 23,	"dma2d",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 25,	"ethmac",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 26,	"ethmactx",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 27,	"ethmacrx",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 28,	"ethmacptp",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 29,	"otghs",	"ahb_div" },
-	{ STM32F4_RCC_AHB1ENR, 30,	"otghsulpi",	"ahb_div" },
+	{ STM32F4_RCC(AHB1),  0,	"gpioa",	"ahb_div" },
+	{ STM32F4_RCC(AHB1),  1,	"gpiob",	"ahb_div" },
+	{ STM32F4_RCC(AHB1),  2,	"gpioc",	"ahb_div" },
+	{ STM32F4_RCC(AHB1),  3,	"gpiod",	"ahb_div" },
+	{ STM32F4_RCC(AHB1),  4,	"gpioe",	"ahb_div" },
+	{ STM32F4_RCC(AHB1),  5,	"gpiof",	"ahb_div" },
+	{ STM32F4_RCC(AHB1),  6,	"gpiog",	"ahb_div" },
+	{ STM32F4_RCC(AHB1),  7,	"gpioh",	"ahb_div" },
+	{ STM32F4_RCC(AHB1),  8,	"gpioi",	"ahb_div" },
+	{ STM32F4_RCC(AHB1),  9,	"gpioj",	"ahb_div" },
+	{ STM32F4_RCC(AHB1), 10,	"gpiok",	"ahb_div" },
+	{ STM32F4_RCC(AHB1), 12,	"crc",		"ahb_div" },
+	{ STM32F4_RCC(AHB1), 18,	"bkpsra",	"ahb_div" },
+	{ STM32F4_RCC(AHB1), 20,	"ccmdatam",	"ahb_div" },
+	{ STM32F4_RCC(AHB1), 21,	"dma1",		"ahb_div" },
+	{ STM32F4_RCC(AHB1), 22,	"dma2",		"ahb_div" },
+	{ STM32F4_RCC(AHB1), 23,	"dma2d",	"ahb_div" },
+	{ STM32F4_RCC(AHB1), 25,	"ethmac",	"ahb_div" },
+	{ STM32F4_RCC(AHB1), 26,	"ethmactx",	"ahb_div" },
+	{ STM32F4_RCC(AHB1), 27,	"ethmacrx",	"ahb_div" },
+	{ STM32F4_RCC(AHB1), 28,	"ethmacptp",	"ahb_div" },
+	{ STM32F4_RCC(AHB1), 29,	"otghs",	"ahb_div" },
+	{ STM32F4_RCC(AHB1), 30,	"otghsulpi",	"ahb_div" },
 
-	{ STM32F4_RCC_AHB2ENR,  0,	"dcmi",		"ahb_div" },
-	{ STM32F4_RCC_AHB2ENR,  4,	"cryp",		"ahb_div" },
-	{ STM32F4_RCC_AHB2ENR,  5,	"hash",		"ahb_div" },
-	{ STM32F4_RCC_AHB2ENR,  6,	"rng",		"pll48" },
-	{ STM32F4_RCC_AHB2ENR,  7,	"otgfs",	"pll48" },
+	{ STM32F4_RCC(AHB2),  0,	"dcmi",		"ahb_div" },
+	{ STM32F4_RCC(AHB2),  4,	"cryp",		"ahb_div" },
+	{ STM32F4_RCC(AHB2),  5,	"hash",		"ahb_div" },
+	{ STM32F4_RCC(AHB2),  6,	"rng",		"pll48" },
+	{ STM32F4_RCC(AHB2),  7,	"otgfs",	"pll48" },
 
-	{ STM32F4_RCC_AHB3ENR,  0,	"fmc",		"ahb_div",
+	{ STM32F4_RCC(AHB3),  0,	"fmc",		"ahb_div",
 		CLK_IGNORE_UNUSED },
 
-	{ STM32F4_RCC_APB1ENR,  0,	"tim2",		"apb1_mul" },
-	{ STM32F4_RCC_APB1ENR,  1,	"tim3",		"apb1_mul" },
-	{ STM32F4_RCC_APB1ENR,  2,	"tim4",		"apb1_mul" },
-	{ STM32F4_RCC_APB1ENR,  3,	"tim5",		"apb1_mul" },
-	{ STM32F4_RCC_APB1ENR,  4,	"tim6",		"apb1_mul" },
-	{ STM32F4_RCC_APB1ENR,  5,	"tim7",		"apb1_mul" },
-	{ STM32F4_RCC_APB1ENR,  6,	"tim12",	"apb1_mul" },
-	{ STM32F4_RCC_APB1ENR,  7,	"tim13",	"apb1_mul" },
-	{ STM32F4_RCC_APB1ENR,  8,	"tim14",	"apb1_mul" },
-	{ STM32F4_RCC_APB1ENR, 11,	"wwdg",		"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 14,	"spi2",		"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 15,	"spi3",		"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 17,	"uart2",	"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 18,	"uart3",	"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 19,	"uart4",	"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 20,	"uart5",	"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 21,	"i2c1",		"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 22,	"i2c2",		"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 23,	"i2c3",		"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 25,	"can1",		"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 26,	"can2",		"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 28,	"pwr",		"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 29,	"dac",		"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 30,	"uart7",	"apb1_div" },
-	{ STM32F4_RCC_APB1ENR, 31,	"uart8",	"apb1_div" },
+	{ STM32F4_RCC(APB1),  0,	"tim2",		"apb1_mul" },
+	{ STM32F4_RCC(APB1),  1,	"tim3",		"apb1_mul" },
+	{ STM32F4_RCC(APB1),  2,	"tim4",		"apb1_mul" },
+	{ STM32F4_RCC(APB1),  3,	"tim5",		"apb1_mul" },
+	{ STM32F4_RCC(APB1),  4,	"tim6",		"apb1_mul" },
+	{ STM32F4_RCC(APB1),  5,	"tim7",		"apb1_mul" },
+	{ STM32F4_RCC(APB1),  6,	"tim12",	"apb1_mul" },
+	{ STM32F4_RCC(APB1),  7,	"tim13",	"apb1_mul" },
+	{ STM32F4_RCC(APB1),  8,	"tim14",	"apb1_mul" },
+	{ STM32F4_RCC(APB1), 11,	"wwdg",		"apb1_div" },
+	{ STM32F4_RCC(APB1), 14,	"spi2",		"apb1_div" },
+	{ STM32F4_RCC(APB1), 15,	"spi3",		"apb1_div" },
+	{ STM32F4_RCC(APB1), 17,	"uart2",	"apb1_div" },
+	{ STM32F4_RCC(APB1), 18,	"uart3",	"apb1_div" },
+	{ STM32F4_RCC(APB1), 19,	"uart4",	"apb1_div" },
+	{ STM32F4_RCC(APB1), 20,	"uart5",	"apb1_div" },
+	{ STM32F4_RCC(APB1), 21,	"i2c1",		"apb1_div" },
+	{ STM32F4_RCC(APB1), 22,	"i2c2",		"apb1_div" },
+	{ STM32F4_RCC(APB1), 23,	"i2c3",		"apb1_div" },
+	{ STM32F4_RCC(APB1), 25,	"can1",		"apb1_div" },
+	{ STM32F4_RCC(APB1), 26,	"can2",		"apb1_div" },
+	{ STM32F4_RCC(APB1), 28,	"pwr",		"apb1_div" },
+	{ STM32F4_RCC(APB1), 29,	"dac",		"apb1_div" },
+	{ STM32F4_RCC(APB1), 30,	"uart7",	"apb1_div" },
+	{ STM32F4_RCC(APB1), 31,	"uart8",	"apb1_div" },
 
-	{ STM32F4_RCC_APB2ENR,  0,	"tim1",		"apb2_mul" },
-	{ STM32F4_RCC_APB2ENR,  1,	"tim8",		"apb2_mul" },
-	{ STM32F4_RCC_APB2ENR,  4,	"usart1",	"apb2_div" },
-	{ STM32F4_RCC_APB2ENR,  5,	"usart6",	"apb2_div" },
-	{ STM32F4_RCC_APB2ENR,  8,	"adc1",		"apb2_div" },
-	{ STM32F4_RCC_APB2ENR,  9,	"adc2",		"apb2_div" },
-	{ STM32F4_RCC_APB2ENR, 10,	"adc3",		"apb2_div" },
-	{ STM32F4_RCC_APB2ENR, 11,	"sdio",		"pll48" },
-	{ STM32F4_RCC_APB2ENR, 12,	"spi1",		"apb2_div" },
-	{ STM32F4_RCC_APB2ENR, 13,	"spi4",		"apb2_div" },
-	{ STM32F4_RCC_APB2ENR, 14,	"syscfg",	"apb2_div" },
-	{ STM32F4_RCC_APB2ENR, 16,	"tim9",		"apb2_mul" },
-	{ STM32F4_RCC_APB2ENR, 17,	"tim10",	"apb2_mul" },
-	{ STM32F4_RCC_APB2ENR, 18,	"tim11",	"apb2_mul" },
-	{ STM32F4_RCC_APB2ENR, 20,	"spi5",		"apb2_div" },
-	{ STM32F4_RCC_APB2ENR, 21,	"spi6",		"apb2_div" },
-	{ STM32F4_RCC_APB2ENR, 22,	"sai1",		"apb2_div" },
-	{ STM32F4_RCC_APB2ENR, 26,	"ltdc",		"apb2_div" },
+	{ STM32F4_RCC(APB2),  0,	"tim1",		"apb2_mul" },
+	{ STM32F4_RCC(APB2),  1,	"tim8",		"apb2_mul" },
+	{ STM32F4_RCC(APB2),  4,	"usart1",	"apb2_div" },
+	{ STM32F4_RCC(APB2),  5,	"usart6",	"apb2_div" },
+	{ STM32F4_RCC(APB2),  8,	"adc1",		"apb2_div" },
+	{ STM32F4_RCC(APB2),  9,	"adc2",		"apb2_div" },
+	{ STM32F4_RCC(APB2), 10,	"adc3",		"apb2_div" },
+	{ STM32F4_RCC(APB2), 11,	"sdio",		"pll48" },
+	{ STM32F4_RCC(APB2), 12,	"spi1",		"apb2_div" },
+	{ STM32F4_RCC(APB2), 13,	"spi4",		"apb2_div" },
+	{ STM32F4_RCC(APB2), 14,	"syscfg",	"apb2_div" },
+	{ STM32F4_RCC(APB2), 16,	"tim9",		"apb2_mul" },
+	{ STM32F4_RCC(APB2), 17,	"tim10",	"apb2_mul" },
+	{ STM32F4_RCC(APB2), 18,	"tim11",	"apb2_mul" },
+	{ STM32F4_RCC(APB2), 20,	"spi5",		"apb2_div" },
+	{ STM32F4_RCC(APB2), 21,	"spi6",		"apb2_div" },
+	{ STM32F4_RCC(APB2), 22,	"sai1",		"apb2_div" },
+	{ STM32F4_RCC(APB2), 26,	"ltdc",		"apb2_div",
+		 0, CLK_GATE_RESET },
 };
 
 /*
@@ -355,15 +368,16 @@ static void __init stm32f4_rcc_init(struct device_node *np)
 	for (n = 0; n < ARRAY_SIZE(stm32f4_gates); n++) {
 		const struct stm32f4_gate_data *gd = &stm32f4_gates[n];
 		unsigned int secondary =
-		    8 * (gd->offset - STM32F4_RCC_AHB1ENR) + gd->bit_idx;
+		    8 * (gd->enr_offset - STM32F4_RCC_AHB1ENR) + gd->bit_idx;
 		int idx = stm32f4_rcc_lookup_clk_idx(0, secondary);
 
 		if (idx < 0)
 			goto fail;
 
-		clks[idx] = clk_register_gate(
+		clks[idx] = clk_register_gate_ext(
 		    NULL, gd->name, gd->parent_name, gd->flags,
-		    base + gd->offset, gd->bit_idx, 0, &stm32f4_clk_lock);
+		    base + gd->enr_offset, base + gd->rstr_offset,
+		    gd->bit_idx, gd->gate_flags, &stm32f4_clk_lock);
 
 		if (IS_ERR(clks[n])) {
 			pr_err("%s: Unable to register leaf clock %s\n",

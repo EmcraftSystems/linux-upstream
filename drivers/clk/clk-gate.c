@@ -66,7 +66,13 @@ static void clk_gate_endisable(struct clk_hw *hw, int enable)
 			reg &= ~BIT(gate->bit_idx);
 	}
 
+	if ((gate->flags & CLK_GATE_RESET) && !enable)
+		clk_writel(clk_readl(gate->rst) | BIT(gate->bit_idx), gate->rst);
+
 	clk_writel(reg, gate->reg);
+
+	if ((gate->flags & CLK_GATE_RESET) && enable)
+		clk_writel(clk_readl(gate->rst) & ~BIT(gate->bit_idx), gate->rst);
 
 	if (gate->lock)
 		spin_unlock_irqrestore(gate->lock, flags);
@@ -108,19 +114,20 @@ const struct clk_ops clk_gate_ops = {
 EXPORT_SYMBOL_GPL(clk_gate_ops);
 
 /**
- * clk_register_gate - register a gate clock with the clock framework
+ * clk_register_gate_ext - register a gate clock with the clock framework
  * @dev: device that is registering this clock
  * @name: name of this clock
  * @parent_name: name of this clock's parent
  * @flags: framework-specific flags for this clock
  * @reg: register address to control gating of this clock
+ * @rst: register address to control resetting of this clock
  * @bit_idx: which bit in the register controls gating of this clock
  * @clk_gate_flags: gate-specific flags for this clock
  * @lock: shared register lock for this clock
  */
-struct clk *clk_register_gate(struct device *dev, const char *name,
+struct clk *clk_register_gate_ext(struct device *dev, const char *name,
 		const char *parent_name, unsigned long flags,
-		void __iomem *reg, u8 bit_idx,
+		void __iomem *reg, void __iomem *rst, u8 bit_idx,
 		u8 clk_gate_flags, spinlock_t *lock)
 {
 	struct clk_gate *gate;
@@ -147,6 +154,7 @@ struct clk *clk_register_gate(struct device *dev, const char *name,
 
 	/* struct clk_gate assignments */
 	gate->reg = reg;
+	gate->rst = rst;
 	gate->bit_idx = bit_idx;
 	gate->flags = clk_gate_flags;
 	gate->lock = lock;
@@ -158,6 +166,16 @@ struct clk *clk_register_gate(struct device *dev, const char *name,
 		kfree(gate);
 
 	return clk;
+}
+EXPORT_SYMBOL_GPL(clk_register_gate_ext);
+
+struct clk *clk_register_gate(struct device *dev, const char *name,
+		const char *parent_name, unsigned long flags,
+		void __iomem *reg, u8 bit_idx,
+		u8 clk_gate_flags, spinlock_t *lock)
+{
+	return clk_register_gate_ext(dev, name, parent_name, flags, reg, NULL,
+				     bit_idx, clk_gate_flags, lock);
 }
 EXPORT_SYMBOL_GPL(clk_register_gate);
 
