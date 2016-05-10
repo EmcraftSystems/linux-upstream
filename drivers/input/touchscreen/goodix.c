@@ -56,7 +56,6 @@ struct goodix_ts_data {
 
 #define GOODIX_MAX_HEIGHT		4096
 #define GOODIX_MAX_WIDTH		4096
-#define GOODIX_INT_TRIGGER		1
 #define GOODIX_CONTACT_SIZE		8
 #define GOODIX_MAX_CONTACTS		10
 
@@ -407,9 +406,11 @@ static int goodix_reset(struct goodix_ts_data *ts)
 	int error;
 
 	/* begin select I2C slave addr */
-	error = gpiod_direction_output(ts->gpiod_rst, 0);
-	if (error)
-		return error;
+	if (ts->gpiod_rst) {
+		error = gpiod_direction_output(ts->gpiod_rst, 0);
+		if (error)
+			return error;
+	}
 
 	msleep(20);				/* T2: > 10ms */
 
@@ -420,16 +421,20 @@ static int goodix_reset(struct goodix_ts_data *ts)
 
 	usleep_range(100, 2000);		/* T3: > 100us */
 
-	error = gpiod_direction_output(ts->gpiod_rst, 1);
-	if (error)
-		return error;
+	if (ts->gpiod_rst) {
+		error = gpiod_direction_output(ts->gpiod_rst, 1);
+		if (error)
+			return error;
+	}
 
 	usleep_range(6000, 10000);		/* T4: > 5ms */
 
 	/* end select I2C slave addr */
-	error = gpiod_direction_input(ts->gpiod_rst);
-	if (error)
-		return error;
+	if (ts->gpiod_rst) {
+		error = gpiod_direction_input(ts->gpiod_rst);
+		if (error)
+			return error;
+	}
 
 	error = goodix_int_sync(ts);
 	if (error)
@@ -503,7 +508,7 @@ static void goodix_read_config(struct goodix_ts_data *ts)
 		ts->abs_y_max = GOODIX_MAX_HEIGHT;
 		if (ts->swapped_x_y)
 			swap(ts->abs_x_max, ts->abs_y_max);
-		ts->int_trigger_type = GOODIX_INT_TRIGGER;
+		ts->int_trigger_type = GTP_INT_TRIGGER;
 		ts->max_touch_num = GOODIX_MAX_CONTACTS;
 		return;
 	}
@@ -515,9 +520,8 @@ static void goodix_read_config(struct goodix_ts_data *ts)
 	config[MAX_CONTACTS_LOC] = GOODIX_MAX_CONTACTS;
 	config[0] = 'A';
 
-	if (GTP_INT_TRIGGER == 0)
-		config[TRIGGER_LOC] &= 0xfe;
-	else if (GTP_INT_TRIGGER == 1)
+	config[TRIGGER_LOC] &= 0xfe;
+	if (GTP_INT_TRIGGER == GTP_INT_FALLING)
 		config[TRIGGER_LOC] |= 0x01;
 
 	for (i = 0; i < ts->cfg_len - 3; i++)
@@ -746,7 +750,7 @@ static int goodix_ts_probe(struct i2c_client *client,
 	if (error)
 		return error;
 
-	if (ts->gpiod_int && ts->gpiod_rst) {
+	if (ts->gpiod_int) {
 		/* reset the controller */
 		error = goodix_reset(ts);
 		if (error) {
@@ -769,29 +773,9 @@ static int goodix_ts_probe(struct i2c_client *client,
 
 	ts->cfg_len = goodix_get_cfg_len(ts->id);
 
-	if (ts->gpiod_int && ts->gpiod_rst) {
-		/* update device config */
-		ts->cfg_name = devm_kasprintf(&client->dev, GFP_KERNEL,
-					      "goodix_%d_cfg.bin", ts->id);
-		if (!ts->cfg_name)
-			return -ENOMEM;
-
-		error = request_firmware_nowait(THIS_MODULE, true, ts->cfg_name,
-						&client->dev, GFP_KERNEL, ts,
-						goodix_config_cb);
-		if (error) {
-			dev_err(&client->dev,
-				"Failed to invoke firmware loader: %d\n",
-				error);
-			return error;
-		}
-
-		return 0;
-	} else {
-		error = goodix_configure_dev(ts);
-		if (error)
-			return error;
-	}
+	error = goodix_configure_dev(ts);
+	if (error)
+		return error;
 
 	return 0;
 }
