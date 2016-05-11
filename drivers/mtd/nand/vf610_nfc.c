@@ -160,7 +160,6 @@ enum vf610_nfc_variant {
 };
 
 struct vf610_nfc {
-	struct mtd_info mtd;
 	struct nand_chip chip;
 	struct device *dev;
 	void __iomem *regs;
@@ -177,7 +176,10 @@ struct vf610_nfc {
 	bool use_read_cache_cmd;
 };
 
-#define mtd_to_nfc(_mtd) container_of(_mtd, struct vf610_nfc, mtd)
+static inline struct vf610_nfc *mtd_to_nfc(struct mtd_info *mtd)
+{
+	return container_of(mtd_to_nand(mtd), struct vf610_nfc, chip);
+}
 
 static struct nand_ecclayout vf610_nfc_ecc45 = {
 	.eccbytes = 45,
@@ -727,12 +729,11 @@ static int vf610_nfc_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	nfc->dev = &pdev->dev;
-	mtd = &nfc->mtd;
 	chip = &nfc->chip;
+	mtd = nand_to_mtd(chip);
 
 	nfc->last_page = -1;
 
-	mtd->priv = chip;
 	mtd->owner = THIS_MODULE;
 	mtd->dev.parent = nfc->dev;
 	mtd->name = DRV_NAME;
@@ -762,24 +763,24 @@ static int vf610_nfc_probe(struct platform_device *pdev)
 	for_each_available_child_of_node(nfc->dev->of_node, child) {
 		if (of_device_is_compatible(child, "fsl,vf610-nfc-nandcs")) {
 
-			if (chip->flash_node) {
+			if (nand_get_flash_node(chip)) {
 				dev_err(nfc->dev,
 					"Only one NAND chip supported!\n");
 				err = -EINVAL;
 				goto error;
 			}
 
-			chip->flash_node = child;
+			nand_set_flash_node(chip, child);
 		}
 	}
 
-	if (!chip->flash_node) {
+	if (!nand_get_flash_node(chip)) {
 		dev_err(nfc->dev, "NAND chip sub-node missing!\n");
 		err = -ENODEV;
 		goto err_clk;
 	}
 
-	nfc->use_read_cache_cmd = of_property_read_bool(chip->flash_node,
+	nfc->use_read_cache_cmd = of_property_read_bool(nfc->dev->of_node,
 		"nand-use-read-cache");
 
 	chip->dev_ready = vf610_nfc_dev_ready;
@@ -869,14 +870,10 @@ static int vf610_nfc_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, mtd);
 
 	/* Register device in MTD */
-	return mtd_device_parse_register(mtd, NULL,
-		&(struct mtd_part_parser_data){
-			.of_node = chip->flash_node,
-		},
-		NULL, 0);
+	return mtd_device_register(mtd, NULL, 0);
 
 error:
-	of_node_put(chip->flash_node);
+	of_node_put(nand_get_flash_node(chip));
 err_clk:
 	clk_disable_unprepare(nfc->clk);
 	return err;

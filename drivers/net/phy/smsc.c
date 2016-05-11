@@ -27,11 +27,6 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 
-struct smsc_private {
-	int wol_supported;
-	int int_irq;
-};
-
 static const int smsc_match_cable_length_lookup[16] = {
 	 0,   0,   0,   0,
 	 6,  17,  27,  38,
@@ -94,6 +89,12 @@ static int mmd_read(struct phy_device *phydev, int dev, int reg)
 	return rc;
 }
 
+struct smsc_phy_priv {
+	bool energy_enable;
+	int wol_supported;
+	int int_irq;
+};
+
 static int smsc_phy_config_intr(struct phy_device *phydev)
 {
 	int rc = phy_write (phydev, MII_LAN83C185_IM,
@@ -113,19 +114,14 @@ static int smsc_phy_ack_interrupt(struct phy_device *phydev)
 
 static int smsc_phy_config_init(struct phy_device *phydev)
 {
-	int __maybe_unused len;
-	struct device *dev __maybe_unused = &phydev->dev;
-	struct device_node *of_node __maybe_unused = dev->of_node;
+	struct smsc_phy_priv *priv = phydev->priv;
+
 	int rc = phy_read(phydev, MII_LAN83C185_CTRL_STATUS);
-	int enable_energy = 1;
 
 	if (rc < 0)
 		return rc;
 
-	if (of_find_property(of_node, "smsc,disable-energy-detect", &len))
-		enable_energy = 0;
-
-	if (enable_energy) {
+	if (priv->energy_enable) {
 		/* Enable energy detect mode for this SMSC Transceivers */
 		rc = phy_write(phydev, MII_LAN83C185_CTRL_STATUS,
 			       rc | MII_LAN83C185_EDPWRDOWN);
@@ -180,10 +176,13 @@ static int lan911x_config_init(struct phy_device *phydev)
  */
 static int lan87xx_read_status(struct phy_device *phydev)
 {
-	int err = genphy_read_status(phydev);
-	int i;
+	struct smsc_phy_priv *priv = phydev->priv;
 
-	if (!phydev->link) {
+	int err = genphy_read_status(phydev);
+
+	if (!phydev->link && priv->energy_enable) {
+		int i;
+
 		/* Disable EDPD to wake up PHY */
 		int rc = phy_read(phydev, MII_LAN83C185_CTRL_STATUS);
 		if (rc < 0)
@@ -225,33 +224,6 @@ static irqreturn_t lan8742_irq(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-int lan8742_probe(struct phy_device *phydev)
-{
-	const struct device *dev = &phydev->dev;
-	struct device_node *node = dev->of_node;
-	int nint_gpio = of_get_named_gpio(node, "nint-gpios", 0);
-	struct smsc_private *priv = kzalloc(sizeof(*priv), GFP_KERNEL);
-
-	priv->wol_supported = 0;
-	phydev->priv = priv;
-
-	if (gpio_is_valid(nint_gpio)) {
-		int err;
-
-		priv->int_irq = gpio_to_irq(nint_gpio);
-
-		err = request_irq(priv->int_irq, lan8742_irq,
-				  IRQF_TRIGGER_FALLING, "smsc8742", phydev);
-		if (err)
-			dev_err(dev, "failed to request PHY irq %d from gpio %d: %d\n",
-				gpio_to_irq(nint_gpio), nint_gpio, err);
-		else
-			priv->wol_supported = 1;
-	}
-
-	return 0;
-}
-
 static void lan8742_remove(struct phy_device *phydev)
 {
 	if (phydev->priv)
@@ -263,7 +235,7 @@ static int lan8742_set_wol(struct phy_device *phydev,
 {
 	u32 wucsr = mmd_read(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG);
 	struct net_device *ndev = phydev->attached_dev;
-	struct smsc_private *priv = phydev->priv;
+	struct smsc_phy_priv *priv = phydev->priv;
 	const u8 *mac;
 
 	if (!ndev)
@@ -291,7 +263,7 @@ static void lan8742_get_wol(struct phy_device *phydev,
 			   struct ethtool_wolinfo *wol)
 {
 	u32 wucsr = mmd_read(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG);
-	struct smsc_private *priv = phydev->priv;
+	struct smsc_phy_priv *priv = phydev->priv;
 
 	wol->wolopts = 0;
 
@@ -308,7 +280,7 @@ static void lan8742_get_wol(struct phy_device *phydev,
 static int lan8742_suspend(struct phy_device *phydev)
 {
 	u32 wucsr = mmd_read(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG);
-	struct smsc_private *priv = phydev->priv;
+	struct smsc_phy_priv *priv = phydev->priv;
 	int err = 0;
 
 	if (priv->wol_supported && (wucsr & MMD_LAN8742_WUCS_MAGIC_ENABLED)) {
@@ -332,7 +304,7 @@ static int lan8742_suspend(struct phy_device *phydev)
 static int lan8742_resume(struct phy_device *phydev)
 {
 	u32 wucsr = mmd_read(phydev, MDIO_MMD_PCS, MMD_LAN8742_WUCSR_REG);
-	struct smsc_private *priv = phydev->priv;
+	struct smsc_phy_priv *priv = phydev->priv;
 	int err = 0;
 
 	if (priv->wol_supported && (wucsr & MMD_LAN8742_WUCS_MAGIC_ENABLED) &&
@@ -392,7 +364,7 @@ static int perform_cable_diag(struct phy_device *phydev, int mdix,
 			    !(rc & MII_LAN83C185_TDR_ENABLE))
 				break;
 		} else {
-			dev_err(&phydev->dev, "Failed to read TDR PHY register: %d\n", rc);
+			phydev_err(phydev, "Failed to read TDR PHY register: %d\n", rc);
 			goto err;
 		}
 
@@ -403,7 +375,7 @@ static int perform_cable_diag(struct phy_device *phydev, int mdix,
 	phy_write(phydev, MII_LAN83C185_CTRL_STATUS, ctrl_reg);
 
 	if (i >= max_wait) {
-		dev_err(&phydev->dev, "TDR status read timeout\n");
+		phydev_err(phydev, "TDR status read timeout\n");
 		goto err;
 	}
 
@@ -431,27 +403,18 @@ err:
 	return rc;
 }
 
-int lan8742_get_sset_count(struct phy_device *phydev, int sset)
+int lan8742_get_sset_count(struct phy_device *phydev)
 {
-	switch (sset) {
-	case ETH_SS_TEST:
-		return SMSC_TEST_LEN;
-	default:
-		return -EOPNOTSUPP;
-	}
+	return SMSC_TEST_LEN;
 }
 
-void lan8742_get_strings(struct phy_device *phydev, u32 stringset, u8 *data)
+void lan8742_get_strings(struct phy_device *phydev, u8 *data)
 {
-	switch (stringset) {
-	case ETH_SS_TEST:
-		memcpy(data, smsc_gstrings, SMSC_STRINGS_LEN);
-		break;
-	}
+	memcpy(data, smsc_gstrings, SMSC_STRINGS_LEN);
 }
 
-void lan8742_self_test(struct phy_device *phydev,
-		       struct ethtool_test *eth_test, u64 *data)
+void lan8742_get_stats(struct phy_device *phydev,
+		       struct ethtool_stats *stats, u64 *data)
 {
 	int tx_state, tx_len, rx_state, rx_len;
 	mutex_lock(&phydev->lock);
@@ -480,6 +443,42 @@ void lan8742_self_test(struct phy_device *phydev,
 	mutex_unlock(&phydev->lock);
 }
 
+static int smsc_phy_probe(struct phy_device *phydev)
+{
+	struct device *dev = &phydev->mdio.dev;
+	struct device_node *of_node = dev->of_node;
+	int nint_gpio = of_get_named_gpio(of_node, "nint-gpios", 0);
+	struct smsc_phy_priv *priv;
+
+	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return -ENOMEM;
+
+	priv->energy_enable = true;
+	priv->wol_supported = 0;
+
+	if (of_property_read_bool(of_node, "smsc,disable-energy-detect"))
+		priv->energy_enable = false;
+
+	if (gpio_is_valid(nint_gpio)) {
+		int err;
+
+		priv->int_irq = gpio_to_irq(nint_gpio);
+
+		err = request_irq(priv->int_irq, lan8742_irq,
+				  IRQF_TRIGGER_FALLING, "smsc8742", phydev);
+		if (err)
+			dev_err(dev, "failed to request PHY irq %d from gpio %d: %d\n",
+				gpio_to_irq(nint_gpio), nint_gpio, err);
+		else
+			priv->wol_supported = 1;
+	}
+
+	phydev->priv = priv;
+
+	return 0;
+}
+
 static struct phy_driver smsc_phy_driver[] = {
 {
 	.phy_id		= 0x0007c0a0, /* OUI=0x00800f, Model#=0x0a */
@@ -490,6 +489,8 @@ static struct phy_driver smsc_phy_driver[] = {
 				| SUPPORTED_Asym_Pause),
 	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
 
+	.probe		= smsc_phy_probe,
+
 	/* basic functions */
 	.config_aneg	= genphy_config_aneg,
 	.read_status	= genphy_read_status,
@@ -502,8 +503,6 @@ static struct phy_driver smsc_phy_driver[] = {
 
 	.suspend	= genphy_suspend,
 	.resume		= genphy_resume,
-
-	.driver		= { .owner = THIS_MODULE, }
 }, {
 	.phy_id		= 0x0007c0b0, /* OUI=0x00800f, Model#=0x0b */
 	.phy_id_mask	= 0xfffffff0,
@@ -513,6 +512,8 @@ static struct phy_driver smsc_phy_driver[] = {
 				| SUPPORTED_Asym_Pause),
 	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
 
+	.probe		= smsc_phy_probe,
+
 	/* basic functions */
 	.config_aneg	= genphy_config_aneg,
 	.read_status	= genphy_read_status,
@@ -525,8 +526,6 @@ static struct phy_driver smsc_phy_driver[] = {
 
 	.suspend	= genphy_suspend,
 	.resume		= genphy_resume,
-
-	.driver		= { .owner = THIS_MODULE, }
 }, {
 	.phy_id		= 0x0007c0c0, /* OUI=0x00800f, Model#=0x0c */
 	.phy_id_mask	= 0xfffffff0,
@@ -535,6 +534,8 @@ static struct phy_driver smsc_phy_driver[] = {
 	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause
 				| SUPPORTED_Asym_Pause),
 	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
+
+	.probe		= smsc_phy_probe,
 
 	/* basic functions */
 	.config_aneg	= genphy_config_aneg,
@@ -548,8 +549,6 @@ static struct phy_driver smsc_phy_driver[] = {
 
 	.suspend	= genphy_suspend,
 	.resume		= genphy_resume,
-
-	.driver		= { .owner = THIS_MODULE, }
 }, {
 	.phy_id		= 0x0007c0d0, /* OUI=0x00800f, Model#=0x0d */
 	.phy_id_mask	= 0xfffffff0,
@@ -558,6 +557,8 @@ static struct phy_driver smsc_phy_driver[] = {
 	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause
 				| SUPPORTED_Asym_Pause),
 	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
+
+	.probe		= smsc_phy_probe,
 
 	/* basic functions */
 	.config_aneg	= genphy_config_aneg,
@@ -570,8 +571,6 @@ static struct phy_driver smsc_phy_driver[] = {
 
 	.suspend	= genphy_suspend,
 	.resume		= genphy_resume,
-
-	.driver		= { .owner = THIS_MODULE, }
 }, {
 	.phy_id		= 0x0007c0f0, /* OUI=0x00800f, Model#=0x0f */
 	.phy_id_mask	= 0xfffffff0,
@@ -580,6 +579,8 @@ static struct phy_driver smsc_phy_driver[] = {
 	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause
 				| SUPPORTED_Asym_Pause),
 	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
+
+	.probe		= smsc_phy_probe,
 
 	/* basic functions */
 	.config_aneg	= genphy_config_aneg,
@@ -593,8 +594,29 @@ static struct phy_driver smsc_phy_driver[] = {
 
 	.suspend	= genphy_suspend,
 	.resume		= genphy_resume,
+}, {
+	.phy_id		= 0x0007c110,
+	.phy_id_mask	= 0xfffffff0,
+	.name		= "SMSC LAN8740",
 
-	.driver		= { .owner = THIS_MODULE, }
+	.features	= (PHY_BASIC_FEATURES | SUPPORTED_Pause
+				| SUPPORTED_Asym_Pause),
+	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
+
+	.probe		= smsc_phy_probe,
+
+	/* basic functions */
+	.config_aneg	= genphy_config_aneg,
+	.read_status	= lan87xx_read_status,
+	.config_init	= smsc_phy_config_init,
+	.soft_reset	= smsc_phy_reset,
+
+	/* IRQ related */
+	.ack_interrupt	= smsc_phy_ack_interrupt,
+	.config_intr	= smsc_phy_config_intr,
+
+	.suspend	= genphy_suspend,
+	.resume		= genphy_resume,
 }, {
 	.phy_id		= MII_LAN8742_ID,
 	.phy_id_mask	= MII_LAN8742_ID_MASK,
@@ -604,13 +626,14 @@ static struct phy_driver smsc_phy_driver[] = {
 				| SUPPORTED_Asym_Pause),
 	.flags		= PHY_HAS_INTERRUPT | PHY_HAS_MAGICANEG,
 
+	.probe		= smsc_phy_probe,
+	.remove		= lan8742_remove,
+
 	/* basic functions */
 	.config_aneg	= genphy_config_aneg,
 	.read_status	= lan87xx_read_status,
 	.config_init	= smsc_phy_config_init,
 	.soft_reset	= smsc_phy_reset,
-	.probe		= lan8742_probe,
-	.remove		= lan8742_remove,
 
 	/* IRQ related */
 	.ack_interrupt	= smsc_phy_ack_interrupt,
@@ -622,9 +645,7 @@ static struct phy_driver smsc_phy_driver[] = {
 	.get_wol	= lan8742_get_wol,
 	.get_sset_count	= lan8742_get_sset_count,
 	.get_strings	= lan8742_get_strings,
-	.self_test	= lan8742_self_test,
-
-	.driver		= { .owner = THIS_MODULE, }
+	.get_stats	= lan8742_get_stats,
 } };
 
 module_phy_driver(smsc_phy_driver);
@@ -639,6 +660,7 @@ static struct mdio_device_id __maybe_unused smsc_tbl[] = {
 	{ 0x0007c0c0, 0xfffffff0 },
 	{ 0x0007c0d0, 0xfffffff0 },
 	{ 0x0007c0f0, 0xfffffff0 },
+	{ 0x0007c110, 0xfffffff0 },
 	{ MII_LAN8742_ID, MII_LAN8742_ID_MASK },
 	{ }
 };
