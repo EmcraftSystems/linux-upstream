@@ -155,7 +155,7 @@ static const struct dwc2_core_params params_rk3066 = {
  * of 1012 words. No periodic for now.
  */
 static const struct dwc2_core_params params_stm32_hs = {
-	.otg_cap			= -1,
+	.otg_cap			=  2, /* non-HNP/non-SRP */
 	.otg_ver			= -1,
 	.dma_enable			= -1,
 	.dma_desc_enable		=  0,
@@ -196,7 +196,7 @@ static const struct dwc2_core_params params_stm32_hs = {
  * of 320 words. No periodic for now.
  */
 static const struct dwc2_core_params params_stm32_fs = {
-	.otg_cap			= -1,
+	.otg_cap			=  2, /* non-HNP/non-SRP */
 	.otg_ver			= -1,
 	.dma_enable			= -1,
 	.dma_desc_enable		=  0,
