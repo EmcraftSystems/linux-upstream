@@ -340,6 +340,7 @@ static const struct snd_kcontrol_new wm8985_snd_controls[] = {
 		WM8985_ROUT2_SPK_VOLUME_CTRL, 6, 1, 1),
 
 	SOC_DOUBLE_R("Line Switch", WM8985_OUT3_MIXER_CTRL, WM8985_OUT4_MONO_MIX_CTRL, 6, 1, 1),
+	SOC_DOUBLE("Line Boost Switch", WM8985_OUTPUT_CTRL0, 3, 4, 1, 1),
 
 	SOC_SINGLE("High Pass Filter Switch", WM8985_ADC_CONTROL, 8, 1, 0),
 	SOC_ENUM("High Pass Filter Mode", filter_mode),
@@ -505,8 +506,8 @@ static const struct snd_soc_dapm_route wm8985_dapm_routes[] = {
 	{ "Left Output Mixer", "Aux Switch", "AUXL" },
 	{ "Left Output Mixer", "Line Switch", "Left Boost Mixer" },
 
-	{ "Right Line Mixer", "RDAC Switch", "LINER" },
-	{ "Left Line Mixer", "LDAC Switch", "LINEL" },
+	{ "Right Line Mixer", "RDAC Switch", "Right DAC" },
+	{ "Left Line Mixer", "LDAC Switch", "Left DAC" },
 
 	{ "Right Headphone Out", NULL, "Right Output Mixer" },
 	{ "HPR", NULL, "Right Headphone Out" },
@@ -831,6 +832,10 @@ static int wm8985_hw_params(struct snd_pcm_substream *substream,
 
 	dev_dbg(dai->dev, "Target BCLK = %uHz\n", wm8985->bclk);
 	dev_dbg(dai->dev, "SYSCLK = %uHz\n", wm8985->sysclk);
+
+	if (wm8985->sysclk != 0) {
+		wm8985_configure_bclk(dai);
+	}
 
 	return 0;
 }

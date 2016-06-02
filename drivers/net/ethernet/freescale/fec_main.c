@@ -3629,7 +3629,7 @@ static int __maybe_unused fec_suspend(struct device *dev)
 	*/
 	inv_fix_gpio = gpiod_get(dev, "vf610,rmii-inverter-fix",
 		GPIOD_OUT_HIGH);
-	if (inv_fix_gpio)
+	if (!IS_ERR_OR_NULL(inv_fix_gpio))
 		gpiod_put(inv_fix_gpio);
 
 	return 0;
