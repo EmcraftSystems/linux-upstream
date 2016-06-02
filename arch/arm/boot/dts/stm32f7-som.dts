@@ -2,17 +2,17 @@
  * Copyright 2016
  * Yuri Tikhonov, Emcraft Systems, <yur@emcraft.com>
  *
- * STM32F4-SOM module
+ * STM32F7-SOM module
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * publishhed by the Free Software Foundation.
  */
 
-#include "stm32f429.dtsi"
+#include "stm32f7.dtsi"
 #include "stm32-som.dtsi"
 
 / {
-	model = "EmCraft Systems STM32F4x9-SOM board";
-	compatible = "st,stm32f4x9-som", "st,stm32f429";
+	model = "EmCraft Systems STM32F7-SOM board";
+	compatible = "st,stm32f7-som", "st,stm32f7";
 };

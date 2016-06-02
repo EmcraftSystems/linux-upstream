@@ -956,9 +956,18 @@ source "arch/arm/mach-zx/Kconfig"
 source "arch/arm/mach-zynq/Kconfig"
 
 # ARMv7-M architecture
+choice
+	prompt "ARMv7-M processor"
+	depends on ARM_SINGLE_ARMV7M
+	default ARCH_STM32F4
+	help
+	  Select your processor variant.
+
+	  If you are not absolutely sure what you are doing, leave this
+	  option alone!
+
 config ARCH_EFM32
 	bool "Energy Micro efm32"
-	depends on ARM_SINGLE_ARMV7M
 	select ARCH_REQUIRE_GPIOLIB
 	help
 	  Support for Energy Micro's (now Silicon Labs) efm32 Giant Gecko
@@ -966,7 +975,6 @@ config ARCH_EFM32
 
 config ARCH_LPC18XX
 	bool "NXP LPC18xx/LPC43xx"
-	depends on ARM_SINGLE_ARMV7M
 	select ARCH_HAS_RESET_CONTROLLER
 	select ARM_AMBA
 	select CLKSRC_LPC32XX
@@ -975,18 +983,18 @@ config ARCH_LPC18XX
 	  Support for NXP's LPC18xx Cortex-M3 and LPC43xx Cortex-M4
 	  high performance microcontrollers.
 
-config ARCH_STM32
-	bool "STMicrolectronics STM32"
-	depends on ARM_SINGLE_ARMV7M
-	select ARCH_HAS_RESET_CONTROLLER
-	select ARMV7M_SYSTICK
-	select CLKSRC_STM32
-	select PINCTRL
-	select RESET_CONTROLLER
-	select NEED_MACH_MEMORY_H
-	select ARM_AMBA
+config ARCH_STM32F4
+	bool "STMicrolectronics STM32F4"
+	select ARCH_STM32
 	help
-	  Support for STMicroelectronics STM32 processors.
+	  Support for STMicroelectronics STM32F4 processors.
+
+config ARCH_STM32F7
+	bool "STMicrolectronics STM32F7"
+	select ARCH_STM32
+	help
+	  Support for STMicroelectronics STM32F7 processors.
+endchoice
 
 # Definitions to make life easier
 config ARCH_ACORN
@@ -1012,6 +1020,16 @@ config PLAT_PXA
 
 config PLAT_VERSATILE
 	bool
+
+config ARCH_STM32
+	bool
+	select ARCH_HAS_RESET_CONTROLLER
+	select ARMV7M_SYSTICK
+	select CLKSRC_STM32
+	select PINCTRL
+	select RESET_CONTROLLER
+	select NEED_MACH_MEMORY_H
+	select ARM_AMBA
 
 source "arch/arm/firmware/Kconfig"
 

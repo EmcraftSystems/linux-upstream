@@ -9,8 +9,14 @@
  * published by the Free Software Foundation.
  */
 
-#define STM32_USART_SR		(0x00)		/* Status Register */
-#define STM32_USART_DR		(0x04)		/* Data Register */
+#if defined(CONFIG_ARCH_STM32F7)
+# define STM32_USART_SR		(0x1C)		/* Interrupt&Status Register */
+# define STM32_USART_DR		(0x28)		/* Transmit Data Register */
+#else
+# define STM32_USART_SR		(0x00)		/* Status Register */
+# define STM32_USART_DR		(0x04)		/* Data Register */
+#endif
+
 #define STM32_USART_SR_TXE	(1 << 7)	/* Transmitter Empty */
 
 	.macro	addruart, rp, rv, tmp

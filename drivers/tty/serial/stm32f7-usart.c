@@ -1,9 +1,7 @@
 /*
- * Copyright (C) Maxime Coquelin 2015
- * Author:  Maxime Coquelin <mcoquelin.stm32@gmail.com>
+ * Copyright (C) EmCraft Systems 2015
+ * Author: Yuri Tikhonov <yur@emcraft.com>
  * License terms:  GNU General Public License (GPL), version 2
- *
- * Inspired by st-asc.c from STMicroelectronics (c)
  */
 
 #if defined(CONFIG_SERIAL_STM32_USART_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ)
@@ -18,43 +16,34 @@
 #include <linux/io.h>
 #include <linux/irq.h>
 #include <linux/tty.h>
-#include <linux/tty_flip.h>
 #include <linux/delay.h>
-#include <linux/spinlock.h>
 #include <linux/pm_runtime.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
-#include <linux/serial_core.h>
-#include <linux/clk.h>
-#include <linux/dma-mapping.h>
-#include <linux/dmaengine.h>
 
-#define DRIVER_NAME "stm32-usart"
+#include "stm32-usart.h"
 
 /* Register offsets */
-#define USART_SR		0x00
-#define USART_DR		0x04
-#define USART_BRR		0x08
-#define USART_CR1		0x0c
-#define USART_CR2		0x10
-#define USART_CR3		0x14
-#define USART_GTPR		0x18
+#define USART_CR1		0x00
+#define USART_CR2		0x04
+#define USART_CR3		0x08
+#define USART_BRR		0x0c
+#define USART_GTPR		0x10
+#define USART_ISR		0x1C
+#define USART_ICR		0x20
+#define USART_RDR		0x24
+#define USART_TDR		0x28
 
-/* USART_SR */
-#define USART_SR_PE		BIT(0)
-#define USART_SR_FE		BIT(1)
-#define USART_SR_NF		BIT(2)
-#define USART_SR_ORE		BIT(3)
-#define USART_SR_IDLE		BIT(4)
-#define USART_SR_RXNE		BIT(5)
-#define USART_SR_TC		BIT(6)
-#define USART_SR_TXE		BIT(7)
-#define USART_SR_LBD		BIT(8)
-#define USART_SR_CTS		BIT(9)
-#define USART_SR_ERR_MASK	(USART_SR_LBD | USART_SR_ORE | \
-				 USART_SR_FE | USART_SR_PE)
-/* Dummy bits */
-#define USART_SR_DUMMY_RX	BIT(16)
+/* USART_ISR */
+#define USART_ISR_PE		BIT(0)
+#define USART_ISR_FE		BIT(1)
+#define USART_ISR_ORE		BIT(3)
+#define USART_ISR_IDLE		BIT(4)
+#define USART_ISR_RXNE		BIT(5)
+#define USART_ISR_TXE		BIT(7)
+#define USART_ISR_LBD		BIT(8)
+#define USART_ISR_ERR_MASK	(USART_ISR_LBD | USART_ISR_ORE | \
+				 USART_ISR_FE | USART_ISR_PE)
 
 /* USART_DR */
 #define USART_DR_MASK		GENMASK(8, 0)
@@ -65,115 +54,40 @@
 #define USART_BRR_DIV_M_SHIFT	4
 
 /* USART_CR1 */
-#define USART_CR1_SBK		BIT(0)
-#define USART_CR1_RWU		BIT(1)
+#define USART_CR1_UE		BIT(0)
 #define USART_CR1_RE		BIT(2)
 #define USART_CR1_TE		BIT(3)
 #define USART_CR1_IDLEIE	BIT(4)
 #define USART_CR1_RXNEIE	BIT(5)
-#define USART_CR1_TCIE		BIT(6)
 #define USART_CR1_TXEIE		BIT(7)
-#define USART_CR1_PEIE		BIT(8)
 #define USART_CR1_PS		BIT(9)
 #define USART_CR1_PCE		BIT(10)
-#define USART_CR1_WAKE		BIT(11)
-#define USART_CR1_M		BIT(12)
-#define USART_CR1_UE		BIT(13)
+#define USART_CR1_M0		BIT(12)
 #define USART_CR1_OVER8		BIT(15)
 #define USART_CR1_IE_MASK	GENMASK(8, 4)
 
 /* USART_CR2 */
-#define USART_CR2_ADD_MASK	GENMASK(3, 0)
-#define USART_CR2_LBDL		BIT(5)
-#define USART_CR2_LBDIE		BIT(6)
-#define USART_CR2_LBCL		BIT(8)
-#define USART_CR2_CPHA		BIT(9)
-#define USART_CR2_CPOL		BIT(10)
-#define USART_CR2_CLKEN		BIT(11)
 #define USART_CR2_STOP_2B	BIT(13)
-#define USART_CR2_STOP_MASK	GENMASK(13, 12)
-#define USART_CR2_LINEN		BIT(14)
 
 /* USART_CR3 */
-#define USART_CR3_EIE		BIT(0)
-#define USART_CR3_IREN		BIT(1)
-#define USART_CR3_IRLP		BIT(2)
-#define USART_CR3_HDSEL		BIT(3)
-#define USART_CR3_NACK		BIT(4)
-#define USART_CR3_SCEN		BIT(5)
 #define USART_CR3_DMAR		BIT(6)
 #define USART_CR3_DMAT		BIT(7)
 #define USART_CR3_RTSE		BIT(8)
 #define USART_CR3_CTSE		BIT(9)
-#define USART_CR3_CTSIE		BIT(10)
-#define USART_CR3_ONEBIT	BIT(11)
 
 /* USART_GTPR */
 #define USART_GTPR_PSC_MASK	GENMASK(7, 0)
 #define USART_GTPR_GT_MASK	GENMASK(15, 8)
 
-#define DRIVER_NAME		"stm32-usart"
+#define DRIVER_NAME		"stm32f7-usart"
 #define STM32_SERIAL_NAME	"ttyS"
 #define STM32_MAX_PORTS		8
 #define STM32_SERIAL_RINGSIZE	1024
-
-struct stm32_uart_char {
-	u32			sr;
-	u32			ch;
-};
-
-struct stm32_dma_data {
-	struct dma_async_tx_descriptor *dsc;
-	struct dma_chan		*chan;
-	dma_cookie_t		cookie;
-	struct scatterlist	sg;
-	spinlock_t		lock;
-	bool			use;
-};
-
-struct stm32_port {
-	struct uart_port	port;
-	struct clk		*clk;
-	bool			hw_flow_control;
-
-	struct circ_buf		rx_ring;
-	struct tasklet_struct	tasklet;
-
-	struct stm32_dma_data	dma_rx;
-	struct stm32_dma_data	dma_tx;
-
-	int (*prepare_rx)(struct uart_port *port);
-	void (*schedule_rx)(struct uart_port *port);
-	void (*release_rx)(struct uart_port *port);
-
-	int (*prepare_tx)(struct uart_port *port);
-	void (*schedule_tx)(struct uart_port *port);
-	void (*release_tx)(struct uart_port *port);
-};
 
 static struct stm32_port stm32_ports[STM32_MAX_PORTS];
 static struct uart_driver stm32_usart_driver;
 
 static void stm32_stop_tx(struct uart_port *port);
-
-static inline struct stm32_port *to_stm32_port(struct uart_port *port)
-{
-	return container_of(port, struct stm32_port, port);
-}
-
-static bool stm32_use_dma_rx(struct uart_port *port)
-{
-	struct stm32_port *stm32_port = to_stm32_port(port);
-
-	return stm32_port->dma_rx.use;
-}
-
-static bool stm32_use_dma_tx(struct uart_port *port)
-{
-	struct stm32_port *stm32_port = to_stm32_port(port);
-
-	return stm32_port->dma_tx.use;
-}
 
 static void stm32_set_bits(struct uart_port *port, u32 reg, u32 bits)
 {
@@ -200,8 +114,8 @@ static void stm32_receive_chars(struct uart_port *port)
 	struct stm32_uart_char *c;
 	u32 sr, ch;
 
-	while ((sr = readl_relaxed(port->membase + USART_SR)) & USART_SR_RXNE) {
-		ch = readl_relaxed(port->membase + USART_DR);
+	while ((sr = readl_relaxed(port->membase + USART_ISR)) & USART_ISR_RXNE) {
+		ch = readl_relaxed(port->membase + USART_RDR);
 
 		if (!CIRC_SPACE(ring->head, ring->tail, STM32_SERIAL_RINGSIZE)) {
 			/* Buffer overflow, ignore char */
@@ -241,35 +155,35 @@ static void stm32_rx_from_ring(struct uart_port *port)
 		ring->tail = (ring->tail + 1) & (STM32_SERIAL_RINGSIZE - 1);
 
 		port->icount.rx++;
-		sr = c.sr | USART_SR_DUMMY_RX;
+		sr = c.sr;
 		flag = TTY_NORMAL;
 
-		if (sr & USART_SR_ERR_MASK) {
-			if (sr & USART_SR_LBD) {
+		if (sr & USART_ISR_ERR_MASK) {
+			if (sr & USART_ISR_LBD) {
 				port->icount.brk++;
 				if (uart_handle_break(port))
 					continue;
-			} else if (sr & USART_SR_ORE) {
+			} else if (sr & USART_ISR_ORE) {
 				port->icount.overrun++;
-			} else if (sr & USART_SR_PE) {
+			} else if (sr & USART_ISR_PE) {
 				port->icount.parity++;
-			} else if (sr & USART_SR_FE) {
+			} else if (sr & USART_ISR_FE) {
 				port->icount.frame++;
 			}
 
 			sr &= port->read_status_mask;
 
-			if (sr & USART_SR_LBD)
+			if (sr & USART_ISR_LBD)
 				flag = TTY_BREAK;
-			else if (sr & USART_SR_PE)
+			else if (sr & USART_ISR_PE)
 				flag = TTY_PARITY;
-			else if (sr & USART_SR_FE)
+			else if (sr & USART_ISR_FE)
 				flag = TTY_FRAME;
 		}
 
 		if (uart_handle_sysrq_char(port, c.ch))
 			continue;
-		uart_insert_char(port, sr, USART_SR_ORE, c.ch, flag);
+		uart_insert_char(port, sr, USART_ISR_ORE, c.ch, flag);
 	}
 
 	spin_unlock(&port->lock);
@@ -282,7 +196,7 @@ static void stm32_transmit_chars(struct uart_port *port)
 	struct circ_buf *xmit = &port->state->xmit;
 
 	if (port->x_char) {
-		writel_relaxed(port->x_char, port->membase + USART_DR);
+		writel_relaxed(port->x_char, port->membase + USART_TDR);
 		port->x_char = 0;
 		port->icount.tx++;
 		return;
@@ -293,7 +207,7 @@ static void stm32_transmit_chars(struct uart_port *port)
 		return;
 	}
 
-	writel_relaxed(xmit->buf[xmit->tail], port->membase + USART_DR);
+	writel_relaxed(xmit->buf[xmit->tail], port->membase + USART_TDR);
 	stm32_set_bits(port, USART_CR1, USART_CR1_TXEIE);
 	xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
 	port->icount.tx++;
@@ -313,20 +227,21 @@ static irqreturn_t stm32_interrupt(int irq, void *ptr)
 
 	spin_lock(&port->lock);
 
-	sr = readl_relaxed(port->membase + USART_SR);
+	sr = readl_relaxed(port->membase + USART_ISR);
+	writel_relaxed(sr, port->membase + USART_ICR);
 
 	if (stm32_use_dma_rx(port)) {
-		if (sr & USART_SR_IDLE) {
+		if (sr & USART_ISR_IDLE) {
 			/* Read DR to clear IDLE interrupt */
-			readl_relaxed(port->membase + USART_DR);
+			readl_relaxed(port->membase + USART_RDR);
 			tasklet_schedule(&stm32_port->tasklet);
 		}
 	}
 
-	if (sr & USART_SR_RXNE)
+	if (sr & USART_ISR_RXNE)
 		stm32_receive_chars(port);
 
-	if (sr & USART_SR_TXE) {
+	if (sr & USART_ISR_TXE) {
 		stm32_clr_bits(port, USART_CR1, USART_CR1_TXEIE);
 		tasklet_schedule(&stm32_port->tasklet);
 	}
@@ -338,7 +253,7 @@ static irqreturn_t stm32_interrupt(int irq, void *ptr)
 
 static unsigned int stm32_tx_empty(struct uart_port *port)
 {
-	return readl_relaxed(port->membase + USART_SR) & USART_SR_TXE;
+	return readl_relaxed(port->membase + USART_ISR) & USART_ISR_TXE;
 }
 
 static void stm32_set_mctrl(struct uart_port *port, unsigned int mctrl)
@@ -401,340 +316,6 @@ static void stm32_stop_rx(struct uart_port *port)
 /* Handle breaks - ignored by us */
 static void stm32_break_ctl(struct uart_port *port, int break_state)
 {
-}
-
-static void stm32_complete_rx_dma(void *arg)
-{
-	struct uart_port *port = arg;
-	struct stm32_port *stm32_port = to_stm32_port(port);
-
-	tasklet_schedule(&stm32_port->tasklet);
-}
-
-static void stm32_rx_from_dma(struct uart_port *port)
-{
-	struct stm32_port *stm32_port = to_stm32_port(port);
-	struct stm32_dma_data *dma = &stm32_port->dma_rx;
-	struct tty_port *tport = &port->state->port;
-	struct circ_buf *ring = &stm32_port->rx_ring;
-	struct dma_chan *chan = dma->chan;
-	struct dma_tx_state state;
-	enum dma_status dmastat;
-	size_t count;
-
-	dmastat = dmaengine_tx_status(chan, dma->cookie, &state);
-	/* Restart a new tasklet if DMA status is error */
-	if (dmastat == DMA_ERROR) {
-		dev_dbg(port->dev, "Get residue error, restart tasklet\n");
-		tasklet_schedule(&stm32_port->tasklet);
-		return;
-	}
-
-	/* CPU claims ownership of RX DMA buffer */
-	dma_sync_sg_for_cpu(port->dev, &dma->sg, 1, DMA_FROM_DEVICE);
-
-	/*
-	 * ring->head points to the end of data already written by the DMA.
-	 * ring->tail points to the beginning of data to be read by the
-	 * framework.
-	 * The current transfer size should not be larger than the dma buffer
-	 * length.
-	 */
-	ring->head = sg_dma_len(&dma->sg) - state.residue;
-	BUG_ON(ring->head > sg_dma_len(&dma->sg));
-	/*
-	 * At this point ring->head may point to the first byte right after the
-	 * last byte of the dma buffer:
-	 * 0 <= ring->head <= sg_dma_len(&stm32_port->sg_rx)
-	 *
-	 * However ring->tail must always points inside the dma buffer:
-	 * 0 <= ring->tail <= sg_dma_len(&stm32_port->sg_rx) - 1
-	 *
-	 * Since we use a ring buffer, we have to handle the case
-	 * where head is lower than tail. In such a case, we first read from
-	 * tail to the end of the buffer then reset tail.
-	 */
-	if (ring->head < ring->tail) {
-		count = sg_dma_len(&dma->sg) - ring->tail;
-
-		tty_insert_flip_string(tport, ring->buf + ring->tail, count);
-		ring->tail = 0;
-		port->icount.rx += count;
-	}
-
-	/* Finally we read data from tail to head */
-	if (ring->tail < ring->head) {
-		count = ring->head - ring->tail;
-
-		tty_insert_flip_string(tport, ring->buf + ring->tail, count);
-		/* Wrap ring->head if needed */
-		if (ring->head >= sg_dma_len(&dma->sg))
-			ring->head = 0;
-		ring->tail = ring->head;
-		port->icount.rx += count;
-	}
-
-	/* USART retreives ownership of RX DMA buffer */
-	dma_sync_sg_for_device(port->dev, &dma->sg, 1, DMA_FROM_DEVICE);
-
-	/*
-	 * Drop the lock here since it might end up calling
-	 * uart_start(), which takes the lock.
-	 */
-	spin_unlock(&port->lock);
-	tty_flip_buffer_push(tport);
-	spin_lock(&port->lock);
-}
-
-static void stm32_release_rx_dma(struct uart_port *port)
-{
-	struct stm32_port *stm32_port = to_stm32_port(port);
-	struct stm32_dma_data *dma = &stm32_port->dma_rx;
-	struct dma_chan *chan = dma->chan;
-
-	if (chan) {
-		dmaengine_terminate_all(chan);
-		dma_release_channel(chan);
-		dma_unmap_sg(port->dev, &dma->sg, 1, DMA_FROM_DEVICE);
-	}
-
-	dma->dsc = NULL;
-	dma->chan = NULL;
-	dma->cookie = -EINVAL;
-}
-
-static int stm32_prepare_rx_dma(struct uart_port *port)
-{
-	struct stm32_port *stm32_port = to_stm32_port(port);
-	struct stm32_dma_data *dma = &stm32_port->dma_rx;
-	struct dma_async_tx_descriptor *dsc;
-	struct circ_buf *ring;
-	dma_cap_mask_t mask;
-	struct dma_slave_config config;
-	int ret, nent;
-
-	ring = &stm32_port->rx_ring;
-
-	dma_cap_zero(mask);
-	dma_cap_set(DMA_CYCLIC, mask);
-
-	dma->chan = dma_request_slave_channel(port->dev, "rx");
-	if (!dma->chan)
-		goto chan_err;
-
-	spin_lock_init(&dma->lock);
-	sg_init_table(&dma->sg, 1);
-	BUG_ON(!PAGE_ALIGNED(ring->buf));
-	sg_set_page(&dma->sg, virt_to_page(ring->buf),
-		    sizeof(struct stm32_uart_char) * STM32_SERIAL_RINGSIZE,
-		    (int)ring->buf & ~PAGE_MASK);
-
-	nent = dma_map_sg(port->dev, &dma->sg, 1, DMA_FROM_DEVICE);
-	if (!nent) {
-		dev_dbg(port->dev, "need to release resource of dma\n");
-		goto chan_err;
-	}
-	dev_dbg(port->dev, "%s: mapped %d@%p to %x\n", __func__,
-		sg_dma_len(&dma->sg), ring->buf, sg_dma_address(&dma->sg));
-
-	/* Configure the slave DMA */
-	memset(&config, 0, sizeof(config));
-	config.direction = DMA_DEV_TO_MEM;
-	config.src_addr_width = DMA_SLAVE_BUSWIDTH_1_BYTE;
-	config.dst_addr_width = DMA_SLAVE_BUSWIDTH_1_BYTE;
-	config.src_addr = port->mapbase + USART_DR;
-	config.src_maxburst = 1;
-	ret = dmaengine_slave_config(dma->chan, &config);
-	if (ret) {
-		dev_err(port->dev, "DMA rx slave configuration failed\n");
-		goto chan_err;
-	}
-
-	/*
-	 * Prepare a cyclic dma transfer with half ring buffer size
-	 * period
-	 */
-	dsc = dmaengine_prep_dma_cyclic(dma->chan, sg_dma_address(&dma->sg),
-				sg_dma_len(&dma->sg), sg_dma_len(&dma->sg) / 2,
-				DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT);
-	dsc->callback = stm32_complete_rx_dma;
-	dsc->callback_param = port;
-	dma->dsc = dsc;
-	dma->cookie = dmaengine_submit(dsc);
-
-	dev_dbg(port->dev, "using %s for rx DMA transfers\n",
-		 dma_chan_name(dma->chan));
-	return 0;
-chan_err:
-	dev_err(port->dev, "DMA RX channel not available, switch to pio\n");
-	dma->use = 0;
-	if (dma->chan)
-		stm32_release_rx_dma(port);
-	return -EINVAL;
-}
-
-static void stm32_complete_tx_dma(void *arg)
-{
-	struct stm32_port *stm32_port = arg;
-	struct uart_port *port = &stm32_port->port;
-	struct circ_buf *xmit = &port->state->xmit;
-	struct stm32_dma_data *dma = &stm32_port->dma_tx;
-	struct dma_chan *chan = dma->chan;
-	unsigned long flags;
-
-	spin_lock_irqsave(&port->lock, flags);
-	if (chan)
-		dmaengine_terminate_all(chan);
-	xmit->tail += sg_dma_len(&dma->sg);
-	xmit->tail &= UART_XMIT_SIZE - 1;
-
-	port->icount.tx += sg_dma_len(&dma->sg);
-
-	spin_lock_irq(&dma->lock);
-	async_tx_ack(dma->dsc);
-	dma->cookie = -EINVAL;
-	dma->dsc = NULL;
-	spin_unlock_irq(&dma->lock);
-	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
-		uart_write_wakeup(port);
-
-	/*
-	 * xmit is a circular buffer so, if we have just send data from
-	 * xmit->tail to the end of xmit->buf, now we have to transmit the
-	 * remaining data from the beginning of xmit->buf to xmit->head.
-	 */
-	if (!uart_circ_empty(xmit))
-		tasklet_schedule(&stm32_port->tasklet);
-
-	spin_unlock_irqrestore(&port->lock, flags);
-}
-
-/*
- * Called from tasklet with TXRDY interrupt is disabled.
- */
-static void stm32_tx_with_dma(struct uart_port *port)
-{
-	struct stm32_port *stm32_port = to_stm32_port(port);
-	struct circ_buf *xmit = &port->state->xmit;
-	struct stm32_dma_data *dma = &stm32_port->dma_tx;
-	struct dma_chan *chan = dma->chan;
-	struct dma_async_tx_descriptor *dsc;
-	struct scatterlist *sg = &dma->sg;
-
-	/* Make sure we have an idle channel */
-	if (dma->dsc)
-		return;
-
-	if (!uart_circ_empty(xmit) && !uart_tx_stopped(port)) {
-		/*
-		 * DMA is idle now.
-		 * Port xmit buffer is already mapped,
-		 * and it is one page... Just adjust
-		 * offsets and lengths. Since it is a circular buffer,
-		 * we have to transmit till the end, and then the rest.
-		 * Take the port lock to get a
-		 * consistent xmit buffer state.
-		 */
-		sg->offset = xmit->tail & (UART_XMIT_SIZE - 1);
-		sg_dma_address(sg) = (sg_dma_address(sg) &
-					~(UART_XMIT_SIZE - 1))
-					+ sg->offset;
-		sg_dma_len(sg) = CIRC_CNT_TO_END(xmit->head,
-						xmit->tail,
-						UART_XMIT_SIZE);
-		BUG_ON(!sg_dma_len(sg));
-
-		dsc = dmaengine_prep_slave_sg(chan, sg, 1,
-			DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
-		if (!dsc) {
-			dev_err(port->dev, "Failed to send via dma!\n");
-			return;
-		}
-
-		dma_sync_sg_for_device(port->dev, sg, 1, DMA_TO_DEVICE);
-		dma->dsc = dsc;
-		dsc->callback = stm32_complete_tx_dma;
-		dsc->callback_param = stm32_port;
-		dsc->cookie = dmaengine_submit(dsc);
-	}
-
-	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
-		uart_write_wakeup(port);
-}
-
-static void stm32_release_tx_dma(struct uart_port *port)
-{
-	struct stm32_port *stm32_port = to_stm32_port(port);
-	struct stm32_dma_data *dma = &stm32_port->dma_tx;
-	struct dma_chan *chan = dma->chan;
-
-	if (chan) {
-		dmaengine_terminate_all(chan);
-		dma_release_channel(chan);
-		dma_unmap_sg(port->dev, &dma->sg, 1, DMA_TO_DEVICE);
-	}
-
-	dma->dsc = NULL;
-	dma->chan = NULL;
-	dma->cookie = -EINVAL;
-}
-
-static int stm32_prepare_tx_dma(struct uart_port *port)
-{
-	struct stm32_port *stm32_port = to_stm32_port(port);
-	struct stm32_dma_data *dma = &stm32_port->dma_tx;
-	dma_cap_mask_t mask;
-	struct dma_slave_config config;
-	int ret, nent;
-
-	dma_cap_zero(mask);
-	dma_cap_set(DMA_SLAVE, mask);
-
-	dma->chan = dma_request_slave_channel(port->dev, "tx");
-	if (!dma->chan)
-		goto chan_err;
-	dev_dbg(port->dev, "using %s for tx DMA transfers\n",
-		dma_chan_name(dma->chan));
-
-	spin_lock_init(&dma->lock);
-	sg_init_table(&dma->sg, 1);
-	/* UART circular tx buffer is an aligned page. */
-	BUG_ON(!PAGE_ALIGNED(port->state->xmit.buf));
-	sg_set_page(&dma->sg, virt_to_page(port->state->xmit.buf),
-		    UART_XMIT_SIZE, (int)port->state->xmit.buf & ~PAGE_MASK);
-	nent = dma_map_sg(port->dev, &dma->sg, 1, DMA_TO_DEVICE);
-	if (!nent) {
-		dev_dbg(port->dev, "need to release resource of dma\n");
-		goto chan_err;
-	} else {
-		dev_dbg(port->dev, "%s: mapped %d@%p to %x\n", __func__,
-			sg_dma_len(&dma->sg),
-			port->state->xmit.buf,
-			sg_dma_address(&dma->sg));
-	}
-
-	/* Configure the slave DMA */
-	memset(&config, 0, sizeof(config));
-	config.direction = DMA_MEM_TO_DEV;
-	config.dst_addr_width = DMA_SLAVE_BUSWIDTH_1_BYTE;
-	config.src_addr_width = DMA_SLAVE_BUSWIDTH_1_BYTE;
-	config.dst_addr = port->mapbase + USART_DR;
-	config.dst_maxburst = 1;
-
-	ret = dmaengine_slave_config(dma->chan, &config);
-	if (ret) {
-		dev_err(port->dev, "DMA tx slave configuration failed\n");
-		goto chan_err;
-	}
-
-	return 0;
-
-chan_err:
-	dev_err(port->dev, "TX channel not available, switch to pio\n");
-	dma->use = 0;
-	if (dma->chan)
-		stm32_release_tx_dma(port);
-	return -EINVAL;
 }
 
 static void stm32_set_ops(struct uart_port *port)
@@ -826,12 +407,13 @@ static int stm32_startup(struct uart_port *port)
 	stm32_set_ops(port);
 
 	if (stm32_port->prepare_rx) {
-		ret = stm32_port->prepare_rx(port);
+		ret = stm32_port->prepare_rx(port, USART_RDR,
+					     STM32_SERIAL_RINGSIZE);
 		if (ret < 0)
 			stm32_set_ops(port);
 	}
 	if (stm32_port->prepare_tx) {
-		ret = stm32_port->prepare_tx(port);
+		ret = stm32_port->prepare_tx(port, USART_TDR);
 		if (ret < 0)
 			stm32_set_ops(port);
 	}
@@ -914,7 +496,7 @@ static void stm32_set_termios(struct uart_port *port, struct ktermios *termios,
 	if (cflag & PARENB) {
 		cr1 |= USART_CR1_PCE;
 		if ((cflag & CSIZE) == CS8)
-			cr1 |= USART_CR1_M;
+			cr1 |= USART_CR1_M0;
 	}
 
 	if (cflag & PARODD)
@@ -948,29 +530,11 @@ static void stm32_set_termios(struct uart_port *port, struct ktermios *termios,
 
 	uart_update_timeout(port, cflag, baud);
 
-	port->read_status_mask = USART_SR_ORE;
+	port->read_status_mask = USART_ISR_ORE;
 	if (termios->c_iflag & INPCK)
-		port->read_status_mask |= USART_SR_PE | USART_SR_FE;
+		port->read_status_mask |= USART_ISR_PE | USART_ISR_FE;
 	if (termios->c_iflag & (IGNBRK | BRKINT | PARMRK))
-		port->read_status_mask |= USART_SR_LBD;
-
-	/* Characters to ignore */
-	port->ignore_status_mask = 0;
-	if (termios->c_iflag & IGNPAR)
-		port->ignore_status_mask = USART_SR_PE | USART_SR_FE;
-	if (termios->c_iflag & IGNBRK) {
-		port->ignore_status_mask |= USART_SR_LBD;
-		/*
-		 * If we're ignoring parity and break indicators,
-		 * ignore overruns too (for real raw support).
-		 */
-		if (termios->c_iflag & IGNPAR)
-			port->ignore_status_mask |= USART_SR_ORE;
-	}
-
-	/* Ignore all characters if CREAD is not set */
-	if ((termios->c_cflag & CREAD) == 0)
-		port->ignore_status_mask |= USART_SR_DUMMY_RX;
+		port->read_status_mask |= USART_ISR_LBD;
 
 	writel_relaxed(cr1, port->membase + USART_CR1);
 	writel_relaxed(cr2, port->membase + USART_CR2);
@@ -1119,8 +683,8 @@ static struct stm32_port *stm32_of_get_stm32_port(struct platform_device *pdev)
 
 #ifdef CONFIG_OF
 static const struct of_device_id stm32_match[] = {
-	{ .compatible = "st,stm32-usart", },
-	{ .compatible = "st,stm32-uart", },
+	{ .compatible = "st,stm32f7-usart", },
+	{ .compatible = "st,stm32f7-uart", },
 	{},
 };
 
@@ -1173,10 +737,10 @@ static int stm32_serial_remove(struct platform_device *pdev)
 #ifdef CONFIG_SERIAL_STM32_CONSOLE
 static void stm32_console_putchar(struct uart_port *port, int ch)
 {
-	while (!(readl_relaxed(port->membase + USART_SR) & USART_SR_TXE))
+	while (!(readl_relaxed(port->membase + USART_ISR) & USART_ISR_TXE))
 		cpu_relax();
 
-	writel_relaxed(ch, port->membase + USART_DR);
+	writel_relaxed(ch, port->membase + USART_TDR);
 }
 
 static void stm32_console_write(struct console *co, const char *s, unsigned cnt)
@@ -1299,5 +863,5 @@ module_init(usart_init);
 module_exit(usart_exit);
 
 MODULE_ALIAS("platform:" DRIVER_NAME);
-MODULE_DESCRIPTION("STMicroelectronics STM32 serial port driver");
+MODULE_DESCRIPTION("STMicroelectronics STM32F7 serial port driver");
 MODULE_LICENSE("GPL v2");

@@ -13,6 +13,7 @@
 #include <linux/linkage.h>
 #include <asm/assembler.h>
 #include <asm/v7m.h>
+#include <mach/memory.h>
 #include "proc-macros.S"
 
 ENTRY(cpu_v7m_proc_init)
@@ -83,7 +84,25 @@ ENDPROC(cpu_v7m_do_resume)
 __v7m_setup:
 	@ Configure the vector table base address
 	ldr	r0, =BASEADDR_V7M_SCB
+#if defined(CONFIG_ARCH_STM32F7)
+	/*
+	 * Copy vector table into internal SRAM. If caches are enabled, then
+	 * updating table in external RAM we'll get IC/DC non-coherency because
+	 * of our internal Harvard architecture.
+	 * Alternative here is to create the appropriate non-cacheable/write-
+	 * through-cacheable region with MPU.
+	 */
+	ldr	r12, =SRAM_PHYS_OFFSET
+	mov	r5, r12			@ Copy the kernel vector_table to
+	ldr	r6, =vector_table	@ the in-SRAM vector table
+	ldr	r4, =vector_table_end
+1:	ldr	r3, [r6], #4
+	str	r3, [r5], #4
+	cmp	r6, r4
+	bne	1b			@ End of the copy code
+#else
 	ldr	r12, =vector_table
+#endif
 	str	r12, [r0, V7M_SCB_VTOR]
 
 	@ enable UsageFault, BusFault and MemManage fault.
