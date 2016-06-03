@@ -79,13 +79,14 @@ struct cap11xx_led {
 	struct led_classdev cdev;
 	struct work_struct work;
 	u32 reg;
-	enum led_brightness new_brightness;
+	int isoff;
 };
 #endif
 
 struct cap11xx_priv {
 	struct regmap *regmap;
 	struct input_dev *idev;
+	enum led_brightness new_brightness;
 
 	struct cap11xx_led *leds;
 	int num_leds;
@@ -243,25 +244,43 @@ static void cap11xx_led_work(struct work_struct *work)
 {
 	struct cap11xx_led *led = container_of(work, struct cap11xx_led, work);
 	struct cap11xx_priv *priv = led->priv;
-	int value = led->new_brightness;
+	int value = priv->new_brightness;
+	int i;
 
 	/*
 	 * All LEDs share the same duty cycle as this is a HW limitation.
-	 * Brightness levels per LED are either 0 (OFF) and 1 (ON).
 	 */
+	if (!led->isoff) {
+		/* update all leds */
+		for (i = 0; i < priv->num_leds; i++) {
+			if (!priv->leds[i].isoff)
+				priv->leds[i].cdev.brightness = value;
+		}
+		/* set new brightness */
+		regmap_update_bits(priv->regmap, CAP11XX_REG_LED_DUTY_CYCLE_4,
+				   CAP11XX_REG_LED_DUTY_MAX_MASK,
+				   value <<
+				   CAP11XX_REG_LED_DUTY_MAX_MASK_SHIFT);
+	}
+
 	regmap_update_bits(priv->regmap, CAP11XX_REG_LED_OUTPUT_CONTROL,
-				BIT(led->reg), value ? BIT(led->reg) : 0);
+			   BIT(led->reg), led->isoff ? 0 : BIT(led->reg));
 }
 
 static void cap11xx_led_set(struct led_classdev *cdev,
 			   enum led_brightness value)
 {
 	struct cap11xx_led *led = container_of(cdev, struct cap11xx_led, cdev);
+	struct cap11xx_priv *priv = led->priv;
 
-	if (led->new_brightness == value)
+	if ((led->isoff && value == 0) ||
+	    (!led->isoff && priv->new_brightness == value))
 		return;
 
-	led->new_brightness = value;
+	led->isoff = !value;
+	if (value > 0)
+		priv->new_brightness = value;
+
 	schedule_work(&led->work);
 }
 
@@ -306,8 +325,9 @@ static int cap11xx_init_leds(struct device *dev,
 			of_get_property(child, "linux,default-trigger", NULL);
 		led->cdev.flags = 0;
 		led->cdev.brightness_set = cap11xx_led_set;
-		led->cdev.max_brightness = 1;
+		led->cdev.max_brightness = CAP11XX_REG_LED_DUTY_MAX_VALUE;
 		led->cdev.brightness = LED_OFF;
+		led->isoff = 1;
 
 		error = of_property_read_u32(child, "reg", &reg);
 		if (error != 0 || reg >= num_leds) {
