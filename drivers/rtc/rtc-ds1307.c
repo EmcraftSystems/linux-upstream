@@ -902,6 +902,10 @@ static int ds1307_probe(struct i2c_client *client,
 		[ds_3231] = DS3231_BIT_BBSQW,
 	};
 	const struct rtc_class_ops *rtc_ops = &ds13xx_rtc_ops;
+	uint32_t irq_flags = IRQF_TRIGGER_NONE;
+
+	of_property_read_u32_index(client->dev.of_node,
+		"interrupts", 1, &irq_flags);
 
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_BYTE_DATA)
 	    && !i2c_check_functionality(adapter, I2C_FUNC_SMBUS_I2C_BLOCK))
@@ -1176,7 +1180,8 @@ read_rtc:
 	}
 
 	if (want_irq) {
-		err = request_irq(client->irq, ds1307_irq, IRQF_SHARED,
+		err = request_irq(client->irq, ds1307_irq,
+			  IRQF_SHARED | (irq_flags & IRQF_TRIGGER_MASK),
 			  ds1307->rtc->name, client);
 		if (err) {
 			client->irq = 0;
