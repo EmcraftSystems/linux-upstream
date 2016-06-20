@@ -1132,8 +1132,6 @@ static int fsl_dcu_suspend(struct device *dev)
 	struct dcu_fb_data *dcufb = dev_get_drvdata(dev);
 	struct fb_info *fbi = dcufb->fsl_dcu_info[0];
 
-	fsl_dcu_turn_off_lcd(dcufb);
-
 	console_lock();
 	fb_set_suspend(fbi, 1);
 	console_unlock();
@@ -1143,6 +1141,10 @@ static int fsl_dcu_suspend(struct device *dev)
 	disable_controller(dcufb->fsl_dcu_info[0]);
 	clk_disable_unprepare(dcufb->clk);
 
+	pinctrl_pm_select_sleep_state(dev);
+
+	fsl_dcu_turn_off_lcd(dcufb);
+
 	return 0;
 }
 
@@ -1151,6 +1153,10 @@ static int fsl_dcu_resume(struct device *dev)
 	struct dcu_fb_data *dcufb = dev_get_drvdata(dev);
 	struct fb_info *fbi = dcufb->fsl_dcu_info[0];
 	int ret;
+
+	fsl_dcu_turn_on_lcd(dcufb);
+
+	pinctrl_pm_select_default_state(dev);
 
 	clk_prepare_enable(dcufb->clk);
 
@@ -1167,8 +1173,6 @@ static int fsl_dcu_resume(struct device *dev)
 	console_unlock();
 
 	__fsl_dcu_set_par(fbi, 1);
-
-	fsl_dcu_turn_on_lcd(dcufb);
 
 failed_bypasstcon:
 	return ret;
