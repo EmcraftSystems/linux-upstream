@@ -576,7 +576,7 @@ static void unmap_video_memory(struct fb_info *info)
 	info->fix.smem_len = 0;
 }
 
-static int fsl_dcu_set_par(struct fb_info *info)
+static int __fsl_dcu_set_par(struct fb_info *info, int force_update)
 {
 	unsigned long len;
 	struct fb_var_screeninfo *var = &info->var;
@@ -608,7 +608,7 @@ static int fsl_dcu_set_par(struct fb_info *info)
 		}
 	}
 
-	if (!mfbi->reserved_memory) {
+	if (!mfbi->reserved_memory || force_update) {
 		/* Only layer 0 could update LCD controller */
 		if (mfbi->index == LAYER0) {
 			update_controller(info);
@@ -618,6 +618,11 @@ static int fsl_dcu_set_par(struct fb_info *info)
 		enable_panel(info);
 	}
 	return 0;
+}
+
+static int fsl_dcu_set_par(struct fb_info *info)
+{
+    return __fsl_dcu_set_par(info, 0);
 }
 
 static inline __u32 CNVT_TOHW(__u32 val, __u32 width)
@@ -1145,7 +1150,7 @@ static int fsl_dcu_resume(struct device *dev)
 	fb_set_suspend(fbi, 0);
 	console_unlock();
 
-	fsl_dcu_set_par(fbi);
+	__fsl_dcu_set_par(fbi, 1);
 
 	fsl_dcu_turn_on_lcd(dcufb);
 
