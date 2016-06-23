@@ -140,11 +140,12 @@ static void uarts_reconfig(void)
 	for_each_compatible_node(np, NULL, "fsl,vf610-uart") {
 		struct platform_device *pdev = of_find_device_by_node(np);
 		struct uart_port *port = pdev ? platform_get_drvdata(pdev) : NULL;
-
-		if (port && port->state) {
-			struct tty_struct *tty = port->state->port.tty;
-			if (tty && port->ops->set_termios) {
-				port->ops->set_termios(port, &tty->termios, NULL);
+		if (pdev && device_may_wakeup(&pdev->dev)) {
+			if (port && port->state) {
+				struct tty_struct *tty = port->state->port.tty;
+				if (tty && port->ops->set_termios) {
+					port->ops->set_termios(port, &tty->termios, NULL);
+				}
 			}
 		}
 	}
