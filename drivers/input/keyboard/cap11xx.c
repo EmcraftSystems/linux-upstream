@@ -86,12 +86,14 @@ struct cap11xx_led {
 struct cap11xx_priv {
 	struct regmap *regmap;
 	struct input_dev *idev;
-	enum led_brightness new_brightness;
+	enum led_brightness leds_brightness;
 
 	struct cap11xx_led *leds;
 	int num_leds;
 
 	struct gpio_desc *reset_gpio;
+
+	int irq;
 
 	/* config */
 	u32 keycodes[];
@@ -212,13 +214,16 @@ out:
 	return IRQ_HANDLED;
 }
 
-static int cap11xx_set_sleep(struct cap11xx_priv *priv, bool sleep)
+static int cap11xx_set_sleep(struct cap11xx_priv *priv, bool sleep, int force)
 {
-	/*
-	 * DLSEEP mode will turn off all LEDS, prevent this
-	 */
-	if (IS_ENABLED(CONFIG_LEDS_CLASS) && priv->num_leds)
-		return 0;
+
+	if (!force) {
+		/*
+		 * DLSEEP mode will turn off all LEDS, prevent this
+		 */
+		if (IS_ENABLED(CONFIG_LEDS_CLASS) && priv->num_leds)
+			return 0;
+	}
 
 	return regmap_update_bits(priv->regmap, CAP11XX_REG_MAIN_CONTROL,
 				  CAP11XX_REG_MAIN_CONTROL_DLSEEP,
@@ -229,14 +234,14 @@ static int cap11xx_input_open(struct input_dev *idev)
 {
 	struct cap11xx_priv *priv = input_get_drvdata(idev);
 
-	return cap11xx_set_sleep(priv, false);
+	return cap11xx_set_sleep(priv, false, 0);
 }
 
 static void cap11xx_input_close(struct input_dev *idev)
 {
 	struct cap11xx_priv *priv = input_get_drvdata(idev);
 
-	cap11xx_set_sleep(priv, true);
+	cap11xx_set_sleep(priv, true, 0);
 }
 
 #ifdef CONFIG_LEDS_CLASS
@@ -244,7 +249,7 @@ static void cap11xx_led_work(struct work_struct *work)
 {
 	struct cap11xx_led *led = container_of(work, struct cap11xx_led, work);
 	struct cap11xx_priv *priv = led->priv;
-	int value = priv->new_brightness;
+	int value = priv->leds_brightness;
 	int i;
 
 	/*
@@ -274,12 +279,12 @@ static void cap11xx_led_set(struct led_classdev *cdev,
 	struct cap11xx_priv *priv = led->priv;
 
 	if ((led->isoff && value == 0) ||
-	    (!led->isoff && priv->new_brightness == value))
+	    (!led->isoff && priv->leds_brightness == value))
 		return;
 
 	led->isoff = !value;
 	if (value > 0)
-		priv->new_brightness = value;
+		priv->leds_brightness = value;
 
 	schedule_work(&led->work);
 }
@@ -367,7 +372,7 @@ static int cap11xx_i2c_probe(struct i2c_client *i2c_client,
 	struct cap11xx_priv *priv;
 	struct device_node *node;
 	const struct cap11xx_hw_model *cap;
-	int i, error, irq, gain = 0;
+	int i, error, gain = 0;
 	unsigned int val, rev;
 	u32 gain32;
 
@@ -495,24 +500,25 @@ static int cap11xx_i2c_probe(struct i2c_client *i2c_client,
 		return error;
 
 	input_set_drvdata(priv->idev, priv);
+	dev_set_drvdata(dev, priv);
 
 	/*
 	 * Put the device in deep sleep mode for now.
 	 * ->open() will bring it back once the it is actually needed.
 	 */
-	cap11xx_set_sleep(priv, true);
+	cap11xx_set_sleep(priv, true, 0);
 
 	error = input_register_device(priv->idev);
 	if (error)
 		return error;
 
-	irq = irq_of_parse_and_map(node, 0);
-	if (!irq) {
+	priv->irq = irq_of_parse_and_map(node, 0);
+	if (!priv->irq) {
 		dev_err(dev, "Unable to parse or map IRQ\n");
 		return -ENXIO;
 	}
 
-	error = devm_request_threaded_irq(dev, irq, NULL, cap11xx_thread_func,
+	error = devm_request_threaded_irq(dev, priv->irq, NULL, cap11xx_thread_func,
 					  IRQF_ONESHOT, dev_name(dev), priv);
 	if (error)
 		return error;
@@ -540,9 +546,42 @@ static const struct i2c_device_id cap11xx_i2c_ids[] = {
 };
 MODULE_DEVICE_TABLE(i2c, cap11xx_i2c_ids);
 
+static int __maybe_unused cap11xx_suspend(struct device *dev)
+{
+	struct cap11xx_priv *priv = dev_get_drvdata(dev);
+
+	disable_irq(priv->irq);
+
+	cap11xx_set_sleep(priv, true, 1);
+
+	regcache_cache_only(priv->regmap, true);
+	regcache_mark_dirty(priv->regmap);
+
+	return 0;
+}
+
+static int __maybe_unused cap11xx_resume(struct device *dev)
+{
+	struct cap11xx_priv *priv = dev_get_drvdata(dev);
+
+	regcache_cache_only(priv->regmap, false);
+	regcache_sync(priv->regmap);
+
+	cap11xx_set_sleep(priv, false, 1);
+
+	enable_irq(priv->irq);
+
+	return 0;
+}
+
+static const struct dev_pm_ops cap11xx_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(cap11xx_suspend, cap11xx_resume)
+};
+
 static struct i2c_driver cap11xx_i2c_driver = {
 	.driver = {
 		.name	= "cap11xx",
+		.pm	= &cap11xx_pm_ops,
 		.of_match_table = cap11xx_dt_ids,
 	},
 	.id_table	= cap11xx_i2c_ids,
