@@ -1442,7 +1442,9 @@ static int serial_imx_suspend(struct device *dev)
 			temp &= ~MXC_UARTCR5_RDMAS;
 			writeb(temp, sport->port.membase + MXC_UARTCR5);
 		} else {
-			clk_disable_unprepare(sport->clk);
+			if (console_suspend_enabled ||
+					!uart_console(&sport->port))
+				clk_disable_unprepare(sport->clk);
 		}
 	}
 
@@ -1464,7 +1466,9 @@ static int serial_imx_resume(struct device *dev)
 			temp |= MXC_UARTCR5_RDMAS;
 			writeb(temp, sport->port.membase + MXC_UARTCR5);
 		} else {
-			clk_prepare_enable(sport->clk);
+			if (console_suspend_enabled ||
+					!uart_console(&sport->port))
+				clk_prepare_enable(sport->clk);
 		}
 
 		uart_resume_port(&imx_reg, &sport->port);
