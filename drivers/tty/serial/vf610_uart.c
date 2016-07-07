@@ -949,6 +949,8 @@ static int imx_startup(struct uart_port *port)
 	int retval;
 	unsigned long flags, temp;
 
+	spin_lock_irqsave(&sport->port.lock, flags);
+
 #ifndef CONFIG_SERIAL_CORE_CONSOLE
 	if (sport->fifo_en)
 		imx_setup_watermark(sport, 0);
@@ -986,7 +988,6 @@ static int imx_startup(struct uart_port *port)
 		INIT_WORK(&sport->tsk_dma_tx, dma_tx_work);
 	}
 
-	spin_lock_irqsave(&sport->port.lock, flags);
 	/*
 	 * Finally, clear and enable interrupts
 	 */
@@ -999,6 +1000,9 @@ static int imx_startup(struct uart_port *port)
 	temp |= MXC_UARTCR2_RIE | MXC_UARTCR2_TIE |
 		MXC_UARTCR2_RE | MXC_UARTCR2_TE;
 	writeb(temp, sport->port.membase + MXC_UARTCR2);
+
+	sport->port.state->port.flags |= ASYNC_INITIALIZED;
+
 	/*
 	 * Enable modem status interrupts
 	 */
@@ -1021,6 +1025,9 @@ static void imx_shutdown(struct uart_port *port)
 
 	if (sport->dma_chan_rx)
 		imx_stop_dma_rx(sport);
+
+	if (work_pending(&sport->tsk_dma_tx))
+		cancel_work_sync(&sport->tsk_dma_tx);
 
 	spin_lock_irqsave(&sport->port.lock, flags);
 	temp = readb(sport->port.membase + MXC_UARTCR2);
