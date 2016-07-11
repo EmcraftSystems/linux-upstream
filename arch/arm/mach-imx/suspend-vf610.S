@@ -257,6 +257,11 @@ ENTRY(mvf_suspend)
 	ldr	r4, =0x02
 	str	r4, [r3, #0x40]
 
+	/* send MQX a signal to suspend */
+	get_base r3 MSCM_VBASE_OFFSET
+	ldr	r4, =0x20001
+	str	r4, [r3, #0x20]
+
 	/* Meditate */
 	wfi
 	/* Awaken by IRQ, resume */
