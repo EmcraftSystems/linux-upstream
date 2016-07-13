@@ -13,6 +13,7 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/sched_clock.h>
+#include <linux/cpu_pm.h>
 
 /*
  * Each pit takes 0x10 Bytes register space
@@ -23,6 +24,7 @@
 #define PITLDVAL	0x00
 #define PITCVAL		0x04
 #define PITTCTRL	0x08
+#define PITn_CTRL(n)	(PITn_OFFSET(n) + PITTCTRL)
 #define PITTFLG		0x0c
 
 #define PITMCR_MDIS	(0x1 << 1)
@@ -36,6 +38,8 @@
 static void __iomem *clksrc_base;
 static void __iomem *clkevt_base;
 static unsigned long cycle_per_jiffy;
+static void __iomem *timer_base;
+static long int pm_pit_state[7];
 
 static inline void pit_timer_enable(void)
 {
@@ -125,6 +129,36 @@ static irqreturn_t pit_timer_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static int vf610_pit_notifier(struct notifier_block *self,
+				  unsigned long cmd, void *v)
+{
+	int i;
+
+	switch (cmd) {
+	case CPU_CLUSTER_PM_ENTER:
+		for (i = 0; i < 7; i++)
+			pm_pit_state[i] =
+				readl_relaxed(timer_base + PITn_CTRL(i));
+		for (i = 0; i < 7; i++)
+			if (i != 2 && i != 3) /* skip clksrc/clkevt */
+				writel_relaxed(0, timer_base + PITn_CTRL(i));
+		break;
+	case CPU_CLUSTER_PM_ENTER_FAILED:
+	case CPU_CLUSTER_PM_EXIT:
+		for (i = 0; i < 7; i++)
+			if (i != 2 && i != 3) /* skip clksrc/clkevt */
+				writel_relaxed(pm_pit_state[i],
+					timer_base + PITn_CTRL(i));
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block pit_notifier_block = {
+	.notifier_call = vf610_pit_notifier,
+};
+
 static struct clock_event_device clockevent_pit = {
 	.name		= "VF pit timer",
 	.features	= CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT,
@@ -165,7 +199,6 @@ static int __init pit_clockevent_init(unsigned long rate, int irq)
 static void __init pit_timer_init(struct device_node *np)
 {
 	struct clk *pit_clk;
-	void __iomem *timer_base;
 	unsigned long clk_rate;
 	int irq;
 
@@ -197,5 +230,7 @@ static void __init pit_timer_init(struct device_node *np)
 	BUG_ON(pit_clocksource_init(clk_rate));
 
 	pit_clockevent_init(clk_rate, irq);
+
+	cpu_pm_register_notifier(&pit_notifier_block);
 }
 CLOCKSOURCE_OF_DECLARE(vf610, "fsl,vf610-pit", pit_timer_init);
