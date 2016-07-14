@@ -1138,7 +1138,7 @@ static int dspi_probe(struct platform_device *pdev)
 
 	master->cleanup = dspi_cleanup;
 	master->mode_bits = SPI_CPOL | SPI_CPHA;
-	master->bits_per_word_mask = SPI_BPW_MASK(4) | SPI_BPW_MASK(8) |
+	master->bits_per_word_mask = SPI_BPW_MASK(4) | SPI_BPW_MASK(8) | SPI_BPW_MASK(9) |
 					SPI_BPW_MASK(16);
 
 	ret = of_property_read_u32(np, "spi-num-chipselects", &cs_num);
