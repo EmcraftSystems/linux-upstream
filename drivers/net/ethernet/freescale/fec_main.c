@@ -3584,6 +3584,11 @@ static int __maybe_unused fec_suspend(struct device *dev)
 	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
 	struct gpio_desc *inv_fix_gpio;
 
+	if (!(fep->wol_flag & FEC_WOL_FLAG_ENABLE)) {
+		/* Fill the wol structure prior to stop phy */
+		phy_ethtool_get_wol(fep->phy_dev, &wol);
+	}
+
 	rtnl_lock();
 	if (netif_running(ndev)) {
 		if (fep->wol_flag & FEC_WOL_FLAG_ENABLE)
@@ -3606,7 +3611,6 @@ static int __maybe_unused fec_suspend(struct device *dev)
 			regulator_disable(fep->reg_phy);
 
 		/* If the device has WOL enabled, do not turn off oscillator */
-		phy_ethtool_get_wol(fep->phy_dev, &wol);
 		if (!wol.wolopts && fep->osc_en_gpio) {
 			gpiod_set_value(fep->osc_en_gpio, 0);
 		}
