@@ -505,6 +505,8 @@ static int fsl_pwm_suspend(struct device *dev)
 		clk_disable_unprepare(fpc->clk[FSL_PWM_CLK_SYS]);
 	}
 
+	pinctrl_pm_select_sleep_state(dev);
+
 	return 0;
 }
 
@@ -512,6 +514,8 @@ static int fsl_pwm_resume(struct device *dev)
 {
 	struct fsl_pwm_chip *fpc = dev_get_drvdata(dev);
 	u32 val;
+
+	pinctrl_pm_select_default_state(dev);
 
 	/* read from cache */
 	regmap_read(fpc->regmap, FTM_OUTMASK, &val);
