@@ -222,6 +222,12 @@
 #define GI2CCTL_RWDATA_SHIFT		0
 
 #define GPVNDCTL			HSOTG_REG(0x0034)
+#define GPVNDCTL_S_DONE			(1 << 27)
+#define GPVNDCTL_S_BUSY			(1 << 26)
+#define GPVNDCTL_NEW			(1 << 25)
+#define GPVNDCTL_RW			(1 << 22)
+#define GPVNDCTL_D07			(0xFF)
+
 #define GGPIO				HSOTG_REG(0x0038)
 #define GUID				HSOTG_REG(0x003c)
 #define GSNPSID				HSOTG_REG(0x0040)
