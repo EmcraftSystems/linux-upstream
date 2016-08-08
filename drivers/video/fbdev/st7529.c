@@ -83,6 +83,7 @@ struct mfb_info
 	int			height;
 	struct gpio_desc	*reset_gpio;
 	struct gpio_desc	*a0_gpio;
+	int			spi_mode;
 	unsigned int		volctrl;
 };
 
@@ -98,7 +99,9 @@ static int st7529_data(struct mfb_info *mfbi, unsigned char *buf, int size)
 	int err = 0;
 
 	if (size) {
-		gpiod_set_value(mfbi->a0_gpio, A0_DATA_MODE);
+		if (mfbi->spi_mode == 8) {
+			gpiod_set_value(mfbi->a0_gpio, A0_DATA_MODE);
+		}
 		err = spi_write(mfbi->spi, buf, size);
 	}
 
@@ -111,12 +114,18 @@ static int st7529_data(struct mfb_info *mfbi, unsigned char *buf, int size)
 static int st7529_command(struct mfb_info *mfbi, unsigned char cmd,
 			  int args_cnt, ...)
 {
-	unsigned char buf[1 + args_cnt];
+	int data_size = mfbi->spi_mode == 8 ? args_cnt : args_cnt * 2;
+	unsigned char buf[data_size ? data_size : 2];
 	int err;
 
 	buf[0] = cmd;
-	gpiod_set_value(mfbi->a0_gpio, A0_CMD_MODE);
-	err = spi_write(mfbi->spi, buf, 1);
+	if (mfbi->spi_mode == 8) {
+		gpiod_set_value(mfbi->a0_gpio, A0_CMD_MODE);
+		err = spi_write(mfbi->spi, buf, 1);
+	} else {
+		buf[1] = 0;
+		err = spi_write(mfbi->spi, buf, 2);
+	}
 
 	if (!err && args_cnt) {
 		va_list ap;
@@ -124,7 +133,12 @@ static int st7529_command(struct mfb_info *mfbi, unsigned char cmd,
 		va_start(ap, args_cnt);
 
 		for (i = 0; i < args_cnt; ++i) {
-			buf[i] = va_arg(ap, unsigned int);
+			if (mfbi->spi_mode == 8) {
+				buf[i] = va_arg(ap, unsigned int);
+			} else {
+				buf[i * 2] = va_arg(ap, unsigned int);
+				buf[i * 2 + 1] = 1;
+			}
 
 			if (err)
 				break;
@@ -132,7 +146,7 @@ static int st7529_command(struct mfb_info *mfbi, unsigned char cmd,
 
 		va_end(ap);
 
-		err = st7529_data(mfbi, buf, args_cnt);
+		err = st7529_data(mfbi, buf, data_size);
 	}
 
 	if (err)
@@ -150,10 +164,17 @@ static void st7529_set_voltage(struct mfb_info *mfbi, unsigned int voltage) {
 
 static void st7529_hw_init(struct mfb_info *mfbi)
 {
-	gpiod_set_value(mfbi->reset_gpio, 1);
-	msleep(150);
-	gpiod_set_value(mfbi->reset_gpio, 0);
-	msleep(150);
+	if (gpiod_cansleep(mfbi->reset_gpio)) {
+		gpiod_set_value_cansleep(mfbi->reset_gpio, 0);
+		msleep(150);
+		gpiod_set_value_cansleep(mfbi->reset_gpio, 1);
+		msleep(150);
+	} else {
+		gpiod_set_value(mfbi->reset_gpio, 0);
+		msleep(150);
+		gpiod_set_value(mfbi->reset_gpio, 1);
+		msleep(150);
+	}
 
 	st7529_command(mfbi, CMD_EXT_IN, 0);
 	st7529_command(mfbi, CMD_SLEEP_OUT, 0);
@@ -199,7 +220,9 @@ static int st7529_task(void *param)
 {
 	struct fb_info *fb_info = (struct fb_info *)param;
 	struct mfb_info *mfbi = fb_info->par;
-	int buf_size = mfbi->width * mfbi->height;
+	int buf_size = mfbi->spi_mode == 8
+		? mfbi->width * mfbi->height
+		: mfbi->width * mfbi->height * 2;
 	u8 *buf = devm_kzalloc(&mfbi->spi->dev, buf_size, GFP_KERNEL);
 	u8 *rgb_buf = fb_info->screen_base;
 
@@ -208,7 +231,7 @@ static int st7529_task(void *param)
 	while (!kthread_should_stop()) {
 		int i;
 
-		for (i = 0; i < buf_size; ++i) {
+		for (i = 0; i < mfbi->width * mfbi->height; ++i) {
 			u8 *rgb_pix	= &rgb_buf[i*3];
 			u8 red		= rgb_pix[2];
 			u8 green	= rgb_pix[1];
@@ -217,7 +240,12 @@ static int st7529_task(void *param)
 			/* Formula:
 			 * gray = 0.2125*r + 0.7152*g + 0.0722*b
 			 */
-			buf[i] = ((red * 54) + (green * 183) + (blue * 18)) >> 8;
+			if (mfbi->spi_mode == 8) {
+				buf[i] = ((red * 54) + (green * 183) + (blue * 18)) >> 8;
+			} else {
+				buf[i * 2] = ((red * 54) + (green * 183) + (blue * 18)) >> 8;
+				buf[i * 2 + 1] = 1;
+			}
 		}
 
 		st7529_command(mfbi, CMD_EXT_IN, 0);
@@ -278,16 +306,38 @@ static struct attribute_group dev_attr_grp = {
 
 static int st7529_probe(struct spi_device *spi)
 {
-	int xres = -1, yres = -1, bits_per_pixel = -1;
+	int xres = -1, yres = -1, bits_per_pixel = -1, spi_mode = -1;
 	struct device_node *node = spi->dev.of_node;
 	struct fb_info *fb_info = NULL;
 	struct mfb_info *mfbi = NULL;
 	int err = 0;
 	dma_addr_t dma_handle;
+	u8 save;
 
 	if (NULL == node) {
 		dev_err(&spi->dev, "No device info\n");
 		return -ENODEV;
+	}
+
+	if (of_property_read_u32(node, "spi_bits_per_word", &spi_mode)) {
+		dev_err(&spi->dev, "failed to get SPI bits per word mode\n");
+		return -EINVAL;
+	}
+
+	if (spi_mode != 8 && spi_mode != 9) {
+		dev_err(&spi->dev, "Incorrect spi bits per word mode: %d."
+			" Valid values are 8 or 9.\n", spi_mode);
+		return -EINVAL;
+	}
+
+	/* Setup SPI */
+	save = spi->bits_per_word;
+	spi->bits_per_word = spi_mode;
+	err = spi_setup(spi);
+	if (err < 0) {
+		spi->bits_per_word = save;
+		dev_err(&spi->dev, "failed to setup SPI\n");
+		return err;
 	}
 
 	if (of_property_read_u32(node, "xres", &xres))
@@ -345,6 +395,7 @@ static int st7529_probe(struct spi_device *spi)
 	mfbi->width			= fb_info->var.xres;
 	mfbi->height			= fb_info->var.yres;
 	mfbi->volctrl			= VOLCTRL_DEFAULT;
+	mfbi->spi_mode = spi_mode;
 
 	mfbi->reset_gpio = devm_gpiod_get(&spi->dev,
 					  "reset", GPIOD_OUT_HIGH);
@@ -354,12 +405,14 @@ static int st7529_probe(struct spi_device *spi)
 		goto failed_install_fb;
 	}
 
-	mfbi->a0_gpio = devm_gpiod_get(&spi->dev,
-				       "a0", GPIOD_OUT_HIGH);
-	if (IS_ERR_OR_NULL(mfbi->a0_gpio)) {
-		err = mfbi->a0_gpio ? PTR_ERR(mfbi->a0_gpio) : -EINVAL;
-		dev_err(&spi->dev, "Failed to get A0 gpio: %d\n", err);
-		goto failed_install_fb;
+	if (mfbi->spi_mode == 8) {
+		mfbi->a0_gpio = devm_gpiod_get(&spi->dev,
+					       "a0", GPIOD_OUT_HIGH);
+		if (IS_ERR_OR_NULL(mfbi->a0_gpio)) {
+			err = mfbi->a0_gpio ? PTR_ERR(mfbi->a0_gpio) : -EINVAL;
+			dev_err(&spi->dev, "Failed to get A0 gpio: %d\n", err);
+			goto failed_install_fb;
+		}
 	}
 
 	st7529_hw_init(mfbi);

@@ -2000,7 +2000,7 @@ static int fec_enet_mii_init(struct platform_device *pdev)
 	u32 mii_speed, holdtime;
 
 	fep->osc_en_gpio = devm_gpiod_get(&pdev->dev, "osc-en", GPIOD_OUT_HIGH);
-	if (!IS_ERR_OR_NULL(fep->osc_en_gpio))
+	if (IS_ERR_OR_NULL(fep->osc_en_gpio))
 		fep->osc_en_gpio = NULL;
 	msleep(1);
 
@@ -3560,6 +3560,11 @@ static int __maybe_unused fec_suspend(struct device *dev)
 	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
 	struct gpio_desc *inv_fix_gpio;
 
+	if (!(fep->wol_flag & FEC_WOL_FLAG_ENABLE)) {
+		/* Fill the wol structure prior to stop phy */
+		phy_ethtool_get_wol(fep->phy_dev, &wol);
+	}
+
 	rtnl_lock();
 	if (netif_running(ndev)) {
 		if (fep->wol_flag & FEC_WOL_FLAG_ENABLE)
@@ -3582,7 +3587,6 @@ static int __maybe_unused fec_suspend(struct device *dev)
 			regulator_disable(fep->reg_phy);
 
 		/* If the device has WOL enabled, do not turn off oscillator */
-		phy_ethtool_get_wol(fep->phy_dev, &wol);
 		if (!wol.wolopts && fep->osc_en_gpio) {
 			gpiod_set_value(fep->osc_en_gpio, 0);
 		}
@@ -3605,7 +3609,7 @@ static int __maybe_unused fec_suspend(struct device *dev)
 	*/
 	inv_fix_gpio = gpiod_get(dev, "vf610,rmii-inverter-fix",
 		GPIOD_OUT_HIGH);
-	if (inv_fix_gpio)
+	if (!IS_ERR_OR_NULL(inv_fix_gpio))
 		gpiod_put(inv_fix_gpio);
 
 	return 0;

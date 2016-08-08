@@ -143,7 +143,8 @@ static void uarts_reconfig(void)
 
 		if (port && port->state) {
 			struct tty_struct *tty = port->state->port.tty;
-			if (tty && port->ops->set_termios) {
+			int may_wakeup = (tty ? device_may_wakeup(tty->dev) : 0);
+			if (may_wakeup && port->ops->set_termios) {
 				port->ops->set_termios(port, &tty->termios, NULL);
 			}
 		}

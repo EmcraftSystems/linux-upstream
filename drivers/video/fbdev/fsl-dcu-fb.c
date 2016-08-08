@@ -576,7 +576,7 @@ static void unmap_video_memory(struct fb_info *info)
 	info->fix.smem_len = 0;
 }
 
-static int fsl_dcu_set_par(struct fb_info *info)
+static int __fsl_dcu_set_par(struct fb_info *info, int force_update)
 {
 	unsigned long len;
 	struct fb_var_screeninfo *var = &info->var;
@@ -608,7 +608,7 @@ static int fsl_dcu_set_par(struct fb_info *info)
 		}
 	}
 
-	if (!mfbi->reserved_memory) {
+	if (!mfbi->reserved_memory || force_update) {
 		/* Only layer 0 could update LCD controller */
 		if (mfbi->index == LAYER0) {
 			update_controller(info);
@@ -618,6 +618,11 @@ static int fsl_dcu_set_par(struct fb_info *info)
 		enable_panel(info);
 	}
 	return 0;
+}
+
+static int fsl_dcu_set_par(struct fb_info *info)
+{
+    return __fsl_dcu_set_par(info, 0);
 }
 
 static inline __u32 CNVT_TOHW(__u32 val, __u32 width)
@@ -1031,19 +1036,35 @@ static irqreturn_t fsl_dcu_irq(int irq, void *dev_id)
 
 static void fsl_dcu_turn_on_lcd(struct dcu_fb_data *dcufb)
 {
-	if (dcufb->lcd_enable_gpio)
-		gpiod_set_value(dcufb->lcd_enable_gpio, 1);
-	if (dcufb->lcd_backlight_gpio)
-		gpiod_set_value(dcufb->lcd_backlight_gpio, 1);
+	if (dcufb->lcd_enable_gpio) {
+		if (gpiod_cansleep(dcufb->lcd_enable_gpio))
+			gpiod_set_value_cansleep(dcufb->lcd_enable_gpio, 1);
+		else
+			gpiod_set_value(dcufb->lcd_enable_gpio, 1);
+	}
+	if (dcufb->lcd_backlight_gpio) {
+		if (gpiod_cansleep(dcufb->lcd_backlight_gpio))
+			gpiod_set_value_cansleep(dcufb->lcd_backlight_gpio, 1);
+		else
+			gpiod_set_value(dcufb->lcd_backlight_gpio, 1);
+	}
 }
 
 #ifdef CONFIG_PM_SLEEP
 static void fsl_dcu_turn_off_lcd(struct dcu_fb_data *dcufb)
 {
-	if (dcufb->lcd_enable_gpio)
-		gpiod_set_value(dcufb->lcd_enable_gpio, 0);
-	if (dcufb->lcd_backlight_gpio)
-		gpiod_set_value(dcufb->lcd_backlight_gpio, 0);
+	if (dcufb->lcd_enable_gpio) {
+		if (gpiod_cansleep(dcufb->lcd_enable_gpio))
+			gpiod_set_value_cansleep(dcufb->lcd_enable_gpio, 0);
+		else
+			gpiod_set_value(dcufb->lcd_enable_gpio, 0);
+	}
+	if (dcufb->lcd_backlight_gpio) {
+		if (gpiod_cansleep(dcufb->lcd_backlight_gpio))
+			gpiod_set_value_cansleep(dcufb->lcd_backlight_gpio, 0);
+		else
+			gpiod_set_value(dcufb->lcd_backlight_gpio, 0);
+	}
 }
 #endif /* CONFIG_PM_SLEEP */
 
@@ -1111,8 +1132,6 @@ static int fsl_dcu_suspend(struct device *dev)
 	struct dcu_fb_data *dcufb = dev_get_drvdata(dev);
 	struct fb_info *fbi = dcufb->fsl_dcu_info[0];
 
-	fsl_dcu_turn_off_lcd(dcufb);
-
 	console_lock();
 	fb_set_suspend(fbi, 1);
 	console_unlock();
@@ -1122,6 +1141,10 @@ static int fsl_dcu_suspend(struct device *dev)
 	disable_controller(dcufb->fsl_dcu_info[0]);
 	clk_disable_unprepare(dcufb->clk);
 
+	pinctrl_pm_select_sleep_state(dev);
+
+	fsl_dcu_turn_off_lcd(dcufb);
+
 	return 0;
 }
 
@@ -1130,6 +1153,10 @@ static int fsl_dcu_resume(struct device *dev)
 	struct dcu_fb_data *dcufb = dev_get_drvdata(dev);
 	struct fb_info *fbi = dcufb->fsl_dcu_info[0];
 	int ret;
+
+	fsl_dcu_turn_on_lcd(dcufb);
+
+	pinctrl_pm_select_default_state(dev);
 
 	clk_prepare_enable(dcufb->clk);
 
@@ -1145,9 +1172,7 @@ static int fsl_dcu_resume(struct device *dev)
 	fb_set_suspend(fbi, 0);
 	console_unlock();
 
-	fsl_dcu_set_par(fbi);
-
-	fsl_dcu_turn_on_lcd(dcufb);
+	__fsl_dcu_set_par(fbi, 1);
 
 failed_bypasstcon:
 	return ret;
