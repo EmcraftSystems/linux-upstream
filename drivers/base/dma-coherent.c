@@ -6,6 +6,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/dma-mapping.h>
+#include <linux/dmamem.h>
 
 struct dma_coherent_mem {
 	void		*virt_base;
@@ -160,11 +161,13 @@ int dma_alloc_from_coherent(struct device *dev, ssize_t size,
 	unsigned long flags;
 	int pageno;
 
-	if (!dev)
+	if (!dev || !(mem = dev->dma_mem)) {
+#ifdef CONFIG_DMAMEM
+		return dmamem_alloc(size, dma_handle, ret);
+#else
 		return 0;
-	mem = dev->dma_mem;
-	if (!mem)
-		return 0;
+#endif
+	}
 
 	*ret = NULL;
 	spin_lock_irqsave(&mem->spinlock, flags);
@@ -224,7 +227,12 @@ int dma_release_from_coherent(struct device *dev, int order, void *vaddr)
 		spin_unlock_irqrestore(&mem->spinlock, flags);
 		return 1;
 	}
+
+#ifdef CONFIG_DMAMEM
+	return dmamem_free(vaddr);
+#else
 	return 0;
+#endif
 }
 EXPORT_SYMBOL(dma_release_from_coherent);
 

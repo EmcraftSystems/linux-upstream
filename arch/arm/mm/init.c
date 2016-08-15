@@ -21,6 +21,7 @@
 #include <linux/gfp.h>
 #include <linux/memblock.h>
 #include <linux/dma-contiguous.h>
+#include <linux/dmamem.h>
 #include <linux/sizes.h>
 
 #include <asm/cp15.h>
@@ -263,6 +264,10 @@ void __init arm_memblock_init(const struct machine_desc *mdesc)
 #endif
 
 	arm_mm_memblock_reserve();
+
+#ifdef CONFIG_DMAMEM
+	dmamem_init();
+#endif
 
 	/* reserve any platform specific memblock areas */
 	if (mdesc->reserve)
