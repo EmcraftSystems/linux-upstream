@@ -118,10 +118,14 @@
 #endif
 
 #if defined(CONFIG_CPU_V7M)
-# ifdef _CACHE
-#  define MULTI_CACHE 1
+# if defined(CONFIG_CPU_CACHE_V7M)
+#  define _CACHE v7m
 # else
-#  define _CACHE nop
+#  ifdef _CACHE
+#   define MULTI_CACHE 1
+#  else
+#   define _CACHE nop
+#  endif
 # endif
 #endif
 

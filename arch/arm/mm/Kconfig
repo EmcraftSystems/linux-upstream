@@ -403,7 +403,7 @@ config CPU_V7M
 	bool
 	select CPU_32v7M
 	select CPU_ABRT_NOMMU
-	select CPU_CACHE_NOP
+	select CPU_CACHE_VIPT
 	select CPU_PABRT_LEGACY
 	select CPU_THUMBONLY
 
@@ -505,6 +505,9 @@ config CPU_CACHE_V6
 	bool
 
 config CPU_CACHE_V7
+	bool
+
+config CPU_CACHE_V7M
 	bool
 
 config CPU_CACHE_NOP

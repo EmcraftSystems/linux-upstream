@@ -148,6 +148,7 @@ __v7m_setup_stack:
 __v7m_setup_stack_top:
 
 	define_processor_functions v7m, dabort=nommu_early_abort, pabort=legacy_pabort, nommu=1
+	define_cache_functions v7m
 
 	.section ".rodata"
 	string cpu_arch_name, "armv7m"
@@ -173,6 +174,6 @@ __v7m_proc_info:
 	.long	v7m_processor_functions	@ proc_info_list.proc
 	.long	0			@ proc_info_list.tlb
 	.long	0			@ proc_info_list.user
-	.long	nop_cache_fns		@ proc_info_list.cache
+	.long	v7m_cache_fns		@ proc_info_list.cache
 	.size	__v7m_proc_info, . - __v7m_proc_info
 
