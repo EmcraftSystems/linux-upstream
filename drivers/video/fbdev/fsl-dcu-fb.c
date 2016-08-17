@@ -155,6 +155,7 @@ struct dcu_fb_data {
 	struct fb_videomode native_mode;
 	u32 bits_per_pixel;
 	bool pixclockpol;
+	int turnoff_delay;
 	struct completion vsync_wait;
 	struct gpio_desc *lcd_enable_gpio;
 	struct gpio_desc *lcd_backlight_gpio;
@@ -1145,6 +1146,12 @@ static int fsl_dcu_suspend(struct device *dev)
 
 	fsl_dcu_turn_off_lcd(dcufb);
 
+	if(dcufb->turnoff_delay) {
+		/* Workaround for Poplabcom board:
+		   wait for discharging of the power rail. */
+		msleep(dcufb->turnoff_delay);
+	}
+
 	return 0;
 }
 
@@ -1312,6 +1319,11 @@ static int fsl_dcu_probe(struct platform_device *pdev)
 		dev_info(&pdev->dev, "Operating without backlight_enable gpio: %li\n",
 			 PTR_ERR(dcufb->lcd_backlight_gpio));
 		dcufb->lcd_backlight_gpio = NULL;
+	}
+
+	if (of_property_read_u32(pdev->dev.of_node, "turnoff-delay",
+				 &dcufb->turnoff_delay) != 0) {
+		dcufb->turnoff_delay = 0;
 	}
 
 	fsl_dcu_turn_on_lcd(dcufb);
