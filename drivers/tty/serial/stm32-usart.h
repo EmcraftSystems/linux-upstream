@@ -43,6 +43,7 @@ struct stm32_port {
 
 	struct circ_buf		rx_ring;
 	struct tasklet_struct	tasklet;
+	dma_addr_t		rx_ring_phy;
 
 	struct stm32_dma_data	dma_rx;
 	struct stm32_dma_data	dma_tx;
