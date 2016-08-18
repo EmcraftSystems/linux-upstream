@@ -189,6 +189,16 @@
 				};
 			};
 		};
+		usart6 {
+			pinctrl_usart6: usart6-0 {
+				st,pins {
+					tx = <&gpioc 6 ALT8
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					rx = <&gpioc 7 ALT8
+						NO_PULL PUSH_PULL LOW_SPEED>;
+				};
+			};
+		};
 		usart7 {
 			pinctrl_usart7: usart7-0 {
 				st,pins {
