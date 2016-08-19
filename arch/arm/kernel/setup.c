@@ -274,6 +274,16 @@ int __pure cpu_architecture(void)
 	return __cpu_architecture;
 }
 
+char * __weak dcache_is_arch_specific(void)
+{
+	return NULL;
+}
+
+char * __weak icache_is_arch_specific(void)
+{
+	return NULL;
+}
+
 static int cpu_has_aliasing_icache(unsigned int arch)
 {
 	int aliasing_icache;
@@ -341,9 +351,11 @@ static void __init cacheid_init(void)
 	}
 
 	pr_info("CPU: %s data cache, %s instruction cache\n",
+		dcache_is_arch_specific() ? dcache_is_arch_specific() :
 		cache_is_vivt() ? "VIVT" :
 		cache_is_vipt_aliasing() ? "VIPT aliasing" :
 		cache_is_vipt_nonaliasing() ? "PIPT / VIPT nonaliasing" : "unknown",
+		icache_is_arch_specific() ? icache_is_arch_specific() :
 		cache_is_vivt() ? "VIVT" :
 		icache_is_vivt_asid_tagged() ? "VIVT ASID tagged" :
 		icache_is_vipt_aliasing() ? "VIPT aliasing" :

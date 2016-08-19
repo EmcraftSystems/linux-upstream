@@ -101,7 +101,7 @@ static char *v7m_best_cache(void)
 /*
  * Get DCache current mode description
  */
-char *v7m_dcache_mode(void)
+char *dcache_is_arch_specific(void)
 {
 	return !(CCR() & (1 << 16)) ? "OFF" : v7m_best_cache();
 }
@@ -109,7 +109,7 @@ char *v7m_dcache_mode(void)
 /*
  * Get ICache current mode description
  */
-char *v7m_icache_mode(void)
+char *icache_is_arch_specific(void)
 {
 	return !(CCR() & (1 << 17)) ? "OFF" : v7m_best_cache();
 }
