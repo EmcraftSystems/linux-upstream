@@ -113,8 +113,7 @@ static const struct dwc2_core_params params_rk3066 = {
 };
 
 /*
- * STM32 USB HS has ~4KB FIFO, that means a total
- * of 1012 words. No periodic for now.
+ * STM32 USB HS has ~4KB FIFO. No periodic for now.
  */
 static const struct dwc2_core_params params_stm32_hs = {
 	.otg_cap			=  2, /* non-HNP/non-SRP */
@@ -124,8 +123,13 @@ static const struct dwc2_core_params params_stm32_hs = {
 	.speed				= -1,
 	.enable_dynamic_fifo		= -1,
 	.en_multiple_tx_fifo		= -1,
+#if defined(CONFIG_ARCH_STM32F7)
+	.host_rx_fifo_size		=  506,
+	.host_nperio_tx_fifo_size	=  500,
+#else
 	.host_rx_fifo_size		=  506,
 	.host_nperio_tx_fifo_size	=  506,
+#endif
 	.host_perio_tx_fifo_size	=  0,
 	.max_transfer_size		= -1,
 	.max_packet_count		= -1,
