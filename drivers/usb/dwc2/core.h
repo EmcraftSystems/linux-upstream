@@ -394,6 +394,8 @@ struct dwc2_core_params {
 	int external_id_pin_ctl;
 	int hibernation;
 	int ggpio;
+	int vbvaloval;
+	int vbvaloen;
 };
 
 /**

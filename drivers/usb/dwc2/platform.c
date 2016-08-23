@@ -191,6 +191,15 @@ static const struct dwc2_core_params params_stm32_fs = {
 	.hibernation			= -1,
 
 	/*
+	 * USB FS on STM32F7 has additional controls to override Vbus validity
+	 * signalling, which have to be set to avoid 'overcurrent change' events
+	 */
+#if defined(CONFIG_ARCH_STM32F7)
+	.vbvaloval			=  1,
+	.vbvaloen			=  1,
+#endif
+
+	/*
 	 * GCCFG: NOVBUSSENS | PWRDWN
 	 */
 	.ggpio				= (1 << 21) | (1 << 16),

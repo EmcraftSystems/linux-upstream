@@ -831,6 +831,10 @@ int dwc2_core_init(struct dwc2_hsotg *hsotg, bool select_phy, int irq)
 	otgctl &= ~GOTGCTL_OTGVER;
 	if (hsotg->core_params->otg_ver > 0)
 		otgctl |= GOTGCTL_OTGVER;
+	if (hsotg->core_params->vbvaloval > 0)
+		otgctl |= GOTGCTL_VBVALOVAL;
+	if (hsotg->core_params->vbvaloen > 0)
+		otgctl |= GOTGCTL_VBVALOEN;
 	writel(otgctl, hsotg->regs + GOTGCTL);
 	dev_dbg(hsotg->dev, "OTG VER PARAM: %d\n", hsotg->core_params->otg_ver);
 
@@ -3072,6 +3076,16 @@ static void dwc2_set_param_ggpio(struct dwc2_hsotg *hsotg, int val)
 	hsotg->core_params->ggpio = val;
 }
 
+static void dwc2_set_param_vbvaloval(struct dwc2_hsotg *hsotg, int val)
+{
+	hsotg->core_params->vbvaloval = val;
+}
+
+static void dwc2_set_param_vbvaloen(struct dwc2_hsotg *hsotg, int val)
+{
+	hsotg->core_params->vbvaloen = val;
+}
+
 /*
  * This function is called during module intialization to pass module parameters
  * for the DWC_otg core.
@@ -3123,6 +3137,8 @@ void dwc2_set_parameters(struct dwc2_hsotg *hsotg,
 	dwc2_set_param_external_id_pin_ctl(hsotg, params->external_id_pin_ctl);
 	dwc2_set_param_hibernation(hsotg, params->hibernation);
 	dwc2_set_param_ggpio(hsotg, params->ggpio);
+	dwc2_set_param_vbvaloval(hsotg, params->vbvaloval);
+	dwc2_set_param_vbvaloen(hsotg, params->vbvaloen);
 }
 
 /**
