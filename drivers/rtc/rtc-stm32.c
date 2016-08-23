@@ -161,6 +161,13 @@
 #define STM32_RCC_BDCR_RTCSEL_BITS	8
 #define STM32_RCC_BDCR_RTCSEL_MSK	(3 << STM32_RCC_BDCR_RTCSEL_BITS)
 #define STM32_RCC_BDCR_RTCSEL_LSE	(1 << STM32_RCC_BDCR_RTCSEL_BITS)
+/* LSE Drive bits, STM32F7 only */
+#define STM32_RCC_BDCR_LSEDRV_BITS	3
+#define STM32_RCC_BDCR_LSEDRV_MSK	(3 << STM32_RCC_BDCR_LSEDRV_BITS)
+#define STM32_RCC_BDCR_LSEDRV_LOW	(0 << STM32_RCC_BDCR_LSEDRV_BITS)
+#define STM32_RCC_BDCR_LSEDRV_MEDHI	(1 << STM32_RCC_BDCR_LSEDRV_BITS)
+#define STM32_RCC_BDCR_LSEDRV_MEDLO	(2 << STM32_RCC_BDCR_LSEDRV_BITS)
+#define STM32_RCC_BDCR_LSEDRV_HIGH	STM32_RCC_BDCR_LSEDRV_MSK
 /* External low-speed oscillator ready */
 #define STM32_RCC_BDCR_LSERDY_MSK	(1 << 1)
 /*  External low-speed oscillator enable */
@@ -790,6 +797,11 @@ static int stm32fx_rtc_init(struct stm32_rtc *rtc, struct device *dev)
 
 	/* Disable the low-speed external oscillator */
 	regmap_write(reg, STM32_RCC_BDCR, 0);
+	/* Wait till LSE is stopped */
+	do {
+		regmap_read(reg, STM32_RCC_BDCR, &v);
+	} while (v & STM32_RCC_BDCR_LSERDY_MSK);
+
 	/* Enable the low-speed external oscillator */
 	regmap_write(reg, STM32_RCC_BDCR, STM32_RCC_BDCR_LSEON_MSK);
 	/* Wait till LSE is ready */
@@ -799,6 +811,12 @@ static int stm32fx_rtc_init(struct stm32_rtc *rtc, struct device *dev)
 	/* Select low-speed external oscillator (LSE) for RTC */
 	regmap_update_bits(reg, STM32_RCC_BDCR, STM32_RCC_BDCR_RTCSEL_MSK,
 			   STM32_RCC_BDCR_RTCSEL_LSE);
+
+	if (of_machine_is_compatible("st,stm32f7-som")) {
+		regmap_update_bits(reg, STM32_RCC_BDCR,
+			STM32_RCC_BDCR_LSEDRV_MSK, STM32_RCC_BDCR_LSEDRV_MEDHI);
+	}
+
 	/* Enable the RTC */
 	regmap_update_bits(reg, STM32_RCC_BDCR, STM32_RCC_BDCR_RTCEN_MSK,
 			   STM32_RCC_BDCR_RTCEN_MSK);
