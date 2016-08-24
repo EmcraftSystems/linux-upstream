@@ -424,8 +424,6 @@ static int stm32_startup(struct uart_port *port)
 	if (ret)
 		return ret;
 
-	tasklet_enable(&stm32_port->tasklet);
-
 	/*
 	 * Initialize DMA (if necessary)
 	 */
@@ -461,6 +459,8 @@ static int stm32_startup(struct uart_port *port)
 
 	stm32_set_bits(port, USART_CR1, cr1);
 	stm32_set_bits(port, USART_CR3, cr3);
+
+	tasklet_enable(&stm32_port->tasklet);
 
 	return 0;
 }
