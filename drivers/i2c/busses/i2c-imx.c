@@ -1346,7 +1346,7 @@ static int i2c_imx_runtime_suspend(struct device *dev)
 static int i2c_imx_runtime_resume(struct device *dev)
 {
 	struct imx_i2c_struct *i2c_imx  = dev_get_drvdata(dev);
-	int ret;
+	int ret = 0;
 
 	if (device_may_wakeup(&i2c_imx->adapter.dev)) {
 		disable_irq_wake(i2c_imx->irq);
@@ -1360,10 +1360,34 @@ static int i2c_imx_runtime_resume(struct device *dev)
 	return ret;
 }
 
+static int i2c_imx_suspend(struct device *dev)
+{
+	struct imx_i2c_struct *i2c_imx  = dev_get_drvdata(dev);
+
+	if (!device_may_wakeup(&i2c_imx->adapter.dev)) {
+		pinctrl_pm_select_sleep_state(dev);
+	}
+
+	return 0;
+}
+
+static int i2c_imx_resume(struct device *dev)
+{
+	struct imx_i2c_struct *i2c_imx  = dev_get_drvdata(dev);
+
+	if (!device_may_wakeup(&i2c_imx->adapter.dev)) {
+		pinctrl_pm_select_default_state(dev);
+	}
+
+	return 0;
+}
+
 static const struct dev_pm_ops i2c_imx_pm_ops = {
 	SET_RUNTIME_PM_OPS(i2c_imx_runtime_suspend,
 			   i2c_imx_runtime_resume, NULL)
+	SET_SYSTEM_SLEEP_PM_OPS(i2c_imx_suspend, i2c_imx_resume)
 };
+
 #define I2C_IMX_PM_OPS (&i2c_imx_pm_ops)
 #else
 #define I2C_IMX_PM_OPS NULL
