@@ -538,6 +538,9 @@
 				interrupts = <65 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&clks VF610_CLK_UART4>;
 				clock-names = "ipg";
+				dmas = <&edma1 0 2>,
+					<&edma1 0 3>;
+				dma-names = "rx","tx";
 				status = "disabled";
 			};
 
@@ -547,6 +550,9 @@
 				interrupts = <66 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&clks VF610_CLK_UART5>;
 				clock-names = "ipg";
+				dmas = <&edma1 0 4>,
+					<&edma1 0 5>;
+				dma-names = "rx","tx";
 				status = "disabled";
 			};
 
