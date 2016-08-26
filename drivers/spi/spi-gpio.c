@@ -532,10 +532,29 @@ static int spi_gpio_remove(struct platform_device *pdev)
 
 MODULE_ALIAS("platform:" DRIVER_NAME);
 
+#ifdef CONFIG_PM_SLEEP
+static int spi_gpio_suspend(struct device *dev)
+{
+	pinctrl_pm_select_sleep_state(dev);
+
+	return 0;
+}
+
+static int spi_gpio_resume(struct device *dev)
+{
+	pinctrl_pm_select_default_state(dev);
+
+	return 0;
+}
+#endif /* CONFIG_PM_SLEEP */
+
+static SIMPLE_DEV_PM_OPS(spi_gpio_pm, spi_gpio_suspend, spi_gpio_resume);
+
 static struct platform_driver spi_gpio_driver = {
 	.driver = {
 		.name	= DRIVER_NAME,
 		.of_match_table = of_match_ptr(spi_gpio_dt_ids),
+		.pm	= &spi_gpio_pm,
 	},
 	.probe		= spi_gpio_probe,
 	.remove		= spi_gpio_remove,
