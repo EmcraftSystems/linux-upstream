@@ -1268,11 +1268,10 @@ static int __maybe_unused flexcan_suspend(struct device *device)
 	struct flexcan_priv *priv = netdev_priv(dev);
 	int err;
 
-	err = flexcan_chip_disable(priv);
-	if (err)
-		return err;
-
 	if (netif_running(dev)) {
+		err = flexcan_chip_disable(priv);
+		if (err)
+			return err;
 		netif_stop_queue(dev);
 		netif_device_detach(dev);
 	}
@@ -1290,8 +1289,9 @@ static int __maybe_unused flexcan_resume(struct device *device)
 	if (netif_running(dev)) {
 		netif_device_attach(dev);
 		netif_start_queue(dev);
+		return flexcan_chip_enable(priv);
 	}
-	return flexcan_chip_enable(priv);
+	return 0;
 }
 
 static SIMPLE_DEV_PM_OPS(flexcan_pm_ops, flexcan_suspend, flexcan_resume);
