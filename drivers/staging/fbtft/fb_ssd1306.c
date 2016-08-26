@@ -193,6 +193,7 @@ static struct fbtft_display display = {
 	.regwidth = 8,
 	.width = WIDTH,
 	.height = HEIGHT,
+	.buswidth = 8,
 	.gamma_num = 1,
 	.gamma_len = 1,
 	.gamma = "00",
