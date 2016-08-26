@@ -94,14 +94,6 @@
 				reg = <0x40001000 0x800>;
 			};
 
-			global_timer: timer@40002200 {
-				compatible = "arm,cortex-a9-global-timer";
-				reg = <0x40002200 0x20>;
-				interrupts = <11 IRQ_TYPE_LEVEL_HIGH>;
-				interrupt-parent = <&intc>;
-				clocks = <&clks VF610_CLK_PLATFORM_BUS>;
-			};
-
 			intc: interrupt-controller@40002000 {
 				compatible = "arm,cortex-a9-gic";
 				#interrupt-cells = <3>;
