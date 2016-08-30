@@ -1047,7 +1047,7 @@ static struct platform_driver fsl_edma_driver = {
 	.driver		= {
 		.name	= "fsl-edma",
 		.of_match_table = fsl_edma_dt_ids,
-		.pm     = &fsl_edma_pm_ops,
+		//.pm     = &fsl_edma_pm_ops,
 	},
 	.probe          = fsl_edma_probe,
 	.remove		= fsl_edma_remove,
