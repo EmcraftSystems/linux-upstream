@@ -15,4 +15,69 @@
 / {
 	model = "EmCraft Systems STM32F7-SOM board";
 	compatible = "st,stm32f7-som", "st,stm32f7";
+
+	pin-controller {
+		ltdc {
+			pinctrl_ltdc: ltdc-0 {
+				st,pins {
+					clk = <&gpioi 14 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					de = <&gpiok 7 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					hsync = <&gpioi 12 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					vsync = <&gpioi 13 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					b0 = <&gpioj 12 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					b1 = <&gpioj 13 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					b2 = <&gpioj 14 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					b3 = <&gpioj 15 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					b4 = <&gpiok 3 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					b5 = <&gpiok 4 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					b6 = <&gpiok 5 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					b7 = <&gpiok 6 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					g0 = <&gpioj 7 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					g1 = <&gpioj 8 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					g2 = <&gpioj 9 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					g3 = <&gpioj 10 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					g4 = <&gpioj 11 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					g5 = <&gpiok 0 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					g6 = <&gpiok 1 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					g7 = <&gpiok 2 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					r0 = <&gpioi 15 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					r1 = <&gpioj 0 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					r2 = <&gpioj 1 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					r3 = <&gpioj 2 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					r4 = <&gpioj 3 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					r5 = <&gpioj 4 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					r6 = <&gpioj 5 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					r7 = <&gpioj 6 ALT14
+						NO_PULL PUSH_PULL FAST_SPEED>;
+				};
+			};
+		};
+	};
 };
