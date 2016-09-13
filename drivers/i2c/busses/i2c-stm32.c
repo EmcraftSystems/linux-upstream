@@ -632,7 +632,7 @@ static int stm32_i2c_probe(struct platform_device *pdev)
 
 	if (of_property_read_u32(np, "st,i2c-clk", &c->i2c_clk) < 0) {
 		dev_err(dev, "no i2c_clk value specified\n");
-		goto Error_release_irq2;
+		goto Error_release_regs;
 	}
 
 	c->rst = devm_reset_control_get(dev, NULL);

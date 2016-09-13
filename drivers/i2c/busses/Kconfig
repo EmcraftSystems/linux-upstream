@@ -854,9 +854,15 @@ config I2C_ST
 
 config I2C_STM32
 	tristate "STM32 I2C support"
-	depends on ARCH_STM32
+	depends on ARCH_STM32 && !ARCH_STM32F7
 	help
 	  Enable this option to add support for STM32 I2C controller
+
+config I2C_STM32F7
+	tristate "STM32F7 I2C support"
+	depends on ARCH_STM32F7
+	help
+	  Enable this option to add support for STM32F7 I2C controller
 
 config I2C_STU300
 	tristate "ST Microelectronics DDC I2C interface"
