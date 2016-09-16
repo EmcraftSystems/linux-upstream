@@ -15,8 +15,6 @@
 	};
 
 	nor_flash {
-		compatible = "stm32f4,nor";
-		reg = <0x64000000 0x1000000>;
 		probe-type = "CFI";
 		linux,mtd-name = "physmap-flash.0";
 		bank-width = <2>;

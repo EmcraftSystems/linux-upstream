@@ -16,6 +16,11 @@
 	model = "EmCraft Systems STM32F7-SOM board";
 	compatible = "st,stm32f7-som", "st,stm32f7";
 
+	nor_flash {
+		compatible = "cfi-flash";
+		reg = <0x60000000 0x1000000>;
+	};
+
 	pin-controller {
 		ltdc {
 			pinctrl_ltdc: ltdc-0 {

@@ -392,6 +392,7 @@ config MTD_PISMO
 
 config MTD_STM32F4_MAP
 	tristate "Flash device in STM32F4"
+	depends on ARCH_STM32F4
 	depends on OF && (MTD_CFI || MTD_JEDECPROBE || MTD_ROM || MTD_RAM)
 	depends on MTD_COMPLEX_MAPPINGS
 	help

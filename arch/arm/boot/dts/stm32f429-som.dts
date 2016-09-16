@@ -15,4 +15,9 @@
 / {
 	model = "EmCraft Systems STM32F4x9-SOM board";
 	compatible = "st,stm32f4x9-som", "st,stm32f429";
+
+	nor_flash {
+		compatible = "stm32f4,nor";
+		reg = <0x64000000 0x1000000>;
+	};
 };
