@@ -50,6 +50,14 @@
 
 / {
 	soc {
+		spi_2: spi@40003800 {
+			compatible = "st,stm32f4-spi";
+		};
+
+		spi_3: spi@40003c00 {
+			compatible = "st,stm32f4-spi";
+		};
+
 		usart2: serial@40004400 {
 			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
 		};
@@ -80,6 +88,22 @@
 
 		usart6: serial@40011400 {
 			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
+		};
+
+		spi_1: spi@40013000 {
+			compatible = "st,stm32f4-spi";
+		};
+
+		spi_4: spi@40013400 {
+			compatible = "st,stm32f4-spi";
+		};
+
+		spi_5: spi@40015000 {
+			compatible = "st,stm32f4-spi";
+		};
+
+		spi_6: spi@40015400 {
+			compatible = "st,stm32f4-spi";
 		};
 	};
 };
