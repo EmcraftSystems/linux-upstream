@@ -153,6 +153,7 @@ struct stm32_spi_regs {
 #define SPI_CR2_TXEIE			(1<<7)
 #define SPI_CR2_RXNEIE			(1<<6)
 #define SPI_CR2_ERRIE			(1<<5)
+#define SPI_SR_FTLVL_FULL		(3<<11)
 #define SPI_SR_FRE			(1<<8)
 #define SPI_SR_BSY			(1<<7)
 #define SPI_SR_OVR			(1<<6)
@@ -398,7 +399,7 @@ static inline int stm32_spi_hw_mode_set(struct spi_stm32 *c, unsigned int mode)
  */
 static inline int stm32_spi_hw_txfifo_full(struct spi_stm32 *c)
 {
-	return !(c->regs->sr & SPI_SR_TXE);
+	return (c->regs->sr & SPI_SR_FTLVL_FULL) == SPI_SR_FTLVL_FULL;
 }
 
 /*
@@ -421,7 +422,11 @@ static inline void stm32_spi_hw_txfifo_put(struct spi_stm32 *c,
 			d |= p[i*wb + j];
 		}
 	}
-	c->regs->dr = d;
+
+	if (wb == 1)
+		writeb(d, &c->regs->dr);
+	else
+		writew(d, &c->regs->dr);
 }
 
 /*
