@@ -623,6 +623,21 @@ static void inline stm32_spi_xfer_init(struct spi_stm32 *c,
 }
 
 /*
+ * Complete frame transfer
+ */
+static void inline stm32_spi_xfer_tx_complete(struct spi_stm32 *c)
+{
+	if (!c->tx_t)
+		return;
+
+	if (c->tx_t->delay_usecs)
+		udelay(c->tx_t->delay_usecs);
+
+	if (c->tx_t->cs_change)
+		stm32_spi_release_slave(c, c->slave);
+}
+
+/*
  * Advance to next Tx frame
  * @param c		controller data structure
  * @param x		xfer to advance to
@@ -630,6 +645,11 @@ static void inline stm32_spi_xfer_init(struct spi_stm32 *c,
 static void inline stm32_spi_xfer_tx_next(struct spi_stm32 *c)
 {
 	unsigned long f;
+
+	/*
+	 * CS may be deactivated because of previous 'cs_change', so force it
+	 */
+	stm32_spi_capture_slave(c, c->slave);
 
 	/*
 	 * If the trasmit in the current transfer
@@ -738,6 +758,8 @@ static int stm32_spi_pio_polled(struct spi_stm32 *c, struct spi_device *s,
 		 */
 		while (stm32_spi_hw_rxfifo_empty(c));
 		stm32_spi_xfer_rx_next(c);
+
+		stm32_spi_xfer_tx_complete(c);
 	}
 
 	/*
@@ -777,6 +799,7 @@ static irqreturn_t stm32_spi_irq(int irq, void *dev_id)
 			wake_up(&c->wait);
 		}
 	}
+	stm32_spi_xfer_tx_complete(c);
 
 	/*
 	 * Push a next frame out
