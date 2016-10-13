@@ -46,9 +46,11 @@
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/gpio.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_dma.h>
+#include <linux/of_gpio.h>
 #include <linux/platform_data/i2c-imx.h>
 #include <linux/platform_device.h>
 #include <linux/sched.h>
@@ -214,6 +216,11 @@ struct imx_i2c_struct {
 	int			slave_address;
 	struct i2c_client	*slave_client;
 	int			irq;
+	struct pinctrl		*pinctrl;
+	struct pinctrl_state	*pins_gpio;
+	struct pinctrl_state	*pins_default;
+	unsigned int		sda_pin;
+	unsigned int		scl_pin;
 };
 
 static const struct imx_i2c_hwdata imx1_i2c_hwdata  = {
@@ -472,6 +479,8 @@ static int i2c_imx_bus_busy(struct imx_i2c_struct *i2c_imx, int for_busy)
 
 		/* check for arbitration lost */
 		if (temp & I2SR_IAL) {
+			dev_err(&i2c_imx->adapter.dev,
+				"<%s> Arbitration lost\n", __func__);
 			temp &= ~I2SR_IAL;
 			imx_i2c_write_reg(temp, i2c_imx, IMX_I2C_I2SR);
 			return -EAGAIN;
@@ -497,7 +506,7 @@ static int i2c_imx_trx_complete(struct imx_i2c_struct *i2c_imx)
 	wait_event_timeout(i2c_imx->queue, i2c_imx->i2csr & I2SR_IIF, HZ / 10);
 
 	if (unlikely(!(i2c_imx->i2csr & I2SR_IIF))) {
-		dev_dbg(&i2c_imx->adapter.dev, "<%s> Timeout\n", __func__);
+		dev_err(&i2c_imx->adapter.dev, "<%s> Timeout\n", __func__);
 		return -ETIMEDOUT;
 	}
 	dev_dbg(&i2c_imx->adapter.dev, "<%s> TRX complete\n", __func__);
@@ -1048,6 +1057,31 @@ fail0:
 
 	if (i2c_imx->slave_client)
 		set_slave_mode(i2c_imx);
+
+	if (result == -EAGAIN && gpio_is_valid(i2c_imx->scl_pin)) {
+		dev_err(&i2c_imx->adapter.dev, "<%s> trying to restore after arbitration lost\n", __func__);
+		disable_irq(i2c_imx->irq);
+		clk_disable_unprepare(i2c_imx->clk);
+		msleep(1);
+
+		pinctrl_select_state(i2c_imx->pinctrl, i2c_imx->pins_gpio);
+		msleep(100);
+
+		devm_gpio_request(&i2c_imx->adapter.dev, i2c_imx->sda_pin, "sda");
+		devm_gpio_request(&i2c_imx->adapter.dev, i2c_imx->scl_pin, "scl");
+		gpio_direction_output(i2c_imx->sda_pin, 0);
+		gpio_direction_output(i2c_imx->scl_pin, 0);
+		msleep(1);
+		devm_gpio_free(&i2c_imx->adapter.dev, i2c_imx->sda_pin);
+		devm_gpio_free(&i2c_imx->adapter.dev, i2c_imx->scl_pin);
+
+		pinctrl_select_state(i2c_imx->pinctrl, i2c_imx->pins_default);
+		msleep(100);
+
+		clk_prepare_enable(i2c_imx->clk);
+		enable_irq(i2c_imx->irq);
+	}
+
 	return (result < 0) ? result : num;
 }
 
@@ -1109,6 +1143,7 @@ static int i2c_imx_probe(struct platform_device *pdev)
 	void __iomem *base;
 	int irq, ret;
 	dma_addr_t phy_addr;
+	bool gpio_good = false;
 
 	dev_dbg(&pdev->dev, "<%s>\n", __func__);
 
@@ -1127,6 +1162,36 @@ static int i2c_imx_probe(struct platform_device *pdev)
 	i2c_imx = devm_kzalloc(&pdev->dev, sizeof(*i2c_imx), GFP_KERNEL);
 	if (!i2c_imx)
 		return -ENOMEM;
+
+	i2c_imx->pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (!IS_ERR_OR_NULL(i2c_imx->pinctrl)) {
+		i2c_imx->pins_gpio = pinctrl_lookup_state(i2c_imx->pinctrl, "gpio");
+		i2c_imx->pins_default = pinctrl_lookup_state(i2c_imx->pinctrl, PINCTRL_STATE_DEFAULT);
+		if (!IS_ERR_OR_NULL(i2c_imx->pins_gpio) && !IS_ERR_OR_NULL(i2c_imx->pins_default)) {
+			if (of_gpio_count(pdev->dev.of_node) == 2) {
+				i2c_imx->sda_pin = of_get_gpio(pdev->dev.of_node, 0);
+				i2c_imx->scl_pin = of_get_gpio(pdev->dev.of_node, 1);
+
+				if (i2c_imx->sda_pin == -EPROBE_DEFER || i2c_imx->scl_pin == -EPROBE_DEFER)
+					return -EPROBE_DEFER;
+
+				if (gpio_is_valid(i2c_imx->sda_pin) && gpio_is_valid(i2c_imx->scl_pin)) {
+					dev_dbg(&pdev->dev, "got gpio settings\n");
+					gpio_good = true;
+				}
+			}
+		}
+	} else {
+		i2c_imx->pinctrl = NULL;
+	}
+
+	if (!gpio_good) {
+		i2c_imx->pinctrl = NULL;
+		i2c_imx->pins_default = NULL;
+		i2c_imx->pins_gpio = NULL;
+		i2c_imx->sda_pin = -1;
+		i2c_imx->scl_pin = -1;
+	}
 
 	if (of_id)
 		i2c_imx->hwdata = of_id->data;
