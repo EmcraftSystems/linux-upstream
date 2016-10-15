@@ -451,15 +451,38 @@ static inline void inline_map_write(struct map_info *map, const map_word datum, 
 
 static inline void inline_map_copy_from(struct map_info *map, void *to, unsigned long from, ssize_t len)
 {
-	if (map->cached)
+	if (map->cached) {
 		memcpy(to, (char *)map->cached + from, len);
-	else
+	} else {
+#if defined(memcpy_fromiow) && defined(memcpy_fromiol)
+		if (len & 1 || map_bankwidth_is_1(map))
+			memcpy_fromio(to, map->virt + from, len);
+		else if (map_bankwidth_is_2(map))
+			memcpy_fromiow(to, map->virt + from, len);
+		else if (map_bankwidth_is_4(map))
+			memcpy_fromiol(to, map->virt + from, len);
+		else
+			BUG();
+#else
 		memcpy_fromio(to, map->virt + from, len);
+#endif
+	}
 }
 
 static inline void inline_map_copy_to(struct map_info *map, unsigned long to, const void *from, ssize_t len)
 {
+#if defined(memcpy_toiow) && defined(memcpy_toiol)
+	if (len & 1 || map_bankwidth_is_1(map))
+		memcpy_toio(map->virt + to, from, len);
+	else if (map_bankwidth_is_2(map))
+		memcpy_toiow(map->virt + to, from, len);
+	else if (map_bankwidth_is_4(map))
+		memcpy_toiol(map->virt + to, from, len);
+	else
+		BUG();
+#else
 	memcpy_toio(map->virt + to, from, len);
+#endif
 }
 
 #ifdef CONFIG_MTD_COMPLEX_MAPPINGS
