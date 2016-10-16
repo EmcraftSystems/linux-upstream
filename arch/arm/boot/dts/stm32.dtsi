@@ -98,11 +98,22 @@
 		regulator-boot-on;
 	};
 
+	exti: interrupt-controller@40013c00 {
+		compatible = "st,stm32-exti", "syscon";
+		interrupt-controller;
+		#interrupt-cells = <2>;
+		interrupt-parent = <&nvic>;
+		reg = <0x40013C00 0x400>;
+		interrupts = <1>, <2>, <3>, <6>, <7>, <8>, <9>, <10>, <23>, <40>, <41>, <42>, <62>, <76>;
+	};
+
 	pin-controller {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		compatible = "st,stm32-pinctrl";
 		ranges = <0 0x40020000 0x3000>;
+		interrupt-parent = <&exti>;
+		st,syscfg = <&syscfg 0x8>;
 
 		gpioa: gpio@40020000 {
 			gpio-controller;
@@ -405,11 +416,6 @@
 		syscfg: syscon@40013800 {
 			compatible = "st,stm32-syscfg", "syscon";
 			reg = <0x40013800 0x24>;
-		};
-
-		exti: exti@40013C00 {
-			compatible = "st,stm32-exti", "syscon";
-			reg = <0x40013C00 0x400>;
 		};
 
 		spi_5: spi@40015000 {

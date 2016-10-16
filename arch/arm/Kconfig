@@ -1030,6 +1030,7 @@ config ARCH_STM32
 	select CLKSRC_STM32
 	select PINCTRL
 	select RESET_CONTROLLER
+	select STM32_EXTI
 	select NEED_MACH_MEMORY_H
 	select ARM_AMBA
 
