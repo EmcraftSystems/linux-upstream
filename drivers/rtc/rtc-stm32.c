@@ -35,6 +35,7 @@
 #include <linux/mfd/syscon.h>
 #include <linux/regmap.h>
 #include <linux/of_device.h>
+#include <linux/of_irq.h>
 #include <linux/clk.h>
 
 /******************************************************************************
@@ -218,8 +219,6 @@ struct stm32_rtc {
 	void					*private;
 
 	int	(*init)(struct stm32_rtc *rtc, struct device *dev);
-	void	(*ack_alarm)(struct stm32_rtc *rtc);
-	void	(*ack_wakeup)(struct stm32_rtc *rtc);
 };
 
 /*
@@ -227,8 +226,6 @@ struct stm32_rtc {
  */
 struct stm32_rtc_of_data {
 	int	(*init)(struct stm32_rtc *rtc, struct device *dev);
-	void	(*ack_alarm)(struct stm32_rtc *rtc);
-	void	(*ack_wakeup)(struct stm32_rtc *rtc);
 };
 
 /*
@@ -298,11 +295,8 @@ static irqreturn_t stm32_rtc_alarm_irq(int irq, void *dev_id)
 		events |= (RTC_UF | RTC_IRQF);
 	}
 
-	if (events) {
-		if (rtc->ack_alarm)
-			rtc->ack_alarm(rtc);
+	if (events)
 		rtc_update_irq(rtc->rtc_dev, 1, events);
-	}
 
 	spin_unlock(&rtc->lock);
 
@@ -329,9 +323,6 @@ static irqreturn_t stm32_rtc_wakeup_irq(int irq, void *dev_id)
 	stm32_rtc_write_enable(rtc, 1);
 	rtc->regs->isr &= ~STM32_RTC_ISR_WUTF_MSK;
 	stm32_rtc_write_enable(rtc, 0);
-
-	if (rtc->ack_wakeup)
-		rtc->ack_wakeup(rtc);
 
 	/* Pass periodic interrupt event to the kernel */
 	rtc_update_irq(rtc->rtc_dev, 1, RTC_PF | RTC_IRQF);
@@ -656,10 +647,13 @@ static struct rtc_class_ops stm32_rtc_ops = {
  */
 static int stm32_rtc_probe(struct platform_device *pdev)
 {
+	struct device_node *np = pdev->dev.of_node, *parent;
+	struct irq_domain *domain;
 	struct stm32_rtc *rtc;
 	struct device *dev = &pdev->dev;
 	const struct of_device_id *of_dev;
 	struct resource *r;
+	u32 irq;
 	int rv;
 
 	rtc = devm_kzalloc(dev, sizeof(*rtc), GFP_KERNEL);
@@ -673,8 +667,6 @@ static int stm32_rtc_probe(struct platform_device *pdev)
 	if (of_dev->data) {
 		const struct stm32_rtc_of_data *data = of_dev->data;
 		rtc->init = data->init;
-		rtc->ack_alarm = data->ack_alarm;
-		rtc->ack_wakeup = data->ack_wakeup;
 	}
 
 	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -706,29 +698,45 @@ static int stm32_rtc_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	/* Handle RTC alarm interrupts */
-	rtc->irq_alarm = platform_get_irq_byname(pdev, "alarm");
-	if (rtc->irq_alarm < 0) {
-		dev_err(dev, "Can't get alarm irq.\n");
-		rv = -EINVAL;
+	/* Map EXTI RTC IRQs */
+	parent = of_irq_find_parent(np);
+	if (!parent) {
+		printk("%s: no parent\n", __func__);
+		rv = -ENXIO;
 		goto err_reg;
 	}
-	rv = request_irq(rtc->irq_alarm, stm32_rtc_alarm_irq, 0, pdev->name, rtc);
-	if (unlikely(rv)) {
-		dev_err(dev, "Request alarm irq failed.\n");
+	domain = irq_find_host(parent);
+	if (!domain) {
+		printk("%s: no domain\n", __func__);
+		rv = -ENXIO;
 		goto err_reg;
 	}
 
-	/* Handle RTC wakeup interrupts */
-	rtc->irq_wakeup = platform_get_irq_byname(pdev, "wakeup");
-	if (rtc->irq_wakeup < 0) {
-		dev_err(dev, "Can't get wakeup irq.\n");
-		rv = -EINVAL;
+	of_property_read_u32(np, "exti-line-alarm", &irq);
+	rtc->irq_alarm = irq_create_mapping(domain, irq);
+	if (!(rtc->irq_alarm > 0)) {
+		printk("%s: map alarm irq err\n", __func__);
+		rv = -ENXIO;
 		goto err_reg;
 	}
-	rv = request_irq(rtc->irq_wakeup, stm32_rtc_wakeup_irq, 0, pdev->name, rtc);
-	if (unlikely(rv)) {
-		dev_err(dev, "Request wakeup irq failed.\n");
+	rv = request_irq(rtc->irq_alarm, stm32_rtc_alarm_irq,
+			 0, "RTC.alarm", rtc);
+	if (rv < 0) {
+		printk("%s: request irq alarm err\n", __func__);
+		goto err_reg;
+	}
+
+	of_property_read_u32(np, "exti-line-wakeup", &irq);
+	rtc->irq_wakeup = irq_create_mapping(domain, irq);
+	if (!(rtc->irq_wakeup > 0)) {
+		printk("%s: map wakeup irq err\n", __func__);
+		rv = -ENXIO;
+		goto err_alarm_irq;
+	}
+	rv = request_irq(rtc->irq_wakeup, stm32_rtc_wakeup_irq,
+			 0, "RTC.wakeup", rtc);
+	if (rv < 0) {
+		printk("%s: request irq alarm err\n", __func__);
 		goto err_alarm_irq;
 	}
 
@@ -846,24 +854,8 @@ out:
 	return rv;
 }
 
-static void stm32fx_rtc_ack_alarm(struct stm32_rtc *rtc)
-{
-	struct regmap *reg = rtc->private;
-
-	regmap_write(reg, STM32_EXTI_PR, STM32_EXTI_LINE_RTC_ALARM);
-}
-
-static void stm32fx_rtc_ack_wakeup(struct stm32_rtc *rtc)
-{
-	struct regmap *reg = rtc->private;
-
-	regmap_write(reg, STM32_EXTI_PR, STM32_EXTI_LINE_RTC_WAKEUP);
-}
-
 static const struct stm32_rtc_of_data stm32fx_rtc_data = {
 	.init		= stm32fx_rtc_init,
-	.ack_alarm	= stm32fx_rtc_ack_alarm,
-	.ack_wakeup	= stm32fx_rtc_ack_wakeup,
 };
 
 static const struct of_device_id stm32_rtc_match[] = {
