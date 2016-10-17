@@ -800,7 +800,7 @@ static struct platform_driver fb_driver = {
 	},
 	.probe = fb_probe,
 	.remove = fb_remove,
-	.remove = fb_remove,
+	.resume = fb_resume,
 	.suspend = fb_suspend,
 };
 

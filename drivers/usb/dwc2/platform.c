@@ -394,89 +394,6 @@ static int dwc2_driver_probe(struct platform_device *dev)
 	return retval;
 }
 
-/*
- * Read ULPI PHY register 'reg'.
- * Implementation is based on a non-documented PHYCR (+0x34) register, see the
- * STM32746G-Discovery/PWR_CurrentConsumption example in STM32Cube_FW_F7_V1.3.0
- */
-static unsigned int dwc2_ulpi_reg_read(struct dwc2_hsotg *hsotg,
-				       unsigned int reg)
-{
-	unsigned long val = 0, timeout = 100;
-
-	writel(GPVNDCTL_NEW | (reg << 16), hsotg->regs + GPVNDCTL);
-	val = readl(hsotg->regs + GPVNDCTL);
-	while (!(val & GPVNDCTL_S_DONE) && timeout--)
-		val = readl(hsotg->regs + GPVNDCTL);
-	val = readl(hsotg->regs + GPVNDCTL);
-
-	return val & GPVNDCTL_D07;
-}
-
-/*
- * Write UPLI PHY register 'reg'
- * Implementation is based on a non-documented PHYCR (+0x34) register, see the
- * STM32746G-Discovery/PWR_CurrentConsumption example in STM32Cube_FW_F7_V1.3.0
- */
-static unsigned int dwc2_ulpi_reg_write(struct dwc2_hsotg *hsotg,
-					unsigned int reg, unsigned int data)
-{
-	unsigned long val, timeout = 10;
-
-	writel(GPVNDCTL_NEW | GPVNDCTL_RW | (reg << 16) | (data & GPVNDCTL_D07),
-	       hsotg->regs + GPVNDCTL);
-
-	val = readl(hsotg->regs + GPVNDCTL);
-	while (!(val & GPVNDCTL_S_DONE) && timeout--)
-		val = readl(hsotg->regs + GPVNDCTL);
-	val = readl(hsotg->regs + GPVNDCTL);
-
-	return 0;
-}
-
-/*
- * Put ULPI PHY into low-power
- */
-static int dwc2_ulpi_suspend(struct dwc2_hsotg *hsotg)
-{
-	unsigned long i, val;
-	unsigned long ids[] = {
-		/* VID hi, VID lo, PID hi, PID lo */
-		0x24040400,	/* Microchip USB3300 PHY */
-	};
-
-	/*
-	 * Check if this is one of the PHYs supported
-	 */
-	for (i = 0, val = 0; i < 4; i++)
-		val |= dwc2_ulpi_reg_read(hsotg, i) << ((3 - i) << 3);
-
-	for (i = 0; i < ARRAY_SIZE(ids); i++) {
-		if (val == ids[i])
-			break;
-	}
-
-	if (i == ARRAY_SIZE(ids)) {
-		printk("%s: bad VID/PID %08lx\n", __func__, val);
-		return -EINVAL;
-	}
-
-	/*
-	 * Disable PullUp on STP in InterfaceControl reg to avoid
-	 * PHY wake-up when MCU goes stop/standby
-	 */
-	val = dwc2_ulpi_reg_read(hsotg, 0x07);
-	dwc2_ulpi_reg_write(hsotg, 0x07, val | 0x80);
-
-	/*
-	 * Set FunctionControl reg to enter LowPower mode
-	 */
-	val = dwc2_ulpi_reg_read(hsotg, 0x04);
-	dwc2_ulpi_reg_write(hsotg, 0x04, val & ~0x40);
-
-	return 0;
-}
-
 static int __maybe_unused dwc2_suspend(struct device *dev)
 {
 	struct dwc2_hsotg *dwc2 = dev_get_drvdata(dev);
@@ -487,12 +404,6 @@ static int __maybe_unused dwc2_suspend(struct device *dev)
 	} else {
 		if (dwc2->lx_state == DWC2_L0)
 			return 0;
-		if (dwc2->core_params->phy_type ==
-					DWC2_PHY_TYPE_PARAM_ULPI) {
-			ret = dwc2_ulpi_suspend(dwc2);
-			if (ret)
-				return ret;
-		}
 
 		phy_exit(dwc2->phy);
 		phy_power_off(dwc2->phy);

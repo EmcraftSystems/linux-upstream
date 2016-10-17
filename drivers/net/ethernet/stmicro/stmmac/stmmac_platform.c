@@ -29,6 +29,7 @@
 #include <linux/of_net.h>
 #include <linux/of_device.h>
 #include <linux/of_mdio.h>
+#include <linux/of_gpio.h>
 
 #include "stmmac.h"
 #include "stmmac_platform.h"
@@ -137,6 +138,9 @@ static int stmmac_probe_config_dt(struct platform_device *pdev,
 	/* Get max speed of operation from device tree */
 	if (of_property_read_u32(np, "max-speed", &plat->max_speed))
 		plat->max_speed = -1;
+
+	/* Get power control GPIO if present */
+	plat->pwr_gpio = of_get_named_gpio(np, "pwr-gpio", 0);
 
 	plat->bus_id = of_alias_get_id(np, "ethernet");
 	if (plat->bus_id < 0)
@@ -387,6 +391,9 @@ static int stmmac_pltfr_suspend(struct device *dev)
 	if (priv->plat->exit)
 		priv->plat->exit(pdev, priv->plat->bsp_priv);
 
+	if (priv->plat->pwr_gpio >= 0)
+		gpio_direction_output(priv->plat->pwr_gpio, 1);
+
 	return ret;
 }
 
@@ -402,6 +409,9 @@ static int stmmac_pltfr_resume(struct device *dev)
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
 	struct platform_device *pdev = to_platform_device(dev);
+
+	if (priv->plat->pwr_gpio >= 0)
+		gpio_direction_input(priv->plat->pwr_gpio);
 
 	if (priv->plat->init)
 		priv->plat->init(pdev, priv->plat->bsp_priv);

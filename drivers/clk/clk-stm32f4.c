@@ -23,7 +23,9 @@
 #include <linux/spinlock.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/syscore_ops.h>
 
+#define STM32F4_RCC_CR			0x00
 #define STM32F4_RCC_PLLCFGR		0x04
 #define STM32F4_RCC_CFGR		0x08
 
@@ -38,6 +40,16 @@
 #define STM32F4_RCC_AHB3ENR		0x38
 #define STM32F4_RCC_APB1ENR		0x40
 #define STM32F4_RCC_APB2ENR		0x44
+
+/*
+ * RCC registers bits and masks
+ */
+#define STM32_RCC_CR_HSE_BIT		16
+#define STM32_RCC_CR_PLL_BIT		24
+#define STM32_RCC_CR_I2S_BIT		26
+#define STM32_RCC_CR_SAI_BIT		28
+
+#define STM32_RCC_CFGR_SW_MSK		0x3
 
 #define STM32F4_RCC(x)			STM32F4_RCC_ ## x ## ENR, \
 					STM32F4_RCC_ ## x ## RSTR
@@ -330,6 +342,47 @@ static const struct clk_div_table apb_div_table[] = {
 	{ 0 },
 };
 
+static u32 saved_cr, saved_cfgr;
+
+static int stm32f4_clk_suspend(void)
+{
+	/*
+	 * Save RCC
+	 */
+	saved_cr = readl(base + STM32F4_RCC_CR);
+	saved_cfgr = readl(base + STM32F4_RCC_CFGR) & STM32_RCC_CFGR_SW_MSK;
+
+	return 0;
+}
+
+static void stm32f4_clk_resume(void)
+{
+	u32 pll[] = { STM32_RCC_CR_HSE_BIT, STM32_RCC_CR_PLL_BIT,
+		      STM32_RCC_CR_I2S_BIT, STM32_RCC_CR_SAI_BIT };
+	u32 val, i;
+
+	/*
+	 * Restore RCC PLLs. Assume here that RDY bit is next after the
+	 * appropriate ON bit in RCC CR register
+	 */
+	for (i = 0; i < ARRAY_SIZE(pll); i++) {
+		if (!(saved_cr & (1 << pll[i])))
+			continue;
+		val = readl(base + STM32F4_RCC_CR);
+		writel(val | 1 << pll[i], base + STM32F4_RCC_CR);
+		while (!(readl(base + STM32F4_RCC_CR) & (1 << (pll[i] + 1))));
+	}
+	val = readl(base + STM32F4_RCC_CFGR) & ~STM32_RCC_CFGR_SW_MSK;
+	writel(val | saved_cfgr, base + STM32F4_RCC_CFGR);
+	while ((readl(base + STM32F4_RCC_CFGR) & STM32_RCC_CFGR_SW_MSK) !=
+		saved_cfgr);
+}
+
+static struct syscore_ops stm32f4_clk_syscore_ops = {
+	.suspend = stm32f4_clk_suspend,
+	.resume = stm32f4_clk_resume,
+};
+
 static void __init stm32f4_rcc_init(struct device_node *np)
 {
 	const char *hse_clk;
@@ -395,6 +448,8 @@ static void __init stm32f4_rcc_init(struct device_node *np)
 	}
 
 	of_clk_add_provider(np, stm32f4_rcc_lookup_clk, NULL);
+	register_syscore_ops(&stm32f4_clk_syscore_ops);
+
 	return;
 fail:
 	iounmap(base);

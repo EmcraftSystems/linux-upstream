@@ -93,10 +93,19 @@ static int stm32_dwmac_init(struct platform_device *pdev, void *priv)
 	return 0;
 }
 
+static void stm32_dwmac_exit(struct platform_device *pdev, void *priv)
+{
+	struct stm32_dwmac_priv_data *dwmac = priv;
+
+	clk_disable_unprepare(dwmac->rx_clk);
+	clk_disable_unprepare(dwmac->tx_clk);
+}
+
 static const struct stmmac_of_data stm32_dwmac_data = {
 	.has_gmac = 1,
 	.setup = stm32_dwmac_setup,
 	.init = stm32_dwmac_init,
+	.exit = stm32_dwmac_exit,
 };
 
 static const struct of_device_id stm32_dwmac_match[] = {

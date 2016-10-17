@@ -11,6 +11,7 @@
 
 #include "stm32f7.dtsi"
 #include "stm32-som.dtsi"
+#include "dt-bindings/gpio/gpio.h"
 
 / {
 	model = "EmCraft Systems STM32F7-SOM board";
@@ -19,6 +20,12 @@
 	nor_flash {
 		compatible = "cfi-flash";
 		reg = <0x60000000 0x1000000>;
+	};
+
+	soc {
+		mac: ethernet@40028000 {
+			pwr-gpio = <&gpiog 6 GPIO_ACTIVE_HIGH>;
+		};
 	};
 
 	pin-controller {

@@ -24,6 +24,7 @@
 #include <linux/regmap.h>
 #include <linux/reset.h>
 #include <linux/clk.h>
+#include <dt-bindings/pinctrl/pinctrl-stm32.h>
 #include "core.h"
 
 #define STM32_GPIO_MODER	0x00
@@ -637,7 +638,8 @@ static int stm32_gpiolib_register_bank(struct stm32_pinctrl *info,
 	struct reset_control *rstc;
 	struct clk *clk;
 	int bank_num = of_alias_get_id(np, "gpio");
-	int err;
+	int err, i;
+	u32 val;
 
 	rstc = of_reset_control_get(np, NULL);
 	if (!IS_ERR(rstc))
@@ -649,6 +651,17 @@ static int stm32_gpiolib_register_bank(struct stm32_pinctrl *info,
 	bank->base = devm_ioremap_resource(dev, &res);
 	if (IS_ERR(bank->base))
 		return PTR_ERR(bank->base);
+
+	/*
+	 * Reconfigure INPUT (reset value) pins to ANALOG
+	 */
+	val = readl_relaxed(bank->base + STM32_GPIO_MODER);
+	for (i = 0; i < STM32_GPIO_PINS_PER_BANK; i++) {
+		if (val & GENMASK(i * 2 + 1, i * 2))
+			continue;
+		val |= GENMASK(i * 2 + 1, i * 2);
+	}
+	writel_relaxed(val, bank->base + STM32_GPIO_MODER);
 
 	bank->gpio_chip = stm32_gpio_template;
 	bank->gpio_chip.base = bank_num * STM32_GPIO_PINS_PER_BANK;
@@ -676,6 +689,40 @@ static int stm32_gpiolib_register_bank(struct stm32_pinctrl *info,
 
 	return 0;
 }
+
+/*
+ * This function fills the <moder> array with the modified values of MODERx
+ * registers: all <AF> settings are replaced with <ANALOG>. The resulted
+ * values (from <moder>) are then programmed to the MODERx registers by the
+ * power-management code (executed from internal RAM, after placing external
+ * RAM to the self-refresh mode), and allow to achieve the minimal power
+ * consumption.
+ */
+int stm32_pctrl_alt_to_analog(struct platform_device *pdev, u32 *moder, u32 len)
+{
+	struct stm32_pinctrl *info = platform_get_drvdata(pdev);
+	struct stm32_gpio_bank *bank;
+	u32 val;
+	int i, k;
+
+	if (len != info->nbanks)
+		return -EINVAL;
+
+	for (i = 0; i < info->nbanks; i++) {
+		bank = &info->banks[i];
+		val = readl_relaxed(bank->base + STM32_GPIO_MODER);
+		for (k = 0; k < STM32_GPIO_PINS_PER_BANK; k++) {
+			if ((val & GENMASK(k * 2 + 1, k * 2)) !=
+			    (ALT << (k * 2)))
+				continue;
+			val |= GENMASK(k * 2 + 1, k * 2);
+		}
+		moder[i] = val;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(stm32_pctrl_alt_to_analog);
 
 static int stm32_pctrl_dt_setup_irq(struct platform_device *pdev,
 			   struct stm32_pinctrl *pctl)
