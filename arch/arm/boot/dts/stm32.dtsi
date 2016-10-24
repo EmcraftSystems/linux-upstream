@@ -436,31 +436,11 @@
 		};
 
 		ltdc: ltdc@40016800 {
-			display = <&display0>;
 			compatible = "st,stm32f4-ltdc";
 			reg = <0x40016800 0x400>;
 			clocks = <&rcc 0 186>, <&rcc 0 182>;
 			clock-names = "ltdc", "sai1";
 			status = "disabled";
-
-			display0: display0 {
-				bits-per-pixel = <32>;
-				display-timings {
-					native-mode = <&timing0>;
-					timing0: timing0 {
-						clock-frequency = <9000000>;
-						hactive = <480>;
-						vactive = <272>;
-						hback-porch = <2>;
-						hfront-porch = <2>;
-						vback-porch = <2>;
-						vfront-porch = <2>;
-						hsync-len = <41>;
-						vsync-len = <10>;
-						vsync-active = <1>;
-					};
-				};
-			};
 		};
 
 		rst: reset@40023800 {
