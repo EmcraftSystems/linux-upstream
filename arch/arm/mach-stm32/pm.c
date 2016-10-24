@@ -36,6 +36,7 @@
 #include <linux/delay.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
+#include <linux/clk.h>
 
 #include <mach/gpio.h>
 
@@ -243,6 +244,7 @@ static struct platform_suspend_ops stm32_pm_ops = {
 static int __init stm32_pm_init(void)
 {
 	struct device_node *np;
+	struct clk *clk;
 	int ret;
 
 	/*
@@ -252,7 +254,7 @@ static int __init stm32_pm_init(void)
 	       &_esram_loc - &__sram_loc);
 
 	/*
-	 * Get PWR register base
+	 * Get PWR register base, and enable PWR module
 	 */
 	np = of_find_compatible_node(NULL, NULL, "st,stm32-pwr");
 	if (!np) {
@@ -260,6 +262,9 @@ static int __init stm32_pm_init(void)
 		ret = -EINVAL;
 		goto out;
 	}
+	clk = of_clk_get(np, 0);
+	if (clk)
+		clk_prepare_enable(clk);
 	pwr_regs = of_iomap(np, 0);
 	of_node_put(np);
 
