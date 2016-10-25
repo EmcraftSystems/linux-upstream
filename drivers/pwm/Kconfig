@@ -297,6 +297,16 @@ config PWM_STI
 	  To compile this driver as a module, choose M here: the module
 	  will be called pwm-sti.
 
+config PWM_STM32
+	tristate "STM32 PWM support"
+	depends on ARCH_STM32
+	depends on OF
+	help
+	  Generic PWM framework driver for STM32 SoCs.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-sti.
+
 config PWM_SUN4I
 	tristate "Allwinner PWM support"
 	depends on ARCH_SUNXI || COMPILE_TEST
