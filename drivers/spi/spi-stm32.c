@@ -126,15 +126,23 @@ struct stm32_of_data {
  * Description of the the STM32 SPI hardware registers
  */
 struct stm32_spi_regs {
-	unsigned int			cr1;
-	unsigned int			cr2;
-	unsigned int			sr;
-	unsigned int			dr;
-	unsigned int			crcpr;
-	unsigned int			rxcrcr;
-	unsigned int			txcrcr;
-	unsigned int			i2scfgr;
-	unsigned int			i2spr;
+	u16	cr1;
+	u16	align1;
+	u16	cr2;
+	u16	align2;
+	u16	sr;
+	u16	align3;
+	u16	dr;
+	u16	align4;
+	u16	crcpr;
+	u16	align5;
+	u16	rxcrcr;
+	u16	align6;
+	u16	txcrcr;
+	u16	align7;
+	u16	i2scfgr;
+	u16	align8;
+	u16	i2spr;
 };
 
 /*
@@ -460,13 +468,17 @@ static inline void stm32_spi_hw_rxfifo_get(struct spi_stm32 *c, unsigned int wb,
 					   void *rx, int i)
 {
 	int j;
-	unsigned long d = c->regs->dr;
 	unsigned char *p = (unsigned char *)rx;
 
-	if (p) {
-		for (j = wb - 1; j >= 0; j--) {
-			p[i * wb + j] = d & 0xFF;
-			d >>= 8;
+	if (wb == 1) {
+		u8 d = readb(&c->regs->dr);
+		if (p)
+			p[i] = d;
+	} else {
+		u16 d = readw(&c->regs->dr);
+		if (p) {
+			p[i*wb] = d & 0xFF;
+			p[i*wb + 1] = (d >> 8) & 0xFF;
 		}
 	}
 }
