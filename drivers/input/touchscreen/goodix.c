@@ -47,7 +47,6 @@ struct goodix_ts_data {
 	u16 id;
 	u16 version;
 	const char *cfg_name;
-	struct completion firmware_loading_complete;
 	unsigned long irq_flags;
 };
 
@@ -310,73 +309,6 @@ static int goodix_request_irq(struct goodix_ts_data *ts)
 	return devm_request_threaded_irq(&ts->client->dev, ts->client->irq,
 					 NULL, goodix_ts_irq_handler,
 					 ts->irq_flags, ts->client->name, ts);
-}
-
-/**
- * goodix_check_cfg - Checks if config fw is valid
- *
- * @ts: goodix_ts_data pointer
- * @cfg: firmware config data
- */
-static int goodix_check_cfg(struct goodix_ts_data *ts,
-			    const struct firmware *cfg)
-{
-	int i, raw_cfg_len;
-	u8 check_sum = 0;
-
-	if (cfg->size > GOODIX_CONFIG_MAX_LENGTH) {
-		dev_err(&ts->client->dev,
-			"The length of the config fw is not correct");
-		return -EINVAL;
-	}
-
-	raw_cfg_len = cfg->size - 2;
-	for (i = 0; i < raw_cfg_len; i++)
-		check_sum += cfg->data[i];
-	check_sum = (~check_sum) + 1;
-	if (check_sum != cfg->data[raw_cfg_len]) {
-		dev_err(&ts->client->dev,
-			"The checksum of the config fw is not correct");
-		return -EINVAL;
-	}
-
-	if (cfg->data[raw_cfg_len + 1] != 1) {
-		dev_err(&ts->client->dev,
-			"Config fw must have Config_Fresh register set");
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-/**
- * goodix_send_cfg - Write fw config to device
- *
- * @ts: goodix_ts_data pointer
- * @cfg: config firmware to write to device
- */
-static int goodix_send_cfg(struct goodix_ts_data *ts,
-			   const struct firmware *cfg)
-{
-	int error;
-
-	error = goodix_check_cfg(ts, cfg);
-	if (error)
-		return error;
-
-	error = goodix_i2c_write(ts->client, GOODIX_REG_CONFIG_DATA, cfg->data,
-				 cfg->size);
-	if (error) {
-		dev_err(&ts->client->dev, "Failed to write config data: %d",
-			error);
-		return error;
-	}
-	dev_dbg(&ts->client->dev, "Config sent successfully.");
-
-	/* Let the firmware reconfigure itself, so sleep for 10ms */
-	usleep_range(10000, 11000);
-
-	return 0;
 }
 
 static int goodix_int_sync(struct goodix_ts_data *ts)
@@ -698,33 +630,6 @@ static int goodix_configure_dev(struct goodix_ts_data *ts)
 	return 0;
 }
 
-/**
- * goodix_config_cb - Callback to finish device init
- *
- * @ts: our goodix_ts_data pointer
- *
- * request_firmware_wait callback that finishes
- * initialization of the device.
- */
-static void goodix_config_cb(const struct firmware *cfg, void *ctx)
-{
-	struct goodix_ts_data *ts = ctx;
-	int error;
-
-	if (cfg) {
-		/* send device configuration to the firmware */
-		error = goodix_send_cfg(ts, cfg);
-		if (error)
-			goto err_release_cfg;
-	}
-
-	goodix_configure_dev(ts);
-
-err_release_cfg:
-	release_firmware(cfg);
-	complete_all(&ts->firmware_loading_complete);
-}
-
 static int goodix_ts_probe(struct i2c_client *client,
 			   const struct i2c_device_id *id)
 {
@@ -744,7 +649,6 @@ static int goodix_ts_probe(struct i2c_client *client,
 
 	ts->client = client;
 	i2c_set_clientdata(client, ts);
-	init_completion(&ts->firmware_loading_complete);
 
 	error = goodix_get_gpio_config(ts);
 	if (error)
@@ -782,11 +686,6 @@ static int goodix_ts_probe(struct i2c_client *client,
 
 static int goodix_ts_remove(struct i2c_client *client)
 {
-	struct goodix_ts_data *ts = i2c_get_clientdata(client);
-
-	if (ts->gpiod_int && ts->gpiod_rst)
-		wait_for_completion(&ts->firmware_loading_complete);
-
 	return 0;
 }
 
@@ -799,8 +698,6 @@ static int __maybe_unused goodix_suspend(struct device *dev)
 	/* We need gpio pins to suspend/resume */
 	if (!ts->gpiod_int || !ts->gpiod_rst)
 		return 0;
-
-	wait_for_completion(&ts->firmware_loading_complete);
 
 	/* Free IRQ as IRQ pin is used as output in the suspend sequence */
 	goodix_free_irq(ts);
