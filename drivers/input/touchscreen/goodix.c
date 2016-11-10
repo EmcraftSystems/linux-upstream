@@ -339,7 +339,7 @@ static int goodix_reset(struct goodix_ts_data *ts)
 
 	/* begin select I2C slave addr */
 	if (ts->gpiod_rst) {
-		error = gpiod_direction_output(ts->gpiod_rst, 0);
+		error = gpiod_direction_output(ts->gpiod_rst, 1);
 		if (error)
 			return error;
 	}
@@ -354,7 +354,7 @@ static int goodix_reset(struct goodix_ts_data *ts)
 	usleep_range(100, 2000);		/* T3: > 100us */
 
 	if (ts->gpiod_rst) {
-		error = gpiod_direction_output(ts->gpiod_rst, 1);
+		error = gpiod_direction_output(ts->gpiod_rst, 0);
 		if (error)
 			return error;
 	}
@@ -696,7 +696,7 @@ static int __maybe_unused goodix_suspend(struct device *dev)
 	int error;
 
 	/* We need gpio pins to suspend/resume */
-	if (!ts->gpiod_int || !ts->gpiod_rst)
+	if (!ts->gpiod_int)
 		return 0;
 
 	/* Free IRQ as IRQ pin is used as output in the suspend sequence */
@@ -735,7 +735,7 @@ static int __maybe_unused goodix_resume(struct device *dev)
 	struct goodix_ts_data *ts = i2c_get_clientdata(client);
 	int error;
 
-	if (!ts->gpiod_int || !ts->gpiod_rst)
+	if (!ts->gpiod_int)
 		return 0;
 
 	/*
