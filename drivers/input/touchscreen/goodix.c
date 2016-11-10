@@ -79,7 +79,7 @@ struct goodix_ts_data {
 #define GTP_MAX_WIDTH		480
 #define GTP_INT_RISING		0
 #define GTP_INT_FALLING		1
-#define GTP_INT_TRIGGER		GTP_INT_RISING
+#define GTP_INT_TRIGGER		GTP_INT_FALLING
 
 static const unsigned long goodix_irq_flags[] = {
 	IRQ_TYPE_EDGE_RISING,
