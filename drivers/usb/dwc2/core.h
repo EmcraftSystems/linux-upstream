@@ -38,6 +38,7 @@
 #define __DWC2_CORE_H__
 
 #include <linux/phy/phy.h>
+#include <linux/gpio/consumer.h>
 #include <linux/regulator/consumer.h>
 #include <linux/usb/gadget.h>
 #include <linux/usb/otg.h>
@@ -718,6 +719,8 @@ struct dwc2_hsotg {
 	struct clk *clk;
 	struct clk *core_clk;
 	struct clk *ulpi_clk;
+
+	struct gpio_desc *pwr_en;
 
 	unsigned int queuing_high_bandwidth:1;
 	unsigned int srp_success:1;

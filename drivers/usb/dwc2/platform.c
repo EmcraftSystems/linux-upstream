@@ -265,6 +265,7 @@ static int dwc2_driver_probe(struct platform_device *dev)
 	struct resource *res;
 	struct phy *phy;
 	struct clk *clk;
+	struct gpio_desc *gpiod;
 	struct usb_phy *uphy;
 	int retval;
 	int irq;
@@ -330,6 +331,14 @@ static int dwc2_driver_probe(struct platform_device *dev)
 	if (!IS_ERR(clk)) {
 		hsotg->ulpi_clk = clk;
 		clk_prepare_enable(hsotg->ulpi_clk);
+	}
+
+	gpiod = devm_gpiod_get_optional(&dev->dev, "pwr-en", GPIOD_IN);
+	if (gpiod) {
+		hsotg->pwr_en = gpiod;
+		retval = gpiod_direction_output(hsotg->pwr_en, 1);
+		if (retval)
+			dev_err(&dev->dev, "set pwr-en GPIO error\n");
 	}
 
 	hsotg->dr_mode = of_usb_get_dr_mode(dev->dev.of_node);
