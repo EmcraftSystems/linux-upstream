@@ -333,15 +333,17 @@ static int dwc2_driver_probe(struct platform_device *dev)
 		clk_prepare_enable(hsotg->ulpi_clk);
 	}
 
-	gpiod = devm_gpiod_get_optional(&dev->dev, "pwr-en", GPIOD_IN);
-	if (gpiod) {
-		hsotg->pwr_en = gpiod;
-		retval = gpiod_direction_output(hsotg->pwr_en, 1);
-		if (retval)
-			dev_err(&dev->dev, "set pwr-en GPIO error\n");
-	}
-
 	hsotg->dr_mode = of_usb_get_dr_mode(dev->dev.of_node);
+
+	if (hsotg->dr_mode == USB_DR_MODE_HOST) {
+		gpiod = devm_gpiod_get_optional(&dev->dev, "pwr-en", GPIOD_IN);
+		if (gpiod) {
+			hsotg->pwr_en = gpiod;
+			retval = gpiod_direction_output(hsotg->pwr_en, 1);
+			if (retval)
+				dev_err(&dev->dev, "set pwr-en GPIO error\n");
+		}
+	}
 
 	/*
 	 * Attempt to find a generic PHY, then look for an old style
