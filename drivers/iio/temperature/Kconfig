@@ -23,4 +23,14 @@ config TMP006
 	  This driver can also be built as a module. If so, the module will
 	  be called tmp006.
 
+config PCT2075
+	tristate "NXP PCT2075 temperature sensor"
+	depends on I2C
+	help
+	  If you say yes here you get support for the NXP PCT2075
+	  temperature sensor.
+
+	  This driver can also be built as a module. If so, the module will
+	  be called pct2075.
+
 endmenu
