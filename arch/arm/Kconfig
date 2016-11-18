@@ -993,6 +993,7 @@ config ARCH_STM32F7
 	bool "STMicrolectronics STM32F7"
 	select ARCH_STM32
 	select CPU_CACHE_V7M
+	select CPU_CACHE_V7M_USR
 	select DMAMEM
 	help
 	  Support for STMicroelectronics STM32F7 processors.
