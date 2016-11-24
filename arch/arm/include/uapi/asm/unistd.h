@@ -424,6 +424,7 @@
 #define __ARM_NR_usr26			(__ARM_NR_BASE+3)
 #define __ARM_NR_usr32			(__ARM_NR_BASE+4)
 #define __ARM_NR_set_tls		(__ARM_NR_BASE+5)
+#define __ARM_NR_get_tls		(__ARM_NR_BASE+6)
 
 /*
  * The following syscalls are obsolete and no longer available for EABI.
