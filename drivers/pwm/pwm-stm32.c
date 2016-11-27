@@ -52,6 +52,7 @@
 #define CCMR_OCxM_EVE(v)	((v) << 8)
 
 #define CCER_CCxE(c)		((1 << 0) << ((c) << 2))
+#define CCER_CCxP(c)		((1 << 1) << ((c) << 2))
 
 /*
  * STM32 PWM descriptor
@@ -66,6 +67,8 @@ struct stm_pwm_chip {
 	int		tmr;
 	int		chan;
 	int		bits;
+
+	bool		high_on_init;
 };
 
 /*
@@ -123,10 +126,27 @@ static int stm_pwm_enable(struct pwm_chip *chip, struct pwm_device *pwm)
 {
 	struct stm_pwm_chip *pc = to_stm_pwm_chip(chip);
 	unsigned int val;
+	unsigned long f;
+
+	/*
+	 * Disable IRQs to get the min possible delay between CCER & CR1 regs
+	 * update
+	 */
+	local_irq_save(f);
+
+	if (pc->high_on_init) {
+		pc->high_on_init = false;
+
+		val = readl(pc->regs + TIM_CCER);
+		val &= ~CCER_CCxP(pc->chan);
+		writel(val, pc->regs + TIM_CCER);
+	}
 
 	val = readl(pc->regs + TIM_CR1);
 	val |= CR1_CEN;
 	writel(val, pc->regs + TIM_CR1);
+
+	local_irq_restore(f);
 
 	return 0;
 }
@@ -236,6 +256,13 @@ static int stm_pwm_probe(struct platform_device *pdev)
 		goto out;
 	}
 
+	/*
+	 * 'high-on-init' allows to initialize PWM with HIGH output until
+	 * first PWM run.
+	 */
+	pc->high_on_init = device_property_read_bool(pc->chip.dev,
+						     "high-on-init");
+
 	/* Detect whether the timer is 16 or 32 bits */
 	writel(~0U, pc->regs + TIM_ARR);
 	pc->bits = readl(pc->regs + TIM_ARR) == ~0U ? 32 : 16;
@@ -265,6 +292,8 @@ static int stm_pwm_probe(struct platform_device *pdev)
 
 	val = readl(pc->regs + TIM_CCER);
 	val |= CCER_CCxE(pc->chan);
+	if (pc->high_on_init)
+		val |= CCER_CCxP(pc->chan);
 	writel(val, pc->regs + TIM_CCER);
 
 	val = readl(pc->regs + TIM_CR1);
