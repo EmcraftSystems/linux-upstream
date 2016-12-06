@@ -955,7 +955,12 @@ int dwc2_core_init(struct dwc2_hsotg *hsotg, bool initial_setup)
 	otgctl &= ~GOTGCTL_OTGVER;
 	if (hsotg->core_params->otg_ver > 0)
 		otgctl |= GOTGCTL_OTGVER;
-	dwc2_writel(otgctl, hsotg->regs + GOTGCTL);
+
+	if (hsotg->core_params->vbvaloval > 0)
+		otgctl |= GOTGCTL_VBVALOVAL;
+	if (hsotg->core_params->vbvaloen > 0)
+		otgctl |= GOTGCTL_VBVALOEN;
+	writel(otgctl, hsotg->regs + GOTGCTL);
 	dev_dbg(hsotg->dev, "OTG VER PARAM: %d\n", hsotg->core_params->otg_ver);
 
 	/* Clear the SRP success bit for FS-I2c */
@@ -2166,6 +2171,26 @@ int dwc2_hc_continue_transfer(struct dwc2_hsotg *hsotg,
 		 */
 		u32 hcchar = dwc2_readl(hsotg->regs + HCCHAR(chan->hc_num));
 
+#if defined(CONFIG_ARCH_STM32)
+		/*
+		 * With USB FS we sometimes observe the permanent NAKs from
+		 * devices on our first BULK IN request. This actually hangs up
+		 * the system due to permanent BULK IN transaction rescheduling.
+		 * Count how much NAKs we got, and stop rescheduling if this
+		 * number exceed some value.
+		 */
+		u32 hcintmsk = readl(hsotg->regs + HCINTMSK(chan->hc_num));
+		u32 hcint = readl(hsotg->regs + HCINT(chan->hc_num));
+
+		if ((hcint & HCINTMSK_NAK) && !(hcintmsk & HCINTMSK_NAK) &&
+		    chan->ep_type == USB_ENDPOINT_XFER_BULK) {
+			writel(HCINTMSK_NAK, hsotg->regs + HCINT(chan->hc_num));
+			chan->naks++;
+			if (chan->naks >= 1000)
+				return 0;
+		}
+#endif
+
 		dwc2_hc_set_even_odd_frame(hsotg, chan, &hcchar);
 		hcchar |= HCCHAR_CHENA;
 		hcchar &= ~HCCHAR_CHDIS;
@@ -3209,6 +3234,16 @@ static void dwc2_set_param_ggpio(struct dwc2_hsotg *hsotg, int val)
 	hsotg->core_params->ggpio = val;
 }
 
+static void dwc2_set_param_vbvaloval(struct dwc2_hsotg *hsotg, int val)
+{
+	hsotg->core_params->vbvaloval = val;
+}
+
+static void dwc2_set_param_vbvaloen(struct dwc2_hsotg *hsotg, int val)
+{
+	hsotg->core_params->vbvaloen = val;
+}
+
 /*
  * This function is called during module intialization to pass module parameters
  * for the DWC_otg core.
@@ -3261,6 +3296,8 @@ void dwc2_set_parameters(struct dwc2_hsotg *hsotg,
 	dwc2_set_param_external_id_pin_ctl(hsotg, params->external_id_pin_ctl);
 	dwc2_set_param_hibernation(hsotg, params->hibernation);
 	dwc2_set_param_ggpio(hsotg, params->ggpio);
+	dwc2_set_param_vbvaloval(hsotg, params->vbvaloval);
+	dwc2_set_param_vbvaloen(hsotg, params->vbvaloen);
 }
 
 /*

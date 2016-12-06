@@ -32,6 +32,11 @@
 #define PTRACE_GETHBPREGS	29
 #define PTRACE_SETHBPREGS	30
 
+#define PTRACE_GETFDPIC		31 /* get the ELF fdpic loadmap address */
+
+#define PTRACE_GETFDPIC_EXEC	0 /* [addr] request the executable loadmap */
+#define PTRACE_GETFDPIC_INTERP	1 /* [addr] request the interpreter loadmap */
+
 /*
  * PSR bits
  * Note on V7M there is no mode contained in the PSR

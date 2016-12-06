@@ -35,7 +35,7 @@
 #include <linux/elf-fdpic.h>
 #include <linux/elfcore.h>
 #include <linux/coredump.h>
-#include <linux/dax.h>
+#include <linux/backing-dev.h>
 
 #include <asm/uaccess.h>
 #include <asm/param.h>
@@ -347,11 +347,8 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 	/* there's now no turning back... the old userspace image is dead,
 	 * defunct, deceased, etc.
 	 */
-	if (elf_check_fdpic(&exec_params.hdr))
-		set_personality(PER_LINUX_FDPIC);
-	else
-		set_personality(PER_LINUX);
-	if (elf_read_implies_exec(&exec_params.hdr, executable_stack))
+	set_personality(PER_LINUX_FDPIC);
+	if (elf_read_implies_exec(exec_params.hdr, executable_stack))
 		current->personality |= READ_IMPLIES_EXEC;
 
 	setup_new_exec(bprm);
@@ -458,8 +455,13 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 
 	/* everything is now ready... get the userspace context ready to roll */
 	entryaddr = interp_params.entry_addr ?: exec_params.entry_addr;
+
+	kdebug("start thread: entry @%08x, stack @%08x\n",
+	       entryaddr, current->mm->start_stack);
+
 	start_thread(regs, entryaddr, current->mm->start_stack);
 
+	kdebug("thread started\n");
 	retval = 0;
 
 error:
@@ -472,6 +474,7 @@ error:
 	kfree(exec_params.loadmap);
 	kfree(interp_params.phdrs);
 	kfree(interp_params.loadmap);
+	kdebug("%s: exit\n", __func__);
 	return retval;
 }
 
@@ -911,7 +914,7 @@ static int elf_fdpic_map_file(struct elf_fdpic_params *params,
 	}
 #endif
 
-	kdebug("Mapped Object [%s]:", what);
+	kdebug("Mapped Object [%s](%s):", what, current->comm);
 	kdebug("- elfhdr   : %lx", params->elfhdr_addr);
 	kdebug("- entry    : %lx", params->entry_addr);
 	kdebug("- PHDR[]   : %lx", params->ph_addr);
@@ -1057,10 +1060,24 @@ static int elf_fdpic_map_file_by_direct_mmap(struct elf_fdpic_params *params,
 
 		/* determine the mapping parameters */
 		if (phdr->p_flags & PF_R) prot |= PROT_READ;
-		if (phdr->p_flags & PF_W) prot |= PROT_WRITE;
+		flags = MAP_PRIVATE;
+		if (phdr->p_flags & PF_W) {
+			prot |= PROT_WRITE;
+		} else {
+			/*
+			 * A trick to make the kernel on NOMMU architectures
+			 * mmap r/o sections in ramfs rather than copy them
+			 * (the NOMMU mm doesn't allow sharing of
+			 * private mappings)
+			 */
+			if (file->f_op->mmap_capabilities &&
+			    (file->f_op->mmap_capabilities(file) &
+			     NOMMU_MAP_DIRECT))
+				flags = MAP_SHARED;
+		}
 		if (phdr->p_flags & PF_X) prot |= PROT_EXEC;
 
-		flags = MAP_PRIVATE | MAP_DENYWRITE;
+		flags |= MAP_DENYWRITE;
 		if (params->flags & ELF_FDPIC_FLAG_EXECUTABLE)
 			flags |= MAP_EXECUTABLE;
 

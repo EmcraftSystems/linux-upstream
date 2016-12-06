@@ -52,7 +52,7 @@
 
 /*keys reported to input device
 --capacitive--
-keypad: 
+keypad:
 	crtouch_btn_0 = KEY_A
 	crtouch_btn_1 = KEY_B
 	crtouch_btn_2 = KEY_C
@@ -68,7 +68,7 @@ slide:
 
 /*status registers*/
 #define STATUS_ERROR				0x00
-#define STATUS_REGISTER_1 			0x01 
+#define STATUS_REGISTER_1 			0x01
 #define STATUS_REGISTER_2 			0x02
 #define X_COORDINATE_MSB 			0x03
 #define X_COORDINATE_LSB 			0x04
@@ -104,12 +104,12 @@ slide:
 #define E1_INSTANT_DELTA 			0x2B
 #define E2_INSTANT_DELTA 			0x2C
 #define E3_INSTANT_DELTA 			0x2D
-#define DYNAMIC_STATUS				0x2E 
-#define STATIC_STATUS				0x2F  
+#define DYNAMIC_STATUS				0x2E
+#define STATIC_STATUS				0x2F
 
 /*configuration registers*/
 #define CAPACITIVE_ELECTRODES_FIFO		0x30
-#define CONFIGURATION 				0x40 
+#define CONFIGURATION 				0x40
 #define TRIGGER_EVENTS				0x41
 #define FIFO_SETUP				0x42
 #define SAMPLING_X_Y				0x43
@@ -170,10 +170,10 @@ slide:
 #define MASK_DYNAMIC_FLAG			0x80
 #define MASK_DYNAMIC_DIRECTION			0x40
 #define MASK_DYNAMIC_DISPLACEMENT		0x03
-#define MASK_DYNAMIC_DISPLACEMENT_BTN0		0x00 
-#define MASK_DYNAMIC_DISPLACEMENT_BTN1		0x01 
-#define MASK_DYNAMIC_DISPLACEMENT_BTN2		0x02  
-#define MASK_DYNAMIC_DISPLACEMENT_BTN3		0x03  
+#define MASK_DYNAMIC_DISPLACEMENT_BTN0		0x00
+#define MASK_DYNAMIC_DISPLACEMENT_BTN1		0x01
+#define MASK_DYNAMIC_DISPLACEMENT_BTN2		0x02
+#define MASK_DYNAMIC_DISPLACEMENT_BTN3		0x03
 
 #define SHUTDOWN_CRICS 				0x01
 #define START_CALIBRATION 			0x40
@@ -215,6 +215,7 @@ struct crtouch_data {
 	int xmax;
 	int ymax;
 	bool status_pressed;
+	struct gpio_desc *wakeup_gpio;
 };
 
 void report_single_touch(struct crtouch_data *crtouch, int x, int y)
@@ -493,6 +494,14 @@ static int crtouch_probe(struct i2c_client *client,
 		dev_dbg(&client->dev, "Configured to poll every %d ms\n", crtouch->polling_period);
 	}
 
+	crtouch->wakeup_gpio = devm_gpiod_get_optional(&client->dev,
+							 "wakeup", GPIOD_OUT_HIGH);
+	if (IS_ERR(crtouch->wakeup_gpio)) {
+		dev_info(&client->dev, "Operating without wakeup gpio: %li\n",
+			 PTR_ERR(crtouch->wakeup_gpio));
+		crtouch->wakeup_gpio = NULL;
+	}
+
 	/*clean interrupt pin*/
 	i2c_smbus_read_byte_data(client, STATUS_REGISTER_1);
 
@@ -514,6 +523,14 @@ static int crtouch_resume(struct device *dev)
 {
 	struct crtouch_data *crtouch = dev_get_drvdata(dev);
 	struct i2c_client *client = crtouch->client;
+
+	if (crtouch->wakeup_gpio) {
+		/* The way to come out of Shutdown mode is to */
+		/* asserting the wakeup signal for more than 10 usecs. */
+		gpiod_set_value_cansleep(crtouch->wakeup_gpio, 0);
+		udelay(11);
+		gpiod_set_value_cansleep(crtouch->wakeup_gpio, 1);
+	}
 
 	if (client->irq) {
 		if (device_may_wakeup(&client->dev))

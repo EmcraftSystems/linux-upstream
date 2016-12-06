@@ -151,8 +151,7 @@ static const struct dwc2_core_params params_rk3066 = {
 };
 
 /*
- * STM32 USB HS has ~4KB FIFO, that means a total
- * of 1012 words. No periodic for now.
+ * STM32 USB HS has ~4KB FIFO. No periodic for now.
  */
 static const struct dwc2_core_params params_stm32_hs = {
 	.otg_cap			=  2, /* non-HNP/non-SRP */
@@ -162,8 +161,13 @@ static const struct dwc2_core_params params_stm32_hs = {
 	.speed				= -1,
 	.enable_dynamic_fifo		= -1,
 	.en_multiple_tx_fifo		= -1,
+#if defined(CONFIG_ARCH_STM32F7)
+	.host_rx_fifo_size		=  506,
+	.host_nperio_tx_fifo_size	=  500,
+#else
 	.host_rx_fifo_size		=  506,
 	.host_nperio_tx_fifo_size	=  506,
+#endif
 	.host_perio_tx_fifo_size	=  0,
 	.max_transfer_size		= -1,
 	.max_packet_count		= -1,
@@ -223,6 +227,15 @@ static const struct dwc2_core_params params_stm32_fs = {
 	.uframe_sched			= -1,
 	.external_id_pin_ctl		= -1,
 	.hibernation			= -1,
+
+	/*
+	 * USB FS on STM32F7 has additional controls to override Vbus validity
+	 * signalling, which have to be set to avoid 'overcurrent change' events
+	 */
+#if defined(CONFIG_ARCH_STM32F7)
+	.vbvaloval			=  1,
+	.vbvaloen			=  1,
+#endif
 
 	/*
 	 * GCCFG: NOVBUSSENS | PWRDWN
@@ -540,6 +553,8 @@ static int dwc2_driver_probe(struct platform_device *dev)
 	struct dwc2_hsotg *hsotg;
 	struct resource *res;
 	struct clk *clk;
+	struct gpio_desc *gpiod;
+	struct usb_phy *uphy;
 	int retval;
 
 	match = of_match_device(dwc2_of_match_table, &dev->dev);
@@ -593,7 +608,41 @@ static int dwc2_driver_probe(struct platform_device *dev)
 		clk_prepare_enable(hsotg->ulpi_clk);
 	}
 
-	retval = dwc2_lowlevel_hw_init(hsotg);
+	hsotg->dr_mode = of_usb_get_dr_mode(dev->dev.of_node);
+
+	if (hsotg->dr_mode == USB_DR_MODE_HOST) {
+		gpiod = devm_gpiod_get_optional(&dev->dev, "pwr-en", GPIOD_IN);
+		if (gpiod) {
+			hsotg->pwr_en = gpiod;
+			retval = gpiod_direction_output(hsotg->pwr_en, 1);
+			if (retval)
+				dev_err(&dev->dev, "set pwr-en GPIO error\n");
+		}
+	}
+
+	/*
+	 * Attempt to find a generic PHY, then look for an old style
+	 * USB PHY
+	 */
+	phy = devm_phy_get(&dev->dev, "usb2-phy");
+	if (IS_ERR(phy)) {
+		hsotg->phy = NULL;
+		uphy = devm_usb_get_phy(&dev->dev, USB_PHY_TYPE_USB2);
+		if (IS_ERR(uphy))
+			hsotg->uphy = NULL;
+		else
+			hsotg->uphy = uphy;
+	} else {
+		hsotg->phy = phy;
+		phy_power_on(hsotg->phy);
+		phy_init(hsotg->phy);
+	}
+
+	spin_lock_init(&hsotg->lock);
+	mutex_init(&hsotg->init_mutex);
+
+	/* Detect config values from hardware */
+	retval = dwc2_get_hwparams(hsotg);
 	if (retval)
 		return retval;
 
@@ -676,89 +725,6 @@ error:
 	return retval;
 }
 
-/*
- * Read ULPI PHY register 'reg'.
- * Implementation is based on a non-documented PHYCR (+0x34) register, see the
- * STM32746G-Discovery/PWR_CurrentConsumption example in STM32Cube_FW_F7_V1.3.0
- */
-static unsigned int dwc2_ulpi_reg_read(struct dwc2_hsotg *hsotg,
-				       unsigned int reg)
-{
-	unsigned long val = 0, timeout = 100;
-
-	writel(GPVNDCTL_NEW | (reg << 16), hsotg->regs + GPVNDCTL);
-	val = readl(hsotg->regs + GPVNDCTL);
-	while (!(val & GPVNDCTL_S_DONE) && timeout--)
-		val = readl(hsotg->regs + GPVNDCTL);
-	val = readl(hsotg->regs + GPVNDCTL);
-
-	return val & GPVNDCTL_D07;
-}
-
-/*
- * Write UPLI PHY register 'reg'
- * Implementation is based on a non-documented PHYCR (+0x34) register, see the
- * STM32746G-Discovery/PWR_CurrentConsumption example in STM32Cube_FW_F7_V1.3.0
- */
-static unsigned int dwc2_ulpi_reg_write(struct dwc2_hsotg *hsotg,
-					unsigned int reg, unsigned int data)
-{
-	unsigned long val, timeout = 10;
-
-	writel(GPVNDCTL_NEW | GPVNDCTL_RW | (reg << 16) | (data & GPVNDCTL_D07),
-	       hsotg->regs + GPVNDCTL);
-
-	val = readl(hsotg->regs + GPVNDCTL);
-	while (!(val & GPVNDCTL_S_DONE) && timeout--)
-		val = readl(hsotg->regs + GPVNDCTL);
-	val = readl(hsotg->regs + GPVNDCTL);
-
-	return 0;
-}
-
-/*
- * Put ULPI PHY into low-power
- */
-static int dwc2_ulpi_suspend(struct dwc2_hsotg *hsotg)
-{
-	unsigned long i, val;
-	unsigned long ids[] = {
-		/* VID hi, VID lo, PID hi, PID lo */
-		0x24040400,	/* Microchip USB3300 PHY */
-	};
-
-	/*
-	 * Check if this is one of the PHYs supported
-	 */
-	for (i = 0, val = 0; i < 4; i++)
-		val |= dwc2_ulpi_reg_read(hsotg, i) << ((3 - i) << 3);
-
-	for (i = 0; i < ARRAY_SIZE(ids); i++) {
-		if (val == ids[i])
-			break;
-	}
-
-	if (i == ARRAY_SIZE(ids)) {
-		printk("%s: bad VID/PID %08lx\n", __func__, val);
-		return -EINVAL;
-	}
-
-	/*
-	 * Disable PullUp on STP in InterfaceControl reg to avoid
-	 * PHY wake-up when MCU goes stop/standby
-	 */
-	val = dwc2_ulpi_reg_read(hsotg, 0x07);
-	dwc2_ulpi_reg_write(hsotg, 0x07, val | 0x80);
-
-	/*
-	 * Set FunctionControl reg to enter LowPower mode
-	 */
-	val = dwc2_ulpi_reg_read(hsotg, 0x04);
-	dwc2_ulpi_reg_write(hsotg, 0x04, val & ~0x40);
-
-	return 0;
-}
-
 static int __maybe_unused dwc2_suspend(struct device *dev)
 {
 	struct dwc2_hsotg *dwc2 = dev_get_drvdata(dev);
@@ -769,12 +735,6 @@ static int __maybe_unused dwc2_suspend(struct device *dev)
 	} else {
 		if (dwc2->lx_state == DWC2_L0)
 			return 0;
-		if (dwc2->core_params->phy_type ==
-					DWC2_PHY_TYPE_PARAM_ULPI) {
-			ret = dwc2_ulpi_suspend(dwc2);
-			if (ret)
-				return ret;
-		}
 
 		phy_exit(dwc2->phy);
 		phy_power_off(dwc2->phy);

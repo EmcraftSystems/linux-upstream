@@ -398,8 +398,6 @@ static int stm32_startup(struct uart_port *port)
 	if (ret)
 		return ret;
 
-	tasklet_enable(&stm32_port->tasklet);
-
 	/*
 	 * Initialize DMA (if necessary)
 	 */
@@ -435,6 +433,8 @@ static int stm32_startup(struct uart_port *port)
 
 	stm32_set_bits(port, USART_CR1, cr1);
 	stm32_set_bits(port, USART_CR3, cr3);
+
+	tasklet_enable(&stm32_port->tasklet);
 
 	return 0;
 }
@@ -704,8 +704,9 @@ static int stm32_serial_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	stm32port->rx_ring.buf = kmalloc(sizeof(struct stm32_uart_char) *
-					 STM32_SERIAL_RINGSIZE, GFP_KERNEL);
+	stm32port->rx_ring.buf = dma_alloc_coherent(&pdev->dev,
+			sizeof(struct stm32_uart_char) * STM32_SERIAL_RINGSIZE,
+			&stm32port->rx_ring_phy, GFP_KERNEL);
 	if (!stm32port->rx_ring.buf)
 		return -ENOMEM;
 
@@ -728,7 +729,9 @@ static int stm32_serial_remove(struct platform_device *pdev)
 
 	ret = uart_remove_one_port(&stm32_usart_driver, port);
 
-	kfree(stm32_port->rx_ring.buf);
+	dma_free_coherent(&pdev->dev,
+		sizeof(struct stm32_uart_char) * STM32_SERIAL_RINGSIZE,
+		stm32_port->rx_ring.buf, stm32_port->rx_ring_phy);
 
 	return ret;
 }

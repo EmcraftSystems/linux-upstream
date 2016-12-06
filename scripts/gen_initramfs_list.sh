@@ -273,6 +273,62 @@ process_ifnarch() {
 	rm -f ${temp_file}
 }
 
+# Process 'ifboard' commands. These commands have the following format:
+#
+# ifboard <brd> <str>, where:
+# - <brd> specifies the board setup (eg. EXT-BSB, etc)
+# - <str> is a normal file, dir, node, etc string.
+#
+# If an <brd> in an 'ifboard' command is the same as the value of
+# the env var ${BRD}, we put the corresponding <str> into
+# the resultant file (i.e. the corresponding file, dir, node, etc
+# gets put into the resultant file system). If not - we remove
+# that line from the resultant file (i.e. the corresponding
+# file, dir, node, etc is not copied into the file system).
+process_ifboard() {
+	local temp_file="$(mktemp ${TMPDIR:-/tmp}/cpiolist.XXXXXX)"
+	cat "$1" | while read word brd str ; do
+		if [ "$word" = "ifboard" ]; then
+			if [ "$brd" = "${BRD}" ]; then
+				echo "$str" >> ${temp_file}
+			fi
+		else
+			echo "$word $brd $str" >> ${temp_file}
+		fi
+	done
+
+	cp ${temp_file} ${cpio_list}
+	rm -f ${temp_file}
+}
+
+# Process 'ifnboard' commands. These commands have the following format:
+#
+# ifnboard <brd> <str>, where:
+# - <brd> specifies the board setup (eg. EXT-BSB, etc)
+# - <str> is a normal file, dir, node, etc string.
+#
+# If an <brd> in an 'ifnboard' command is different from the value of
+# the env var ${BRD}, we put the corresponding <str> into
+# the resultant file (i.e. the corresponding file, dir, node, etc
+# gets put into the resultant file system). If they are the same - we remove
+# that line from the resultant file (i.e. the corresponding
+# file, dir, node, etc is not copied into the file system).
+process_ifnboard() {
+	local temp_file="$(mktemp ${TMPDIR:-/tmp}/cpiolist.XXXXXX)"
+	cat "$1" | while read word brd str ; do
+		if [ "$word" = "ifnboard" ]; then
+			if [ "$brd" != "${BRD}" ]; then
+				echo "$str" >> ${temp_file}
+			fi
+		else
+			echo "$word $brd $str" >> ${temp_file}
+		fi
+	done
+
+	cp ${temp_file} ${cpio_list}
+	rm -f ${temp_file}
+}
+
 prog=$0
 root_uid=0
 root_gid=0
@@ -363,10 +419,11 @@ if [ ! -z ${output_file} ]; then
 			fi
 		fi
 		cpio_tfile="$(mktemp ${TMPDIR:-/tmp}/cpiofile.XXXXXX)"
-		# Process the 'ifarch' command
+		# Process the 'ifXXX' command
 		process_ifarch ${cpio_list}
-		# Process the 'ifnarch' command
 		process_ifnarch ${cpio_list}
+		process_ifboard ${cpio_list}
+		process_ifnboard ${cpio_list}
 		usr/gen_init_cpio $timestamp ${cpio_list} > ${cpio_tfile}
 	else
 		cpio_tfile=${cpio_file}

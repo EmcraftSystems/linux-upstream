@@ -15,8 +15,6 @@
 	};
 
 	nor_flash {
-		compatible = "stm32f4,nor";
-		reg = <0x64000000 0x1000000>;
 		probe-type = "CFI";
 		linux,mtd-name = "physmap-flash.0";
 		bank-width = <2>;
@@ -185,6 +183,16 @@
 					tx = <&gpiob 6 ALT7
 						NO_PULL PUSH_PULL LOW_SPEED>;
 					rx = <&gpioa 10 ALT7
+						NO_PULL PUSH_PULL LOW_SPEED>;
+				};
+			};
+		};
+		usart6 {
+			pinctrl_usart6: usart6-0 {
+				st,pins {
+					tx = <&gpioc 6 ALT8
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					rx = <&gpioc 7 ALT8
 						NO_PULL PUSH_PULL LOW_SPEED>;
 				};
 			};

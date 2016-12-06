@@ -614,8 +614,13 @@ static int stm_alloc_chan_resources(struct dma_chan *chan)
 static void stm_free_chan_resources(struct dma_chan *chan)
 {
 	struct stm32_dma_chan	*stm_chan = to_stm_dma_chan(chan);
+	struct stm32_dma_slave	*stm_slave = chan->private;
 
 	BUG_ON(stm_chan_is_enabled(stm_chan));
+	BUG_ON(!stm_slave);
+
+	kfree(stm_slave);
+	chan->private = NULL;
 }
 
 static bool stm_dma_filter(struct dma_chan *chan, void *slave)
@@ -651,7 +656,7 @@ static struct dma_chan *stm_dma_xlate(struct of_phandle_args *dma_spec,
 	dma_cap_zero(mask);
 	dma_cap_set(DMA_SLAVE, mask);
 
-	stm_slave = devm_kzalloc(&pdev->dev, sizeof(*stm_slave), GFP_KERNEL);
+	stm_slave = kzalloc(sizeof(*stm_slave), GFP_KERNEL);
 	if (!stm_slave)
 		return NULL;
 

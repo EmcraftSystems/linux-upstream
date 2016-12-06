@@ -403,7 +403,8 @@ config CPU_V7M
 	bool
 	select CPU_32v7M
 	select CPU_ABRT_NOMMU
-	select CPU_CACHE_NOP
+	select CPU_CACHE_NOP if !CPU_CACHE_V7M
+	select CPU_CACHE_VIPT if CPU_CACHE_V7M
 	select CPU_PABRT_LEGACY
 	select CPU_THUMBONLY
 
@@ -452,6 +453,7 @@ config CPU_32v7
 
 config CPU_32v7M
 	bool
+	select TLS_REG_EMUL
 
 # The abort model
 config CPU_ABRT_NOMMU
@@ -501,6 +503,12 @@ config CPU_CACHE_V6
 	bool
 
 config CPU_CACHE_V7
+	bool
+
+config CPU_CACHE_V7M
+	bool
+
+config CPU_CACHE_V7M_USR
 	bool
 
 config CPU_CACHE_NOP

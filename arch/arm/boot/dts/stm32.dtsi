@@ -98,11 +98,22 @@
 		regulator-boot-on;
 	};
 
+	exti: interrupt-controller@40013c00 {
+		compatible = "st,stm32-exti", "syscon";
+		interrupt-controller;
+		#interrupt-cells = <2>;
+		interrupt-parent = <&nvic>;
+		reg = <0x40013C00 0x400>;
+		interrupts = <1>, <2>, <3>, <6>, <7>, <8>, <9>, <10>, <23>, <40>, <41>, <42>, <62>, <76>;
+	};
+
 	pin-controller {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		compatible = "st,stm32-pinctrl";
 		ranges = <0 0x40020000 0x3000>;
+		interrupt-parent = <&exti>;
+		st,syscfg = <&syscfg 0x8>;
 
 		gpioa: gpio@40020000 {
 			gpio-controller;
@@ -246,26 +257,18 @@
 			status = "disabled";
 		};
 
-		usart2: serial@40004400 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
-			reg = <0x40004400 0x400>;
-			interrupts = <38>;
-			clocks = <&rcc 0 145>;
-			status = "disabled";
-		};
-
 		rtc: rtc@40002800 {
 			compatible = "st,stm32f4-rtc";
 			reg = <0x40002800 0x400>;
-			interrupts = <3>, <41>;
-			interrupt-names = "wakeup", "alarm";
+			interrupt-parent = <&exti>;
+			exti-line-wakeup = <22>;
+			exti-line-alarm = <17>;
 			status = "disabled";
 		};
 
 		spi_2: spi@40003800 {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "st,stm32f4-spi";
 			reg = <0x40003800 0x400>;
 			interrupts = <36>;
 			clocks = <&rcc 0 142>;
@@ -274,7 +277,6 @@
 		};
 
 		spi_3: spi@40003c00 {
-			compatible = "st,stm32f4-spi";
 			reg = <0x40003c00 0x400>;
 			interrupts = <51>;
 			clocks = <&rcc 0 143>;
@@ -282,8 +284,14 @@
 			status = "disabled";
 		};
 
+		usart2: serial@40004400 {
+			reg = <0x40004400 0x400>;
+			interrupts = <38>;
+			clocks = <&rcc 0 145>;
+			status = "disabled";
+		};
+
 		usart3: serial@40004800 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
 			reg = <0x40004800 0x400>;
 			interrupts = <39>;
 			clocks = <&rcc 0 146>;
@@ -291,7 +299,6 @@
 		};
 
 		usart4: serial@40004c00 {
-			compatible = "st,stm32f4-uart";
 			reg = <0x40004c00 0x400>;
 			interrupts = <52>;
 			clocks = <&rcc 0 147>;
@@ -299,7 +306,6 @@
 		};
 
 		usart5: serial@40005000 {
-			compatible = "st,stm32f4-uart";
 			reg = <0x40005000 0x400>;
 			interrupts = <53>;
 			clocks = <&rcc 0 148>;
@@ -307,11 +313,13 @@
 		};
 
 		i2c_1: i2c@40005400 {
-			compatible = "st,stm32-i2c";
+			compatible = "st,stm32-i2c", "st,stm32f7-i2c";
 			reg = <0x40005400 0x400>;
 			interrupts = <31 32>;
 			clocks = <&rcc 0 149>;
 			resets = <&rst STM32F4_APB1_RESET(I2C1)>;
+			dmas = <&dma1 5 1>, <&dma1 6 1>;
+			dma-names = "rx", "tx";
 			status = "disabled";
 		};
 
@@ -340,7 +348,6 @@
 		};
 
 		usart7: serial@40007800 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
 			reg = <0x40007800 0x400>;
 			interrupts = <82>;
 			dmas = <&dma1 3 5>, <&dma1 1 5>;
@@ -350,7 +357,6 @@
 		};
 
 		usart8: serial@40007c00 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
 			reg = <0x40007c00 0x400>;
 			interrupts = <83>;
 			clocks = <&rcc 0 159>;
@@ -358,7 +364,6 @@
 		};
 
 		usart1: serial@40011000 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
 			reg = <0x40011000 0x400>;
 			interrupts = <37>;
 			clocks = <&rcc 0 164>;
@@ -368,10 +373,11 @@
 		};
 
 		usart6: serial@40011400 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
 			reg = <0x40011400 0x400>;
 			interrupts = <71>;
 			clocks = <&rcc 0 165>;
+			dmas = <&dma2 2 5>, <&dma2 6 5>;
+			dma-names = "rx", "tx";
 			status = "disabled";
 		};
 
@@ -393,7 +399,6 @@
 		};
 
 		spi_1: spi@40013000 {
-			compatible = "st,stm32f4-spi";
 			reg = <0x40013000 0x400>;
 			interrupts = <35>;
 			clocks = <&rcc 0 172>;
@@ -402,7 +407,6 @@
 		};
 
 		spi_4: spi@40013400 {
-			compatible = "st,stm32f4-spi";
 			reg = <0x40013400 0x400>;
 			interrupts = <84>;
 			clocks = <&rcc 0 173>;
@@ -415,13 +419,7 @@
 			reg = <0x40013800 0x24>;
 		};
 
-		exti: exti@40013C00 {
-			compatible = "st,stm32-exti", "syscon";
-			reg = <0x40013C00 0x400>;
-		};
-
 		spi_5: spi@40015000 {
-			compatible = "st,stm32f4-spi";
 			reg = <0x40015000 0x400>;
 			interrupts = <85>;
 			clocks = <&rcc 0 180>;
@@ -430,7 +428,6 @@
 		};
 
 		spi_6: spi@40015400 {
-			compatible = "st,stm32f4-spi";
 			reg = <0x40015400 0x400>;
 			interrupts = <86>;
 			clocks = <&rcc 0 181>;
@@ -439,31 +436,11 @@
 		};
 
 		ltdc: ltdc@40016800 {
-			display = <&display0>;
 			compatible = "st,stm32f4-ltdc";
 			reg = <0x40016800 0x400>;
 			clocks = <&rcc 0 186>, <&rcc 0 182>;
 			clock-names = "ltdc", "sai1";
 			status = "disabled";
-
-			display0: display0 {
-				bits-per-pixel = <32>;
-				display-timings {
-					native-mode = <&timing0>;
-					timing0: timing0 {
-						clock-frequency = <9000000>;
-						hactive = <480>;
-						vactive = <272>;
-						hback-porch = <2>;
-						hfront-porch = <2>;
-						vback-porch = <2>;
-						vfront-porch = <2>;
-						hsync-len = <41>;
-						vsync-len = <10>;
-						vsync-active = <1>;
-					};
-				};
-			};
 		};
 
 		rst: reset@40023800 {

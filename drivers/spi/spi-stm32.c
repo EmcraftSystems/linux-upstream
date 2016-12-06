@@ -126,15 +126,23 @@ struct stm32_of_data {
  * Description of the the STM32 SPI hardware registers
  */
 struct stm32_spi_regs {
-	unsigned int			cr1;
-	unsigned int			cr2;
-	unsigned int			sr;
-	unsigned int			dr;
-	unsigned int			crcpr;
-	unsigned int			rxcrcr;
-	unsigned int			txcrcr;
-	unsigned int			i2scfgr;
-	unsigned int			i2spr;
+	u16	cr1;
+	u16	align1;
+	u16	cr2;
+	u16	align2;
+	u16	sr;
+	u16	align3;
+	u16	dr;
+	u16	align4;
+	u16	crcpr;
+	u16	align5;
+	u16	rxcrcr;
+	u16	align6;
+	u16	txcrcr;
+	u16	align7;
+	u16	i2scfgr;
+	u16	align8;
+	u16	i2spr;
 };
 
 /*
@@ -153,6 +161,7 @@ struct stm32_spi_regs {
 #define SPI_CR2_TXEIE			(1<<7)
 #define SPI_CR2_RXNEIE			(1<<6)
 #define SPI_CR2_ERRIE			(1<<5)
+#define SPI_SR_FTLVL_FULL		(3<<11)
 #define SPI_SR_FRE			(1<<8)
 #define SPI_SR_BSY			(1<<7)
 #define SPI_SR_OVR			(1<<6)
@@ -398,7 +407,7 @@ static inline int stm32_spi_hw_mode_set(struct spi_stm32 *c, unsigned int mode)
  */
 static inline int stm32_spi_hw_txfifo_full(struct spi_stm32 *c)
 {
-	return !(c->regs->sr & SPI_SR_TXE);
+	return (c->regs->sr & SPI_SR_FTLVL_FULL) == SPI_SR_FTLVL_FULL;
 }
 
 /*
@@ -421,7 +430,11 @@ static inline void stm32_spi_hw_txfifo_put(struct spi_stm32 *c,
 			d |= p[i*wb + j];
 		}
 	}
-	c->regs->dr = d;
+
+	if (wb == 1)
+		writeb(d, &c->regs->dr);
+	else
+		writew(d, &c->regs->dr);
 }
 
 /*
@@ -455,13 +468,17 @@ static inline void stm32_spi_hw_rxfifo_get(struct spi_stm32 *c, unsigned int wb,
 					   void *rx, int i)
 {
 	int j;
-	unsigned long d = c->regs->dr;
 	unsigned char *p = (unsigned char *)rx;
 
-	if (p) {
-		for (j = wb - 1; j >= 0; j--) {
-			p[i * wb + j] = d & 0xFF;
-			d >>= 8;
+	if (wb == 1) {
+		u8 d = readb(&c->regs->dr);
+		if (p)
+			p[i] = d;
+	} else {
+		u16 d = readw(&c->regs->dr);
+		if (p) {
+			p[i*wb] = d & 0xFF;
+			p[i*wb + 1] = (d >> 8) & 0xFF;
 		}
 	}
 }
@@ -618,6 +635,21 @@ static void inline stm32_spi_xfer_init(struct spi_stm32 *c,
 }
 
 /*
+ * Complete frame transfer
+ */
+static void inline stm32_spi_xfer_tx_complete(struct spi_stm32 *c)
+{
+	if (!c->tx_t)
+		return;
+
+	if (c->tx_t->delay_usecs)
+		udelay(c->tx_t->delay_usecs);
+
+	if (c->tx_t->cs_change && c->rx_i == c->rx_l)
+		stm32_spi_release_slave(c, c->slave);
+}
+
+/*
  * Advance to next Tx frame
  * @param c		controller data structure
  * @param x		xfer to advance to
@@ -625,6 +657,11 @@ static void inline stm32_spi_xfer_init(struct spi_stm32 *c,
 static void inline stm32_spi_xfer_tx_next(struct spi_stm32 *c)
 {
 	unsigned long f;
+
+	/*
+	 * CS may be deactivated because of previous 'cs_change', so force it
+	 */
+	stm32_spi_capture_slave(c, c->slave);
 
 	/*
 	 * If the trasmit in the current transfer
@@ -733,6 +770,8 @@ static int stm32_spi_pio_polled(struct spi_stm32 *c, struct spi_device *s,
 		 */
 		while (stm32_spi_hw_rxfifo_empty(c));
 		stm32_spi_xfer_rx_next(c);
+
+		stm32_spi_xfer_tx_complete(c);
 	}
 
 	/*
@@ -772,6 +811,7 @@ static irqreturn_t stm32_spi_irq(int irq, void *dev_id)
 			wake_up(&c->wait);
 		}
 	}
+	stm32_spi_xfer_tx_complete(c);
 
 	/*
 	 * Push a next frame out

@@ -33,7 +33,8 @@ config ARCH_BINFMT_ELF_STATE
 config BINFMT_ELF_FDPIC
 	bool "Kernel support for FDPIC ELF binaries"
 	default y
-	depends on (FRV || BLACKFIN || (SUPERH32 && !MMU) || C6X)
+	depends on (FRV || BLACKFIN || (SUPERH32 && !MMU) || C6X || \
+		    (ARM && !MMU))
 	help
 	  ELF FDPIC binaries are based on ELF, but allow the individual load
 	  segments of a binary to be located in memory independently of each

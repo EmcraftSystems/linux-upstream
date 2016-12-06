@@ -270,7 +270,11 @@ extern int pci_ioremap_io(unsigned int offset, phys_addr_t phys_addr);
  * String version of IO memory access ops:
  */
 extern void _memcpy_fromio(void *, const volatile void __iomem *, size_t);
+extern void _memcpy_fromiow(void *, const volatile void __iomem *, size_t);
+extern void _memcpy_fromiol(void *, const volatile void __iomem *, size_t);
 extern void _memcpy_toio(volatile void __iomem *, const void *, size_t);
+extern void _memcpy_toiow(volatile void __iomem *, const void *, size_t);
+extern void _memcpy_toiol(volatile void __iomem *, const void *, size_t);
 extern void _memset_io(volatile void __iomem *, int, size_t);
 
 #define mmiowb()
@@ -344,6 +348,11 @@ static inline void memcpy_toio(volatile void __iomem *to, const void *from,
 #endif
 
 #endif	/* readl */
+
+#define memcpy_fromiow(a,c,l)	_memcpy_fromiow((a),(c),(l))
+#define memcpy_fromiol(a,c,l)	_memcpy_fromiol((a),(c),(l))
+#define memcpy_toiow(c,a,l)	_memcpy_toiow((c),(a),(l))
+#define memcpy_toiol(c,a,l)	_memcpy_toiol((c),(a),(l))
 
 /*
  * ioremap() and friends.

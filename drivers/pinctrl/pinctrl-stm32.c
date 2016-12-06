@@ -11,15 +11,20 @@
 #include <linux/slab.h>
 #include <linux/err.h>
 #include <linux/io.h>
+#include <linux/irq.h>
+#include <linux/mfd/syscon.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/of_address.h>
+#include <linux/of_irq.h>
 #include <linux/pinctrl/pinctrl.h>
 #include <linux/pinctrl/pinmux.h>
 #include <linux/pinctrl/pinconf.h>
 #include <linux/platform_device.h>
+#include <linux/regmap.h>
 #include <linux/reset.h>
 #include <linux/clk.h>
+#include <dt-bindings/pinctrl/pinctrl-stm32.h>
 #include "core.h"
 
 #define STM32_GPIO_MODER	0x00
@@ -124,6 +129,9 @@ struct stm32_pinctrl {
 	int			nfunctions;
 	struct stm32_pctl_group	*groups;
 	int			ngroups;
+	struct irq_domain	*domain;
+	struct regmap		*regmap;
+	struct regmap_field	*irqmux[STM32_GPIO_PINS_PER_BANK];
 };
 
 static inline int stm32_gpio_pin(int gpio)
@@ -592,6 +600,23 @@ static int stm32_gpio_direction_output(struct gpio_chip *chip,
 	return 0;
 }
 
+static int stm32_gpio_to_irq(struct gpio_chip *chip, unsigned offset)
+{
+	struct stm32_pinctrl *pctl = dev_get_drvdata(chip->dev);
+	struct stm32_gpio_bank *bank = gpio_chip_to_bank(chip);
+	unsigned int irq;
+
+	regmap_field_write(pctl->irqmux[offset], bank->range.id);
+
+	irq = irq_create_mapping(pctl->domain, offset);
+	if (!irq) {
+		printk("%s: irq_create_mapping failed\n", __func__);
+		return -ENXIO;
+	}
+
+	return irq;
+}
+
 static struct gpio_chip stm32_gpio_template = {
 	.request		= stm32_gpio_request,
 	.free			= stm32_gpio_free,
@@ -600,6 +625,7 @@ static struct gpio_chip stm32_gpio_template = {
 	.direction_input	= stm32_gpio_direction_input,
 	.direction_output	= stm32_gpio_direction_output,
 	.ngpio			= STM32_GPIO_PINS_PER_BANK,
+	.to_irq			= stm32_gpio_to_irq,
 };
 
 static int stm32_gpiolib_register_bank(struct stm32_pinctrl *info,
@@ -612,7 +638,8 @@ static int stm32_gpiolib_register_bank(struct stm32_pinctrl *info,
 	struct reset_control *rstc;
 	struct clk *clk;
 	int bank_num = of_alias_get_id(np, "gpio");
-	int err;
+	int err, i;
+	u32 val;
 
 	rstc = of_reset_control_get(np, NULL);
 	if (!IS_ERR(rstc))
@@ -624,6 +651,17 @@ static int stm32_gpiolib_register_bank(struct stm32_pinctrl *info,
 	bank->base = devm_ioremap_resource(dev, &res);
 	if (IS_ERR(bank->base))
 		return PTR_ERR(bank->base);
+
+	/*
+	 * Reconfigure INPUT (reset value) pins to ANALOG
+	 */
+	val = readl_relaxed(bank->base + STM32_GPIO_MODER);
+	for (i = 0; i < STM32_GPIO_PINS_PER_BANK; i++) {
+		if (val & GENMASK(i * 2 + 1, i * 2))
+			continue;
+		val |= GENMASK(i * 2 + 1, i * 2);
+	}
+	writel_relaxed(val, bank->base + STM32_GPIO_MODER);
 
 	bank->gpio_chip = stm32_gpio_template;
 	bank->gpio_chip.base = bank_num * STM32_GPIO_PINS_PER_BANK;
@@ -648,6 +686,81 @@ static int stm32_gpiolib_register_bank(struct stm32_pinctrl *info,
 		return err;
 	}
 	dev_info(dev, "%s bank added.\n", range->name);
+
+	return 0;
+}
+
+/*
+ * This function fills the <moder> array with the modified values of MODERx
+ * registers: all <AF> settings are replaced with <ANALOG>. The resulted
+ * values (from <moder>) are then programmed to the MODERx registers by the
+ * power-management code (executed from internal RAM, after placing external
+ * RAM to the self-refresh mode), and allow to achieve the minimal power
+ * consumption.
+ */
+int stm32_pctrl_alt_to_analog(struct platform_device *pdev, u32 *moder, u32 len)
+{
+	struct stm32_pinctrl *info = platform_get_drvdata(pdev);
+	struct stm32_gpio_bank *bank;
+	u32 val;
+	int i, k;
+
+	if (len != info->nbanks)
+		return -EINVAL;
+
+	for (i = 0; i < info->nbanks; i++) {
+		bank = &info->banks[i];
+		val = readl_relaxed(bank->base + STM32_GPIO_MODER);
+		for (k = 0; k < STM32_GPIO_PINS_PER_BANK; k++) {
+			if ((val & GENMASK(k * 2 + 1, k * 2)) !=
+			    (ALT << (k * 2)))
+				continue;
+			val |= GENMASK(k * 2 + 1, k * 2);
+		}
+		moder[i] = val;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(stm32_pctrl_alt_to_analog);
+
+static int stm32_pctrl_dt_setup_irq(struct platform_device *pdev,
+			   struct stm32_pinctrl *pctl)
+{
+	struct device_node *np = pdev->dev.of_node, *parent;
+	struct device *dev = &pdev->dev;
+	struct regmap *rm;
+	int offset, ret, i;
+
+	parent = of_irq_find_parent(np);
+	if (!parent)
+		return -ENXIO;
+
+	pctl->domain = irq_find_host(parent);
+	if (!pctl->domain)
+		return -ENXIO;
+
+	pctl->regmap = syscon_regmap_lookup_by_phandle(np, "st,syscfg");
+	if (IS_ERR(pctl->regmap))
+		return PTR_ERR(pctl->regmap);
+
+	rm = pctl->regmap;
+
+	ret = of_property_read_u32_index(np, "st,syscfg", 1, &offset);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < STM32_GPIO_PINS_PER_BANK; i++) {
+		struct reg_field mux;
+
+		mux.reg = offset + (i / 4) * 4;
+		mux.lsb = (i % 4) * 4;
+		mux.msb = mux.lsb + 3;
+
+		pctl->irqmux[i] = devm_regmap_field_alloc(dev, rm, mux);
+		if (IS_ERR(pctl->irqmux[i]))
+			return PTR_ERR(pctl->irqmux[i]);
+	}
 
 	return 0;
 }
@@ -743,6 +856,10 @@ static int stm32_pctl_probe(struct platform_device *pdev)
 	info->dev = &pdev->dev;
 	platform_set_drvdata(pdev, info);
 	ret = stm32_pctl_probe_dt(pdev, pctl_desc, info);
+	if (ret)
+		return ret;
+
+	ret = stm32_pctrl_dt_setup_irq(pdev, info);
 	if (ret)
 		return ret;
 
