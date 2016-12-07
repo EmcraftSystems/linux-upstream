@@ -59,9 +59,12 @@
 #define STM32_DMA_CR_CHSEL_OFS		25
 #define STM32_DMA_CR_MBURST_OFS		23
 #define STM32_DMA_CR_PBURST_OFS		21
+#define STM32_DMA_CR_CT			(1 << 19)
+#define STM32_DMA_CR_DBM		(1 << 18)
 #define STM32_DMA_CR_PL_HI		(3 << 16)
 #define STM32_DMA_CR_MSIZE_OFS		13
 #define STM32_DMA_CR_PSIZE_OFS		11
+#define STM32_DMA_CR_PSIZE(x)		(((x) >> STM32_DMA_CR_PSIZE_OFS) & 0x3)
 #define STM32_DMA_CR_MINC		(1 << 10)
 #define STM32_DMA_CR_PINC		(1 << 9)
 #define STM32_DMA_CR_CIRC		(1 << 8)
@@ -69,7 +72,6 @@
 #define STM32_DMA_CR_DIR_M2P		(1 << 6)
 #define STM32_DMA_CR_PFCTRL		(1 << 5)
 #define STM32_DMA_CR_TCIE		(1 << 4)
-#define STM32_DMA_CR_HTIE		(1 << 3)
 #define STM32_DMA_CR_EN			(1 << 0)
 
 /*
@@ -141,6 +143,11 @@ struct stm32_dma_chan {
 
 	struct stm32_dma_ch_regs __iomem *regs;	/* pointer to hw registers    */
 	struct stm32_dma_ch_regs	prep;	/* prepared register values   */
+
+	u32				cadr;	/* dblbuf cyclic xfer params */
+	u32				cpos;
+	u32				cpsz;
+	u32				cfsz;
 
 	u32 __iomem			*isr_reg;
 	u32 __iomem			*ifcr_reg;
@@ -220,9 +227,66 @@ static inline int stm_chan_is_cyclic(struct stm32_dma_chan *stm_chan)
 static int stm_get_bytes_left(struct dma_chan *chan)
 {
 	struct stm32_dma_chan	*stm_chan = to_stm_dma_chan(chan);
+	unsigned long		flags;
+	int			bytes;
 
-	return stm_chan->regs->ndtr;
+	spin_lock_irqsave(&stm_chan->lock, flags);
+	bytes = stm_chan->regs->ndtr << STM32_DMA_CR_PSIZE(stm_chan->prep.cr);
+	if (stm_chan->prep.cr & STM32_DMA_CR_DBM)
+		bytes += stm_chan->cfsz - stm_chan->cpos - stm_chan->cpsz;
+	spin_unlock_irqrestore(&stm_chan->lock, flags);
+
+	return bytes;
 }
+
+/**
+ * stm_submit - submit transaction to hw
+ * @stm_chan: channel
+ *
+ * Called with stm_chan->lock held and bh disabled
+ */
+static void stm_submit(struct stm32_dma_chan *stm_chan)
+{
+	/*
+	 * We may be called either to program a new transfer, or to update
+	 * an already runing transfer in a double-buffering scheme
+	 */
+	if (stm_chan->prep.cr & STM32_DMA_CR_DBM) {
+		/* Double buffering */
+		if (!(stm_chan->regs->cr & STM32_DMA_CR_EN)) {
+			/* Not running yet */
+			stm_chan->regs->m0ar = stm_chan->cadr + stm_chan->cpos;
+			stm_chan->cpos = (stm_chan->cpos + stm_chan->cpsz) %
+					 stm_chan->cfsz;
+
+			stm_chan->regs->m1ar = stm_chan->cadr + stm_chan->cpos;
+			stm_chan->cpos = (stm_chan->cpos + stm_chan->cpsz) %
+					 stm_chan->cfsz;
+		} else if (stm_chan->i_val & STM32_INT_TCIF) {
+			/* Running, and next transfer complete */
+			if (stm_chan->regs->cr & STM32_DMA_CR_CT)
+				stm_chan->regs->m0ar = stm_chan->cadr + stm_chan->cpos;
+			else
+				stm_chan->regs->m1ar = stm_chan->cadr + stm_chan->cpos;
+			stm_chan->cpos = (stm_chan->cpos + stm_chan->cpsz) %
+					 stm_chan->cfsz;
+		}
+	} else {
+		/* Single buffering */
+		stm_chan->regs->m0ar = stm_chan->prep.m0ar;
+	}
+
+	/*
+	 * If DMA isn't running yet, then program the other fields, and run it
+	 */
+	if (!(stm_chan->regs->cr & STM32_DMA_CR_EN)) {
+		stm_chan->regs->par  = stm_chan->prep.par;
+		stm_chan->regs->ndtr = stm_chan->prep.ndtr;
+		stm_chan->regs->fcr  = stm_chan->prep.fcr;
+		stm_chan->regs->cr   = stm_chan->prep.cr | STM32_DMA_CR_EN;
+	}
+}
+
 
 /**
  * stm_handle_once - at the end of a transaction, move forward
@@ -257,6 +321,9 @@ static void stm_handle_cyclic(struct stm32_dma_chan *stm_chan)
 	struct dma_async_tx_descriptor	*txd = &stm_chan->txd;
 	dma_async_tx_callback		callback = txd->callback;
 	void				*param = txd->callback_param;
+
+	if (stm_chan_is_enabled(stm_chan))
+		stm_submit(stm_chan);
 
 	if (callback)
 		callback(param);
@@ -317,11 +384,7 @@ static dma_cookie_t stm_tx_submit(struct dma_async_tx_descriptor *tx)
 	/*
 	 * Set-up hw using values formed in stm_prep_xxx()
 	 */
-	stm_chan->regs->m0ar = stm_chan->prep.m0ar;
-	stm_chan->regs->par  = stm_chan->prep.par;
-	stm_chan->regs->ndtr = stm_chan->prep.ndtr;
-	stm_chan->regs->fcr  = stm_chan->prep.fcr;
-	stm_chan->regs->cr   = stm_chan->prep.cr | STM32_DMA_CR_EN;
+	stm_submit(stm_chan);
 
 	spin_unlock_irqrestore(&stm_chan->lock, flags);
 
@@ -435,7 +498,7 @@ stm_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
  * @chan: the DMA channel to prepare
  * @buf_addr: physical DMA address where the buffer starts
  * @buf_len: total number of bytes for the entire buffer
- * @period_len: number of bytes for each period; 1 or 2 periods only supported
+ * @period_len: number of bytes for each period
  * @direction: transfer direction, to or from device
  * @flags: tx descriptor status flags
  */
@@ -453,7 +516,8 @@ stm_prep_dma_cyclic(struct dma_chan *chan, dma_addr_t buf_addr, size_t buf_len,
 		 direction == DMA_MEM_TO_DEV ? "TO DEVICE" : "FROM DEVICE",
 		 buf_addr, periods, buf_len, period_len);
 
-	if (unlikely(!stm_slave || !buf_len || !period_len || periods > 2)) {
+	if (unlikely(!stm_slave || !buf_len || !period_len ||
+		     (buf_len % period_len))) {
 		dev_err(chan2dev(chan), "prep_dma_cyclic: bad params!\n");
 		return NULL;
 	}
@@ -466,14 +530,47 @@ stm_prep_dma_cyclic(struct dma_chan *chan, dma_addr_t buf_addr, size_t buf_len,
 		return NULL;
 	}
 
-	stm_chan->prep.ndtr = buf_len;
-	stm_chan->prep.par = sconfig->src_addr;
-	stm_chan->prep.m0ar = buf_addr;
+	stm_chan->prep.ndtr = period_len;
 	stm_chan->prep.cr = STM32_DMA_CR_PL_HI | STM32_DMA_CR_MINC |
-			     STM32_DMA_CR_DIR_P2M | STM32_DMA_CR_TCIE |
-			     STM32_DMA_CR_CIRC | stm_chan->cr_msk;
-	if (periods == 2)
-		stm_chan->prep.cr |= STM32_DMA_CR_HTIE;
+			    STM32_DMA_CR_TCIE  | STM32_DMA_CR_CIRC |
+			    stm_chan->cr_msk;
+
+	switch (direction) {
+	case DMA_MEM_TO_DEV:
+		stm_chan->prep.par = sconfig->dst_addr;
+		stm_chan->prep.ndtr /= sconfig->dst_addr_width;
+		if (!sconfig->src_addr_width)
+			sconfig->src_addr_width = sconfig->dst_addr_width;
+		stm_chan->prep.cr |= STM32_DMA_CR_DIR_M2P |
+				     (__ffs(sconfig->src_addr_width) <<
+				      STM32_DMA_CR_MSIZE_OFS) |
+				     (__ffs(sconfig->dst_addr_width) <<
+				      STM32_DMA_CR_PSIZE_OFS);
+		break;
+	case DMA_DEV_TO_MEM:
+		stm_chan->prep.par = sconfig->src_addr;
+		stm_chan->prep.ndtr /= sconfig->src_addr_width;
+		if (!sconfig->dst_addr_width)
+			sconfig->dst_addr_width = sconfig->src_addr_width;
+		stm_chan->prep.cr |= STM32_DMA_CR_DIR_P2M |
+				     (__ffs(sconfig->src_addr_width) <<
+				      STM32_DMA_CR_PSIZE_OFS) |
+				     (__ffs(sconfig->dst_addr_width) <<
+				      STM32_DMA_CR_MSIZE_OFS);
+		break;
+	default:
+		return NULL;
+	}
+
+	if (periods > 1) {
+		stm_chan->prep.cr |= STM32_DMA_CR_DBM;
+		stm_chan->cadr = buf_addr;
+		stm_chan->cpos = 0;
+		stm_chan->cpsz = period_len;
+		stm_chan->cfsz = buf_len;
+	} else {
+		stm_chan->prep.m0ar = buf_addr;
+	}
 
 	/* Client is in control of flags ack */
 	stm_chan->txd.cookie = -EBUSY;
@@ -846,8 +943,12 @@ static int __init stm32_dma_probe(struct platform_device *pdev)
 		dma->dev.device_prep_dma_cyclic = stm_prep_dma_cyclic;
 		dma->dev.device_config = stm_config;
 		dma->dev.device_terminate_all = stm_terminate_all;
-		dma->dev.src_addr_widths = BIT(DMA_SLAVE_BUSWIDTH_1_BYTE);
-		dma->dev.dst_addr_widths = BIT(DMA_SLAVE_BUSWIDTH_1_BYTE);
+		dma->dev.src_addr_widths = BIT(DMA_SLAVE_BUSWIDTH_1_BYTE)  |
+					   BIT(DMA_SLAVE_BUSWIDTH_2_BYTES) |
+					   BIT(DMA_SLAVE_BUSWIDTH_4_BYTES);
+		dma->dev.dst_addr_widths = BIT(DMA_SLAVE_BUSWIDTH_1_BYTE)  |
+					   BIT(DMA_SLAVE_BUSWIDTH_2_BYTES) |
+					   BIT(DMA_SLAVE_BUSWIDTH_4_BYTES);
 		dma->dev.directions = BIT(DMA_DEV_TO_MEM) | BIT(DMA_MEM_TO_DEV);
 		dma->dev.residue_granularity = DMA_RESIDUE_GRANULARITY_BURST;
 	}
