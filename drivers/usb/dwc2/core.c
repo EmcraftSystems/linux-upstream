@@ -1125,7 +1125,7 @@ void dwc2_core_host_init(struct dwc2_hsotg *hsotg)
 			do {
 				hcchar = readl(hsotg->regs + HCCHAR(i));
 				if (++count > 1000) {
-					dev_err(hsotg->dev,
+					dev_dbg(hsotg->dev,
 						"Unable to clear enable on channel %d\n",
 						i);
 					break;
