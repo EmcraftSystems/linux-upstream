@@ -1,0 +1,22 @@
+menu "SoC Audio for STM32 CPUs"
+
+comment "Common SoC Audio options for STM32 CPUs:"
+
+config SND_SOC_STM32_SAI
+	tristate "SoC Audio support for the STM32 SAI module"
+	depends on ARCH_STM32
+	select SND_SOC_GENERIC_DMAENGINE_PCM
+	help
+	  Say Y or M if you want to add support for codecs attached to
+	  the STM32 SAI interface.
+
+config SND_SOC_STM32_ASOC_CARD
+	tristate "Generic ASoC Sound Card"
+	depends on OF && I2C
+	select SND_SOC_STM32_SAI
+	help
+	  ALSA SoC Audio support for STMicro SoCs that have SAI and connect
+	  with external CODECs such as NAU8822.
+	  Say Y if you want to add support for STM32 Generic ASoC Sound Card.
+
+endmenu

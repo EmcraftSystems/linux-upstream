@@ -91,5 +91,20 @@
 				};
 			};
 		};
+
+		sai_2 {
+			pinctrl_sai_2: sai_2-0 {
+				st,pins {
+					fs_a = <&gpioi 7 ALT10
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					sck_a = <&gpioi 5 ALT10
+						 NO_PULL PUSH_PULL FAST_SPEED>;
+					sd_a = <&gpioi 6 ALT10
+						NO_PULL PUSH_PULL FAST_SPEED>;
+					sd_b = <&gpiog 10 ALT10
+						NO_PULL PUSH_PULL FAST_SPEED>;
+				};
+			};
+		};
 	};
 };

@@ -105,5 +105,25 @@
 		spi_6: spi@40015400 {
 			compatible = "st,stm32f7-spi";
 		};
+
+		sai_1: sai@40015800 {
+			compatible = "st,stm32f7-sai";
+			reg = <0x40015800 0x400>;
+			clocks = <&rcc 0 182>;
+			resets = <&rst STM32F4_APB2_RESET(SAI1)>;
+			interrupts = <87>;
+			status = "disabled";
+		};
+
+		sai_2: sai@40015c00 {
+			compatible = "st,stm32f7-sai";
+			reg = <0x40015c00 0x400>;
+			clocks = <&rcc 0 183>;
+			resets = <&rst STM32F4_APB2_RESET(SAI2)>;
+			interrupts = <91>;
+			dmas = <&dma2 4 3>;
+			dma-names = "tx";
+			status = "disabled";
+		};
 	};
 };
