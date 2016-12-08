@@ -125,6 +125,9 @@ static const struct stm32f4_gate_data stm32f4_gates[] __initconst = {
 	{ STM32F4_RCC(APB1), 21,	"i2c1",		"apb1_div" },
 	{ STM32F4_RCC(APB1), 22,	"i2c2",		"apb1_div" },
 	{ STM32F4_RCC(APB1), 23,	"i2c3",		"apb1_div" },
+#if defined(CONFIG_ARCH_STM32F7)
+	{ STM32F4_RCC(APB1), 24,	"i2c4",		"apb1_div" },
+#endif
 	{ STM32F4_RCC(APB1), 25,	"can1",		"apb1_div" },
 	{ STM32F4_RCC(APB1), 26,	"can2",		"apb1_div" },
 	{ STM32F4_RCC(APB1), 28,	"pwr",		"apb1_div" },
@@ -160,7 +163,7 @@ static const struct stm32f4_gate_data stm32f4_gates[] __initconst = {
  * MAX_CLKS is the maximum value in the enumeration below plus the combined
  * hweight of stm32f42xx_gate_map (plus one).
  */
-#define MAX_CLKS 75
+#define MAX_CLKS 76
 
 enum { SYSTICK, FCLK };
 
@@ -170,7 +173,7 @@ enum { SYSTICK, FCLK };
  */
 static const u64 stm32f42xx_gate_map[] = { 0x000000f17ef417ffull,
 					   0x0000000000000001ull,
-					   0x04f77f33f6fec9ffull };
+					   0x04f77f33f7fec9ffull };
 
 static struct clk *clks[MAX_CLKS];
 static DEFINE_SPINLOCK(stm32f4_clk_lock);

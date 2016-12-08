@@ -106,5 +106,16 @@
 				};
 			};
 		};
+
+		i2c_4 {
+			pinctrl_i2c_4: i2c_4-0 {
+				st,pins {
+					scl = <&gpioh 11 ALT4
+						PULL_UP OPEN_DRAIN LOW_SPEED>;
+					sda = <&gpioh 12 ALT4
+						PULL_UP OPEN_DRAIN LOW_SPEED>;
+				};
+			};
+		};
 	};
 };

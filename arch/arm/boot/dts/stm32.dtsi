@@ -320,7 +320,7 @@
 			interrupts = <31 32>;
 			clocks = <&rcc 0 149>;
 			resets = <&rst STM32F4_APB1_RESET(I2C1)>;
-			dmas = <&dma1 5 1>, <&dma1 6 1>;
+			dmas = <&dma1 0 1>, <&dma1 6 1>;
 			dma-names = "rx", "tx";
 			status = "disabled";
 		};
