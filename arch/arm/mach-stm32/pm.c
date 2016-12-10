@@ -35,8 +35,10 @@
 #include <linux/io.h>
 #include <linux/delay.h>
 #include <linux/of_address.h>
+#include <linux/of_gpio.h>
 #include <linux/of_platform.h>
 #include <linux/clk.h>
+#include <linux/gpio/consumer.h>
 
 #include <mach/gpio.h>
 
@@ -104,7 +106,9 @@ static struct {
  */
 static u8 *pwr_regs;
 static u8 *ltdc_regs;
+
 static struct platform_device *pinctrl_pdev;
+static struct gpio_desc *pwr_en;
 
 /*
  * Device data structure
@@ -164,6 +168,12 @@ static int stm32_pm_prepare_to_suspend(void)
 	rv = stm32_pctrl_alt_to_analog(pinctrl_pdev, stm32_suspend_moder,
 				       ARRAY_SIZE(stm32_suspend_moder));
 
+	/*
+	 * Switch off peripheral power
+	 */
+	if (pwr_en)
+		gpiod_direction_output(pwr_en, 0);
+
 	return rv;
 }
 
@@ -172,6 +182,12 @@ static int stm32_pm_prepare_to_suspend(void)
  */
 static void stm32_pm_prepare_to_resume(void)
 {
+	/*
+	 * Switch on peripheral power
+	 */
+	if (pwr_en)
+		gpiod_direction_output(pwr_en, 1);
+
 	/*
 	 * Restore LTDC
 	 */
@@ -266,6 +282,11 @@ static int __init stm32_pm_init(void)
 	if (clk)
 		clk_prepare_enable(clk);
 	pwr_regs = of_iomap(np, 0);
+
+	ret = of_get_named_gpio(np, "pwr-en-gpios", 0);
+	if (!(ret < 0))
+		pwr_en = gpio_to_desc(ret);
+
 	of_node_put(np);
 
 	/*

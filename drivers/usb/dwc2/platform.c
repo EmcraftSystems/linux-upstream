@@ -419,6 +419,8 @@ static int __maybe_unused dwc2_suspend(struct device *dev)
 		phy_exit(dwc2->phy);
 		phy_power_off(dwc2->phy);
 
+		if (dwc2->pwr_en)
+			gpiod_direction_output(dwc2->pwr_en, 0);
 	}
 	return ret;
 }
@@ -431,6 +433,8 @@ static int __maybe_unused dwc2_resume(struct device *dev)
 	if (dwc2_is_device_mode(dwc2)) {
 		ret = s3c_hsotg_resume(dwc2);
 	} else {
+		if (dwc2->pwr_en)
+			gpiod_direction_output(dwc2->pwr_en, 1);
 		phy_power_on(dwc2->phy);
 		phy_init(dwc2->phy);
 
