@@ -301,7 +301,12 @@ static irqreturn_t goodix_ts_irq_handler(int irq, void *dev_id)
 
 static void goodix_free_irq(struct goodix_ts_data *ts)
 {
-	devm_free_irq(&ts->client->dev, ts->client->irq, ts);
+	int	irq;
+
+	irq = device_property_present(&ts->client->dev, "interrupts") ?
+		ts->client->irq : gpiod_to_irq(ts->gpiod_int);
+
+	devm_free_irq(&ts->client->dev, irq, ts);
 }
 
 static int goodix_request_irq(struct goodix_ts_data *ts)
