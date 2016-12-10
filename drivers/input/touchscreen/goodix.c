@@ -40,6 +40,7 @@ struct goodix_ts_data {
 	bool inverted_x;
 	bool inverted_y;
 	bool power_off_suspend;
+	bool no_probe_reset;
 	unsigned int max_touch_num;
 	unsigned int int_trigger_type;
 	int cfg_len;
@@ -667,8 +668,10 @@ static int goodix_ts_probe(struct i2c_client *client,
 
 	ts->power_off_suspend = device_property_read_bool(&client->dev,
 						"power-off-suspend");
+	ts->no_probe_reset = device_property_read_bool(&client->dev,
+						"no-probe-reset");
 
-	if (ts->gpiod_int) {
+	if (ts->gpiod_int && !ts->no_probe_reset) {
 		/* reset the controller */
 		error = goodix_reset(ts);
 		if (error) {
