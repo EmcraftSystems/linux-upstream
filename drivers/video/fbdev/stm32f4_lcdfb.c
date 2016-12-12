@@ -660,6 +660,9 @@ static int fb_resume(struct platform_device *pdev)
 
 	clk_prepare_enable(fb->clk);
 	clk_prepare_enable(fb->pix_clk);
+
+	fb_set_par(fb->layer_info[0]);
+
 	return 0;
 }
 #else
