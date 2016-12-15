@@ -472,12 +472,21 @@ static unsigned long shm_get_unmapped_area(struct file *file,
 						pgoff, flags);
 }
 
+#ifndef CONFIG_MMU
+static unsigned shm_mmap_capabilities(struct file *file)
+{
+	return NOMMU_MAP_DIRECT | NOMMU_MAP_READ | NOMMU_MAP_WRITE |
+	       NOMMU_MAP_EXEC;
+}
+#endif
+
 static const struct file_operations shm_file_operations = {
 	.mmap		= shm_mmap,
 	.fsync		= shm_fsync,
 	.release	= shm_release,
 #ifndef CONFIG_MMU
 	.get_unmapped_area	= shm_get_unmapped_area,
+	.mmap_capabilities	= shm_mmap_capabilities,
 #endif
 	.llseek		= noop_llseek,
 	.fallocate	= shm_fallocate,
