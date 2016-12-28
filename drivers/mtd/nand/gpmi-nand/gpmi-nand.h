@@ -58,12 +58,14 @@ struct bch_geometry {
 	unsigned int  page_size;
 	unsigned int  metadata_size;
 	unsigned int  ecc_chunk_size;
+	unsigned int  ecc_chunkn_size;
 	unsigned int  ecc_chunk_count;
 	unsigned int  payload_size;
 	unsigned int  auxiliary_size;
 	unsigned int  auxiliary_status_offset;
 	unsigned int  block_mark_byte_offset;
 	unsigned int  block_mark_bit_offset;
+	unsigned int  ecc_for_meta; /* ECC for meta data */
 };
 
 /**

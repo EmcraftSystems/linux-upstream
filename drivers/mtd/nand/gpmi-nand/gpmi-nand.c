@@ -161,6 +161,7 @@ static bool set_geometry_by_ecc_info(struct gpmi_nand_data *this)
 		return false;
 	}
 	geo->ecc_chunk_size = chip->ecc_step_ds;
+	geo->ecc_chunkn_size = chip->ecc_step_ds;
 	geo->ecc_strength = round_up(chip->ecc_strength_ds, 2);
 	if (!gpmi_check_ecc(this))
 		return false;
@@ -274,6 +275,7 @@ static int legacy_set_geometry(struct gpmi_nand_data *this)
 
 	/* The default for chunk size. */
 	geo->ecc_chunk_size = 512;
+	geo->ecc_chunkn_size = 512;
 	while (geo->ecc_chunk_size < mtd->oobsize) {
 		geo->ecc_chunk_size *= 2; /* keep C >= O */
 		geo->gf_len = 14;
@@ -1835,6 +1837,8 @@ static void gpmi_nand_exit(struct gpmi_nand_data *this)
 	gpmi_free_dma_buffer(this);
 }
 
+int bch_create_debugfs(struct gpmi_nand_data *this);
+
 static int gpmi_init_last(struct gpmi_nand_data *this)
 {
 	struct nand_chip *chip = &this->nand;
@@ -1844,6 +1848,11 @@ static int gpmi_init_last(struct gpmi_nand_data *this)
 
 	/* Set up the medium geometry */
 	ret = gpmi_set_geometry(this);
+	if (ret)
+		return ret;
+
+	/* Save the geometry to debugfs*/
+	ret = bch_create_debugfs(this);
 	if (ret)
 		return ret;
 

@@ -21,10 +21,16 @@
 #include <linux/delay.h>
 #include <linux/clk.h>
 #include <linux/slab.h>
+#include <linux/pm_runtime.h>
+#include <linux/debugfs.h>
+
 
 #include "gpmi-nand.h"
 #include "gpmi-regs.h"
 #include "bch-regs.h"
+
+/* export the bch geometry to dbgfs */
+static struct debugfs_blob_wrapper dbg_bch_geo;
 
 static struct timing_threshod timing_default_threshold = {
 	.max_data_setup_cycles       = (BM_GPMI_TIMING0_DATA_SETUP >>
@@ -243,6 +249,35 @@ void gpmi_dump_info(struct gpmi_nand_data *this)
 		geo->auxiliary_status_offset,
 		geo->block_mark_byte_offset,
 		geo->block_mark_bit_offset);
+}
+
+int bch_create_debugfs(struct gpmi_nand_data *this)
+{
+	struct bch_geometry *bch_geo = &this->bch_geometry;
+	struct dentry *dbg_root;
+
+	dbg_root = debugfs_create_dir("gpmi-nand", NULL);
+	if (!dbg_root) {
+		dev_err(this->dev, "failed to create debug directory\n");
+		return -EINVAL;
+	}
+
+	dbg_bch_geo.data = (void *)bch_geo;
+	dbg_bch_geo.size = sizeof(struct bch_geometry);
+	if (!debugfs_create_blob("bch_geometry", S_IRUGO,
+				dbg_root, &dbg_bch_geo)) {
+		dev_err(this->dev, "failed to create debug bch geometry\n");
+		return -EINVAL;
+	}
+
+	/* create raw mode flag */
+	if (!debugfs_create_file("raw_mode", S_IRUGO,
+				dbg_root, NULL, NULL)) {
+		dev_err(this->dev, "failed to create raw mode flag\n");
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 /* Configures the geometry for BCH.  */
