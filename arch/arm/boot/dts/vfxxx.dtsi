@@ -67,7 +67,7 @@
 
 	pm: pm {
 		compatible = "pm-vf610";
-		clocks = <&clks VF610_CLK_SYS_SEL>, <&clks VF610_CLK_FASK_CLK_SEL>;
+		clocks = <&clks VF610_CLK_SYS_SEL>, <&clks VF610_CLK_FAST_CLK_SEL>;
 		clock-names = "sys-sel", "sys-sel-suspend";
 	};
 

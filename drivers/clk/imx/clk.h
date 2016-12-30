@@ -151,4 +151,18 @@ struct clk *imx_clk_cpu(const char *name, const char *parent_name,
 		struct clk *div, struct clk *mux, struct clk *pll,
 		struct clk *step);
 
+enum vfxxx_pllv3_type {
+	VFXXX_PLL1_SYS_528,
+	VFXXX_PLL2_528,
+	VFXXX_PLL3_USB0_480,
+	VFXXX_PLL4_AUDIO,
+	VFXXX_PLL5_ENET,
+	VFXXX_PLL6_VIDEO,
+	VFXXX_PLL7_USB1,
+};
+
+struct clk *vfxxx_clk_pllv3(enum vfxxx_pllv3_type type, const char *name,
+			    const char *parent_name, void __iomem *base,
+			    void __iomem *num, void __iomem *denom);
+
 #endif

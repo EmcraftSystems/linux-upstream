@@ -26,6 +26,11 @@
 #define BM_PLL_LOCK		(0x1 << 31)
 #define IMX7_ENET_PLL_POWER	(0x1 << 5)
 
+enum div_select_code {
+	DIV_AS_IS,
+	DIV_22_20,
+};
+
 /**
  * struct clk_pllv3 - IMX PLL clock version 3
  * @clk_hw:	 clock source
@@ -47,6 +52,7 @@ struct clk_pllv3 {
 	u32		powerdown;
 	u32		div_mask;
 	u32		div_shift;
+	enum div_select_code	div_select;
 };
 
 #define to_clk_pllv3(_hw) container_of(_hw, struct clk_pllv3, hw)
@@ -295,6 +301,116 @@ static const struct clk_ops clk_pllv3_enet_ops = {
 	.recalc_rate	= clk_pllv3_enet_recalc_rate,
 };
 
+static unsigned long clk_pllv3_vfxxx_recalc_rate(struct clk_hw *hw,
+					      unsigned long parent_rate)
+{
+	struct clk_pllv3 *pll = to_clk_pllv3(hw);
+	u32 mfn = pll->num ? readl_relaxed(pll->num) : 0;
+	u32 mfd = pll->denom ? readl_relaxed(pll->denom) : 1;
+	u32 mfi = (readl_relaxed(pll->base) >> pll->div_shift) & pll->div_mask;
+	u32 div;
+
+	if (pll->div_select == DIV_22_20) {
+		div = mfi ? 22 : 20;
+	} else if (pll->div_select == DIV_AS_IS) {
+		div = mfi;
+	} else {
+		return -EINVAL;
+	}
+
+	return (parent_rate * div) + ((parent_rate / mfd) * mfn);
+}
+
+static long clk_pllv3_vfxxx_round_rate(struct clk_hw *hw, unsigned long rate,
+				    unsigned long *prate)
+{
+	struct clk_pllv3 *pll = to_clk_pllv3(hw);
+	unsigned long parent_rate = *prate;
+	u32 mfn, mfd = 1000000;
+	u64 temp64;
+	u32 div;
+
+	if (pll->div_select == DIV_22_20) {
+		div = rate / parent_rate;
+		if (div != 20 && div != 22) {
+			return -EINVAL;
+		}
+	} else if (pll->div_select == DIV_AS_IS) {
+		/* This PLL can function from 600 MHz to 1300 MHz. */
+		if (rate < 600000000)
+			rate = 600000000;
+		if (rate > 1300000000)
+			rate = 1300000000;
+		div = rate / parent_rate;
+	} else {
+		return rate;
+	}
+
+	if (pll->num && pll->denom) {
+		temp64 = (u64) (rate - div * parent_rate);
+		temp64 *= mfd;
+		do_div(temp64, parent_rate);
+		mfn = temp64;
+	} else {
+		mfn = 0;
+	}
+
+	return parent_rate * div + parent_rate / mfd * mfn;
+}
+
+static int clk_pllv3_vfxxx_set_rate(struct clk_hw *hw, unsigned long rate,
+		unsigned long parent_rate)
+{
+	struct clk_pllv3 *pll = to_clk_pllv3(hw);
+	u32 val, div;
+	u32 mfn, mfd = 1000000, mfi;
+	u64 temp64;
+
+	if (pll->div_select == DIV_22_20) {
+		div = rate / parent_rate;
+		if (div != 20 && div != 22) {
+			return -EINVAL;
+		}
+		mfi = (div == 22) ? 1 : 0;
+	} else if (pll->div_select == DIV_AS_IS) {
+		/* This PLL can function from 600 MHz to 1300 MHz. */
+		if (rate < 600000000)
+			rate = 600000000;
+		if (rate > 1300000000)
+			rate = 1300000000;
+		div = rate / parent_rate;
+		mfi = div;
+	} else {
+		return -EINVAL;
+	}
+
+	val = readl_relaxed(pll->base);
+	if ((val & (mfi << pll->div_shift)) == 0) {
+		val &= ~(pll->div_mask << pll->div_shift);
+		val |= mfi << pll->div_shift;
+		writel_relaxed(val, pll->base);
+	}
+
+	if (pll->num && pll->denom) {
+		temp64 = (u64) (rate - div * parent_rate);
+		temp64 *= mfd;
+		do_div(temp64, parent_rate);
+		mfn = temp64;
+		writel_relaxed(mfn, pll->num);
+		writel_relaxed(mfd, pll->denom);
+	}
+
+	return clk_pllv3_wait_lock(pll);
+}
+
+static const struct clk_ops clk_pllv3_vfxxx_ops = {
+	.prepare	= clk_pllv3_prepare,
+	.unprepare	= clk_pllv3_unprepare,
+	.recalc_rate	= clk_pllv3_vfxxx_recalc_rate,
+	.round_rate	= clk_pllv3_vfxxx_round_rate,
+	.set_rate	= clk_pllv3_vfxxx_set_rate,
+};
+
 struct clk *imx_clk_pllv3_num(enum imx_pllv3_type type, const char *name,
 			  const char *parent_name, void __iomem *base,
 			  void __iomem *num, void __iomem *denom,
@@ -357,4 +473,75 @@ struct clk *imx_clk_pllv3(enum imx_pllv3_type type, const char *name,
 			  u32 div_mask)
 {
 	return imx_clk_pllv3_num(type, name, parent_name, base, NULL, NULL, div_mask);
+}
+
+struct clk *vfxxx_clk_pllv3(enum vfxxx_pllv3_type type, const char *name,
+			    const char *parent_name, void __iomem *base,
+			    void __iomem *num, void __iomem *denom)
+{
+	struct clk_pllv3 *pll;
+	const struct clk_ops *ops;
+	struct clk *clk;
+	struct clk_init_data init;
+
+	pll = kzalloc(sizeof(*pll), GFP_KERNEL);
+	if (!pll)
+		return ERR_PTR(-ENOMEM);
+
+	pll->powerdown = BM_PLL_POWER;
+
+	switch (type) {
+	case VFXXX_PLL1_SYS_528:
+	case VFXXX_PLL2_528:
+		pll->div_mask = 1;
+		pll->div_shift = 0;
+		pll->div_select = DIV_22_20;
+		ops = &clk_pllv3_vfxxx_ops;
+		break;
+
+	case VFXXX_PLL3_USB0_480:
+	case VFXXX_PLL7_USB1:
+		pll->div_mask = 1;
+		pll->div_shift = 1;
+		pll->div_select = DIV_22_20;
+		pll->powerup_set = true;
+		ops = &clk_pllv3_vfxxx_ops;
+		break;
+
+	case VFXXX_PLL4_AUDIO:
+	case VFXXX_PLL6_VIDEO:
+		pll->div_mask = 0x7f;
+		pll->div_shift = 0;
+		pll->div_select = DIV_AS_IS;
+		ops = &clk_pllv3_vfxxx_ops;
+		break;
+
+	case VFXXX_PLL5_ENET:
+		ops = &clk_pllv3_enet_ops;
+
+		break;
+
+	default:
+		kfree (pll);
+		return NULL;
+	}
+
+	pll->base = base;
+	pll->num = num;
+	pll->denom = denom;
+
+	init.name = name;
+	init.ops = ops;
+	init.flags = 0;
+	init.parent_names = &parent_name;
+	init.num_parents = 1;
+
+	pll->hw.init = &init;
+
+	clk = clk_register(NULL, &pll->hw);
+	if (IS_ERR(clk))
+		kfree(pll);
+
+	return clk;
+
 }
