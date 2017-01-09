@@ -49,6 +49,11 @@
 #include "stm32.dtsi"
 
 / {
+	stm_flash {
+		geometry = "stm32f42x.2M";
+		reg = <0x08000000 0x00200000>;
+	};
+
 	soc {
 		spi_2: spi@40003800 {
 			compatible = "st,stm32f4-spi";

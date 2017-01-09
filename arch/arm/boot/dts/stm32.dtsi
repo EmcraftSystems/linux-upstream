@@ -82,6 +82,26 @@
 		serial7 = &usart8;
 	};
 
+	stm_flash_ctl: stm-flash-controller {
+		compatible = "stm-flash-controller";
+		interrupt-parent = <&nvic>;
+		reg = <0x40023C00 0x400>;
+		interrupts = <4>;
+	};
+
+	stm_flash {
+		compatible = "stm-flash";
+		probe-type = "stm_probe";
+		linux,mtd-name = "physmap-stm-flash.0";
+		flash-controller = <&stm_flash_ctl>;
+
+		bank-width = <2>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		status = "disabled";
+	};
+
 	clocks {
 		clk_hse: clk-hse {
 			#clock-cells = <0>;

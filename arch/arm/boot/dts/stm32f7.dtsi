@@ -53,6 +53,11 @@
 		i2c3 = &i2c_4;
 	};
 
+	stm_flash {
+		geometry = "stm32f74x.1M";
+		reg = <0x08000000 0x00100000>;
+	};
+
 	soc {
 		spi_2: spi@40003800 {
 			compatible = "st,stm32f7-spi";

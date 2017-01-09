@@ -344,6 +344,10 @@ static const struct of_device_id of_flash_match[] = {
 		.data		= (void *)"jedec_probe",
 	},
 	{
+		.compatible	= "stm-flash",
+		.data		= (void *)"stm_probe",
+	},
+	{
 		.compatible     = "mtd-ram",
 		.data           = (void *)"map_ram",
 	},

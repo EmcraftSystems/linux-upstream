@@ -198,6 +198,13 @@ config MTD_CFI_STAA
 	  sets which a CFI-compliant chip may claim to implement. This code
 	  provides support for command set 0020.
 
+config MTD_STM32
+	tristate "Support for STM32 Embedded Flash Memory"
+	depends on ARCH_STM32
+	help
+	  This option enables support for the Flash memory embedded into STM32
+	  chips
+
 config MTD_CFI_UTIL
 	tristate
 
