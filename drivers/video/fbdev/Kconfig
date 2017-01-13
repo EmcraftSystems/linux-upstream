@@ -1010,6 +1010,12 @@ config FB_STM32
 	help
 	  This enables support for the STM32 LCD Controller.
 
+config FB_STM32_DSI
+	tristate "STM32 DSI Controller support"
+	depends on FB_STM32
+	help
+	 This enables support for the STM32 DSI Controller.
+
 config FB_NVIDIA
 	tristate "nVidia Framebuffer Support"
 	depends on FB && PCI

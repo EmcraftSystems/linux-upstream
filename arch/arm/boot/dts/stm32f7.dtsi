@@ -146,5 +146,14 @@
 			dma-names = "tx";
 			status = "disabled";
 		};
+
+		dsi: dsi@40016C00 {
+			compatible = "st,stm32-dsi";
+			reg = <0x40016c00 0x800>;
+			clocks = <&rcc 0 187>;
+			resets = <&rst STM32F4_APB2_RESET(DSI)>;
+			interrupts = <98>;
+			status = "disabled";
+		};
 	};
 };

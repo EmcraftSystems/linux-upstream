@@ -193,8 +193,10 @@ static int fb_disable_panel(struct fb_info *info)
 
 	i = mfbi->index;
 
+#if !defined(CONFIG_FB_STM32_DSI)
 	/* Disable layer */
 	writel(readl(fb->base + LTDC_LAYER_CR(i)) & ~1, fb->base + LTDC_LAYER_CR(i));
+#endif /* CONFIG_FB_STM32_DSI */
 
 	ltdc_reload_config(fb);
 

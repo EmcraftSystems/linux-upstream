@@ -157,23 +157,26 @@ static const struct stm32f4_gate_data stm32f4_gates[] __initconst = {
 #endif
 	{ STM32F4_RCC(APB2), 26,	"ltdc",		"apb2_div",
 		 0, CLK_GATE_RESET },
+#if defined(CONFIG_ARCH_STM32F7)
+	{ STM32F4_RCC(APB2), 27,	"dsi",		"plldsi" },
+#endif
 };
 
 /*
  * MAX_CLKS is the maximum value in the enumeration below plus the combined
  * hweight of stm32f42xx_gate_map (plus one).
  */
-#define MAX_CLKS 76
+#define MAX_CLKS 77
 
 enum { SYSTICK, FCLK };
 
 /*
  * This bitmask tells us which bit offsets (0..192) on STM32F4[23]xxx
- * have gate bits associated with them. Its combined hweight is 71.
+ * have gate bits associated with them. Its combined hweight is MAX_CLKS.
  */
 static const u64 stm32f42xx_gate_map[] = { 0x000000f17ef417ffull,
 					   0x0000000000000001ull,
-					   0x04f77f33f7fec9ffull };
+					   0x0cf77f33f7fec9ffull };
 
 static struct clk *clks[MAX_CLKS];
 static DEFINE_SPINLOCK(stm32f4_clk_lock);
@@ -284,10 +287,12 @@ static void stm32f4_rcc_register_pll(const char *hse_clk, const char *hsi_clk)
 	unsigned long pllp   = BIT(((pllcfgr >> 16) & 3) + 1);
 	const char   *pllsrc = pllcfgr & BIT(22) ? hse_clk : hsi_clk;
 	unsigned long pllq   = (pllcfgr >> 24) & 0xf;
+	unsigned long pllr   = (pllcfgr >> 27) & 0x7;
 
 	clk_register_fixed_factor(NULL, "vco", pllsrc, 0, plln, pllm);
 	clk_register_fixed_factor(NULL, "pll", "vco", 0, 1, pllp);
 	clk_register_fixed_factor(NULL, "pll48", "vco", 0, 1, pllq);
+	clk_register_fixed_factor(NULL, "plldsi", "vco", 0, 1, pllr);
 }
 
 /*
