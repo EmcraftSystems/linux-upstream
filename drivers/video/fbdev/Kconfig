@@ -1016,6 +1016,12 @@ config FB_STM32_DSI
 	help
 	 This enables support for the STM32 DSI Controller.
 
+config FB_PANEL_OTM8009A
+	tristate "Orise Tech OTM8009A LCD panel support"
+	depends on FB_STM32_DSI
+	help
+	 This enables support for the Orise Tech OTM8009A LCD panel.
+
 config FB_NVIDIA
 	tristate "nVidia Framebuffer Support"
 	depends on FB && PCI
