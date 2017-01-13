@@ -94,6 +94,7 @@ struct mfb_info {
 	int default_bpp;
 	struct stm32f4_layer_desc *layer_desc;
 	unsigned int count;
+	bool invert_pixel_clock;
 
 	/* layer display x offset to physical screen */
 	int x_layer_d;
@@ -305,6 +306,7 @@ static void update_lcdc(struct fb_info *info)
 	struct device *dev = &fb->pdev->dev;
 	u32 acc_h_cycles;
 	u32 acc_v_cycles;
+	u32 gcr;
 	int rv;
 
 	if (!mfbi->enabled) {
@@ -346,9 +348,10 @@ static void update_lcdc(struct fb_info *info)
 	acc_v_cycles += var->lower_margin;
 	writel((acc_h_cycles << 16) | acc_v_cycles, fb->base + LTDC_TWCR);
 
-	/* Disable uncommon features of LTDC, and invert input pixclock */
-	writel((readl(fb->base + LTDC_GCR) & GCR_MASK) | (1 << 28),
-		fb->base + LTDC_GCR);
+	gcr = readl(fb->base + LTDC_GCR) & GCR_MASK;
+	if (mfbi->invert_pixel_clock)
+		gcr |= (1 << 28);
+	writel(gcr, fb->base + LTDC_GCR);
 
 	/* Set background color to black */
 	writel(0, fb->base + LTDC_BCCR);
@@ -624,6 +627,11 @@ static int stm32_lcdfb_of_init(struct mfb_info *mfbi)
 			goto put_timings_node;
 
 		fb_add_videomode(&fb_vm, &info->modelist);
+
+		if (i == timings->native_mode) {
+			mfbi->invert_pixel_clock = timings->timings[i]->flags &
+				DISPLAY_FLAGS_PIXDATA_NEGEDGE;
+		}
 	}
 
 	return 0;
