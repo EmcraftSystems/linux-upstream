@@ -86,6 +86,7 @@
 #define STM_FLH_CR_PSIZE(x)	((x) << 8)
 #define STM_FLH_CR_PSIZE_MSK	STM_FLH_CR_PSIZE(3)
 #define STM_FLH_CR_PSIZE_32	STM_FLH_CR_PSIZE(2)
+#define STM_FLH_CR_PSIZE_8	STM_FLH_CR_PSIZE(0)
 #define STM_FLH_CR_SNB(x)	((x) << 3)
 #define STM_FLH_CR_SER		(1 << 1)
 #define STM_FLH_CR_PG		(1 << 0)
@@ -133,6 +134,9 @@ struct stm_flh_iface {
 	wait_queue_head_t		wait;
 	struct mutex			mutex;
 	int				status;
+
+	int (*stm_prog)(struct mtd_info *mtd, unsigned long dst, size_t len,
+			size_t *retlen, const u_char *buf);
 };
 
 /******************************************************************************
@@ -230,6 +234,120 @@ static inline int stm_op_wait(struct stm_flh_iface *iface, u32 tout)
 	else
 		rv = 0;
 
+	return rv;
+}
+
+/*
+ * Program with `x32` parallelism
+ */
+static int stm_prog_x32(struct mtd_info *mtd, unsigned long dst, size_t len,
+			size_t *retlen, const u_char *buf)
+{
+	struct map_info *map = mtd->priv;
+	struct stm_flh_iface *iface = map->fldrv_priv;
+	unsigned long adst;
+	u32 val, ofs, rem;
+	int rv;
+
+	rem = dst % sizeof(u32);
+	if (!rem)
+		goto middle;
+
+	/*
+	 * Unaligned head
+	 */
+	ofs = (dst % sizeof(u32)) << 3;
+	adst = dst & ~(sizeof(u32) - 1);
+	val = *(u32 *)(map->virt + adst);
+	while ((dst % sizeof(u32)) && len) {
+		val &= ~(0xFF << ofs);
+		val |= *buf << ofs;
+		ofs += sizeof(u8) << 3;
+		buf += sizeof(u8);
+		dst += sizeof(u8);
+		len -= sizeof(u8);
+	}
+
+	iface->status = -EBUSY;
+	*(u32 *)(map->virt + adst) = val;
+	rv = stm_op_wait(iface, STM_FLH_TOUT);
+	if (rv)
+		goto out;
+	*retlen += sizeof(u32) - rem;
+
+middle:
+	/*
+	 * Word aligned part
+	 */
+	while (len >= sizeof(u32)) {
+		iface->status = -EBUSY;
+		*(u32 *)(map->virt + dst) = *(u32 *)buf;
+		rv = stm_op_wait(iface, STM_FLH_TOUT);
+		if (rv)
+			goto out;
+		*retlen += sizeof(u32);
+
+		buf += sizeof(u32);
+		dst += sizeof(u32);
+		len -= sizeof(u32);
+	}
+
+	rem = len;
+	if (!rem)
+		goto done;
+
+	/*
+	 * Unaligned tail
+	 */
+	ofs = 0;
+	adst = dst;
+	val = *(u32 *)(map->virt + adst);
+	while (len) {
+		val &= ~(0xFF << ofs);
+		val |= *buf << ofs;
+		ofs += sizeof(u8) << 3;
+		buf += sizeof(u8);
+		dst += sizeof(u8);
+		len -= sizeof(u8);
+	}
+
+	iface->status = -EBUSY;
+	*(u32 *)(map->virt + adst) = val;
+	rv = stm_op_wait(iface, STM_FLH_TOUT);
+	if (rv)
+		goto out;
+	*retlen += rem;
+done:
+	rv = 0;
+out:
+	return rv;
+}
+
+/*
+ * Program with `x8` parallelism
+ */
+static int stm_prog_x8(struct mtd_info *mtd, unsigned long dst, size_t len,
+		       size_t *retlen, const u_char *buf)
+{
+	struct map_info *map = mtd->priv;
+	struct stm_flh_iface *iface = map->fldrv_priv;
+	int rv;
+
+	while (len) {
+		iface->status = -EBUSY;
+		*(u8 *)(map->virt + dst) = *(u8 *)buf;
+		rv = stm_op_wait(iface, STM_FLH_TOUT);
+		if (rv)
+			goto out;
+		*retlen += sizeof(u8);
+
+		buf += sizeof(u8);
+		dst += sizeof(u8);
+		len -= sizeof(u8);
+	}
+
+	rv = 0;
+out:
 	return rv;
 }
 
@@ -363,14 +481,19 @@ static int stm_mtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 {
 	struct map_info *map = mtd->priv;
 	struct stm_flh_iface *iface = map->fldrv_priv;
-	unsigned long dst, adst;
-	u32 val, ofs, rem;
+	unsigned long dst;
 	int rv;
 
 	mutex_lock(&iface->mutex);
 
 	dst = to;
 	dbg("%s: 0x%x %p->+0x%lx\n", __func__, len, buf, dst);
+
+	if (!iface->stm_prog) {
+		printk(KERN_ERR "%s: no stm_prog() set\n", __func__);
+		rv = -EINVAL;
+		goto exit;
+	}
 
 	if (iface->reg->sr & STM_FLH_SR_BSY) {
 		printk(KERN_WARNING "%s: flash is busy [cr=%08x,sr=%08x]\n",
@@ -382,77 +505,8 @@ static int stm_mtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 	stm_cr_unlock(iface);
 	iface->reg->cr |= STM_FLH_CR_PG;
 
-	rem = dst % sizeof(u32);
-	if (!rem)
-		goto middle;
+	rv = iface->stm_prog(mtd, dst, len, retlen, buf);
 
-	/*
-	 * Unaligned head
-	 */
-	ofs = (dst % sizeof(u32)) << 3;
-	adst = dst & ~(sizeof(u32) - 1);
-	val = *(u32 *)(map->virt + adst);
-	while ((dst % sizeof(u32)) && len) {
-		val &= ~(0xFF << ofs);
-		val |= *buf << ofs;
-		ofs += sizeof(u8) << 3;
-		buf += sizeof(u8);
-		dst += sizeof(u8);
-		len -= sizeof(u8);
-	}
-
-	iface->status = -EBUSY;
-	*(u32 *)(map->virt + adst) = val;
-	rv = stm_op_wait(iface, STM_FLH_TOUT);
-	if (rv)
-		goto out;
-	*retlen += sizeof(u32) - rem;
-
-middle:
-	/*
-	 * Word aligned part
-	 */
-	while (len >= sizeof(u32)) {
-		iface->status = -EBUSY;
-		*(u32 *)(map->virt + dst) = *(u32 *)buf;
-		rv = stm_op_wait(iface, STM_FLH_TOUT);
-		if (rv)
-			goto out;
-		*retlen += sizeof(u32);
-
-		buf += sizeof(u32);
-		dst += sizeof(u32);
-		len -= sizeof(u32);
-	}
-
-	rem = len;
-	if (!rem)
-		goto done;
-
-	/*
-	 * Unaligned tail
-	 */
-	ofs = 0;
-	adst = dst;
-	val = *(u32 *)(map->virt + adst);
-	while (len) {
-		val &= ~(0xFF << ofs);
-		val |= *buf << ofs;
-		ofs += sizeof(u8) << 3;
-		buf += sizeof(u8);
-		dst += sizeof(u8);
-		len -= sizeof(u8);
-	}
-
-	iface->status = -EBUSY;
-	*(u32 *)(map->virt + adst) = val;
-	rv = stm_op_wait(iface, STM_FLH_TOUT);
-	if (rv)
-		goto out;
-	*retlen += rem;
-done:
-	rv = 0;
-out:
 	iface->reg->cr &= ~STM_FLH_CR_PG;
 	stm_cr_lock(iface);
 exit:
@@ -479,6 +533,7 @@ static struct mtd_info *stm_chipdrv_probe(struct map_info *map)
 	unsigned long flags;
 	volatile struct stm_flh_reg *reg = NULL;
 	const u32 *p;
+	void *stm_prog = NULL;
 	int i, rv, irq;
 
 	/*
@@ -500,8 +555,15 @@ static struct mtd_info *stm_chipdrv_probe(struct map_info *map)
 		goto done;
 	}
 
-	if ((reg->cr & STM_FLH_CR_PSIZE_MSK) != STM_FLH_CR_PSIZE_32) {
-		printk(KERN_ERR "%s: support x32 parallelism only (%x)\n",
+	switch (reg->cr & STM_FLH_CR_PSIZE_MSK) {
+	case STM_FLH_CR_PSIZE_32:
+		stm_prog = stm_prog_x32;
+		break;
+	case STM_FLH_CR_PSIZE_8:
+		stm_prog = stm_prog_x8;
+		break;
+	default:
+		printk(KERN_ERR "%s: CR=x%08x parallelism isn't supported\n",
 			__func__, reg->cr);
 		rv = -EFAULT;
 		goto done;
@@ -608,6 +670,7 @@ static struct mtd_info *stm_chipdrv_probe(struct map_info *map)
 	map->fldrv_priv = iface;
 	iface->geo = geo;
 	iface->reg = reg;
+	iface->stm_prog = stm_prog;
 	mutex_init(&iface->mutex);
 	init_waitqueue_head(&iface->wait);
 
