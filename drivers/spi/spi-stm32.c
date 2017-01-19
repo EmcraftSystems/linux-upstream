@@ -109,7 +109,6 @@ struct spi_stm32 {
 	int				rx_i;		/* Cur Rx index */
 	int				ti;		/* Tx count */
 	int				ri;		/* Rx count */
-	bool				polled;		/* Poll/irq scheme */
 	const struct stm32_of_data	*priv;		/* STM chip specific */
 	unsigned int			cs_gpio[DRIVER_CS_MAX];
 	unsigned int			cs_timeout[DRIVER_CS_MAX];
@@ -206,10 +205,9 @@ static int stm32_spi_hw_init(struct spi_stm32 *c)
 	 */
 
 	/*
-	 * If PIO interrupt-driven, enable interrupts
+	 * Enable interrupts
 	 */
-	if (!c->polled)
-		c->regs->cr2 |= SPI_CR2_RXNEIE | SPI_CR2_ERRIE;
+	c->regs->cr2 |= SPI_CR2_RXNEIE | SPI_CR2_ERRIE;
 
 	/*
 	 * Enable the SPI contoller
@@ -719,73 +717,6 @@ static void inline stm32_spi_xfer_rx_next(struct spi_stm32 *c)
 }
 
 /*
- * Transfer a message in PIO, polled mode
- * @param c		controller data structure
- * @param s		slave data structure
- * @param		pointer to actual transfer length (set here)
- * @returns		0->success, <0->error code
- */
-static int stm32_spi_pio_polled(struct spi_stm32 *c, struct spi_device *s,
-				int *rlen)
-{
-	int i;
-	int ret = 0;
-
-	/*
-	 * Prepare to run a transfer
-	 */
-	stm32_spi_xfer_init(c, s);
-
-	/*
-	 * Perform the transfer. Transfer is done when all frames
-	 * have been received (i.e. ri == len). Each time we
-	 * iterate in this loop, we have received a next frame.
-	 */
-	while (c->ri < c->len) {
-		/*
-		 * Transfer a frame
-		 */
-	        for (i = 0;
-		     i < 1 && c->ti < c->len && !stm32_spi_hw_txfifo_full(c);
-		     i++) {
-			stm32_spi_xfer_tx_next(c);
-		}
-
-		/*
-		 * Wait for a frame to come in
-		 * but check for error conditions first
-		 */
-		if (stm32_spi_hw_rxfifo_error(c)) {
-
-			/*
-			 * If there is an error, this transfer
-			 * needs to be finished with an error.
-			 */
-			ret = -EIO;
-			goto Done;
-		}
-
-		/*
-		 * Receive a frame
-		 */
-		while (stm32_spi_hw_rxfifo_empty(c));
-		stm32_spi_xfer_rx_next(c);
-
-		stm32_spi_xfer_tx_complete(c);
-	}
-
-	/*
-	 * Return the number of bytes actully transferred
-	 */
-	*rlen = c->ri;
-Done:
-	stm32_spi_hw_rxfifo_purge(c);
-	d_printk(3, "msg=%p,len=%d,rlen=%d,ret=%d\n",
-		c->msg, c->len, *rlen, ret);
-	return ret;
-}
-
-/*
  * Interrupt handler routine
  */
 static irqreturn_t stm32_spi_irq(int irq, void *dev_id)
@@ -928,8 +859,7 @@ static int stm32_spi_transfer_message(struct spi_master *master,
 	 * Transfer the message over the wire
 	 */
 	c->msg = msg;
-	ret = c->polled ? stm32_spi_pio_polled(c, s, &rlen) :
-			  stm32_spi_pio_interrupted(c, s, &rlen);
+	ret = stm32_spi_pio_interrupted(c, s, &rlen);
 	if (ret)
 		goto Done;
 
@@ -1025,7 +955,6 @@ static int stm32_spi_probe(struct platform_device *pdev)
 	struct spi_stm32 *c = NULL;
 	struct resource *mem;
 	int i, bus, irq, cs_num;
-	bool polled = false;
 	int ret = 0;
 
 	/*
@@ -1041,15 +970,10 @@ static int stm32_spi_probe(struct platform_device *pdev)
 	}
 
 	/*
-	 * Get the xfer scheme: polled or interrupt-driven
-	 */
-	polled = !!of_get_property(np, "st,spi-polled", NULL);
-
-	/*
 	 * Get the IRQ number from the platform device
 	 */
 	irq = irq_of_parse_and_map(np, 0);
-	if (irq < 0 && !polled) {
+	if (irq < 0) {
 		dev_err(dev, "invalid IRQ %d for SPI contoller %d\n",
 			irq, bus);
 		ret = irq;
@@ -1150,21 +1074,18 @@ static int stm32_spi_probe(struct platform_device *pdev)
 	/*
 	 * Register interrupt handler
 	 */
-	c->polled = polled;
-	if (!c->polled) {
-		ret = request_irq(irq, stm32_spi_irq, 0, dev_name(dev), c);
-		if (ret) {
-			dev_err(dev, "request irq %d failed for "
-				"SPI controller %d\n", irq, bus);
-			goto Error_release_regs;
-		}
-		c->irq = irq;
-
-		/*
-		 * Set up the wait queue
-		 */
-		init_waitqueue_head(&c->wait);
+	ret = request_irq(irq, stm32_spi_irq, 0, dev_name(dev), c);
+	if (ret) {
+		dev_err(dev, "request irq %d failed for "
+			"SPI controller %d\n", irq, bus);
+		goto Error_release_regs;
 	}
+	c->irq = irq;
+
+	/*
+	 * Set up the wait queue
+	 */
+	init_waitqueue_head(&c->wait);
 
 	/*
 	 * Set up the lock
@@ -1224,13 +1145,8 @@ static int stm32_spi_probe(struct platform_device *pdev)
 	/*
 	 * If we are here, we are successful
 	 */
-	if (!c->polled) {
-		dev_info(dev, "SPI Controller %d at %p,irq=%d,hz=%d\n",
-			 m->bus_num, c->regs, c->irq, c->speed_hz);
-	} else {
-		dev_info(dev, "SPI Controller %d at %p,hz=%d\n",
-			 m->bus_num, c->regs, c->speed_hz);
-	}
+	dev_info(dev, "SPI Controller %d at %p,irq=%d,hz=%d\n",
+		 m->bus_num, c->regs, c->irq, c->speed_hz);
 
 	goto Done;
 
@@ -1240,8 +1156,7 @@ static int stm32_spi_probe(struct platform_device *pdev)
 Error_release_hardware:
 	stm32_spi_hw_release(c);
 Error_release_irq:
-	if (!c->polled)
-		free_irq(c->irq, c);
+	free_irq(c->irq, c);
 Error_release_regs:
 	iounmap(c->regs);
 Error_release_master:
@@ -1253,16 +1168,8 @@ Error_release_nothing:
 	 * Exit point
 	 */
 Done:
-	if (!c->polled) {
-		d_printk(1, "dev=%s,regs=%p,irq=%d,hz=%d,ret=%d\n",
-			dev_name(dev),
-			c? c->regs : NULL, c ? c->irq : 0, c ? c->speed_hz : 0,
-			ret);
-	} else {
-		d_printk(1, "dev=%s,regs=%p,hz=%d,ret=%d\n",
-			dev_name(dev),
-			c? c->regs : NULL, c ? c->speed_hz : 0, ret);
-	}
+	d_printk(1, "dev=%s,regs=%p,irq=%d,hz=%d,ret=%d\n", dev_name(dev),
+		c? c->regs : NULL, c ? c->irq : 0, c ? c->speed_hz : 0, ret);
 
 	return ret;
 }
@@ -1283,8 +1190,7 @@ static int stm32_spi_remove(struct platform_device *pdev)
 	 * Release kernel resources.
 	 */
 	spi_unregister_master(m);
-	if (!c->polled)
-		free_irq(c->irq, c);
+	free_irq(c->irq, c);
 	iounmap(c->regs);
 	spi_master_put(m);
 	platform_set_drvdata(pdev, NULL);
