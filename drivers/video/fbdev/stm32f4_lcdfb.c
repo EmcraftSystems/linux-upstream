@@ -38,6 +38,7 @@
 #include <linux/init.h>
 #include <linux/ioport.h>
 #include <linux/dma-mapping.h>
+#include <linux/dmamem.h>
 #include <linux/clk.h>
 #include <linux/console.h>
 #include <linux/io.h>
@@ -369,15 +370,24 @@ static int map_video_memory(struct fb_info *info)
 {
 	struct mfb_info *mfbi = info->par;
 	struct device *dev = &mfbi->parent->pdev->dev;
-	u32 smem_len = info->fix.line_length * info->var.yres_virtual;
+	u32 smem_len_min = info->fix.line_length * info->var.yres_virtual;
+	u32 smem_len;
 	dma_addr_t dmem;
 
-	info->screen_base = kzalloc(smem_len, GFP_KERNEL);
-	if (info->screen_base == NULL) {
-		dev_err(dev, "Unable to allocate fb memory\n");
-		return -ENOMEM;
+	if (!dmamem_fb_get(&dmem, &smem_len)
+	    && dmem
+	    && smem_len
+	    && (smem_len >= smem_len_min)) {
+		info->screen_base = dmem;
+	} else {
+		smem_len = smem_len_min;
+		info->screen_base = kzalloc(smem_len, GFP_KERNEL);
+		if (info->screen_base == NULL) {
+			dev_err(dev, "Unable to allocate fb memory\n");
+			return -ENOMEM;
+		}
+		dmem = virt_to_phys(info->screen_base);
 	}
-	dmem = virt_to_phys(info->screen_base);
 
 	mutex_lock(&info->mm_lock);
 	info->fix.smem_start = dmem;
