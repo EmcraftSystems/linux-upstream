@@ -405,6 +405,8 @@ stm_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
 		  unsigned int sg_len, enum dma_transfer_direction direction,
 		  unsigned long flags, void *context)
 {
+	static u32		empty_buf;
+
 	struct stm32_dma_chan	*stm_chan = to_stm_dma_chan(chan);
 	struct stm32_dma_slave	*stm_slave = chan->private;
 	struct dma_slave_config	*sconfig = &stm_chan->dma_sconfig;
@@ -434,9 +436,13 @@ stm_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
 		return NULL;
 	}
 
-	stm_chan->prep.m0ar = sg_dma_address(sgl);
-	stm_chan->prep.cr = STM32_DMA_CR_PL_HI | STM32_DMA_CR_MINC |
-			    stm_chan->cr_msk;
+	stm_chan->prep.cr = STM32_DMA_CR_PL_HI | stm_chan->cr_msk;
+	if (sg_dma_address(sgl)) {
+		stm_chan->prep.m0ar = sg_dma_address(sgl);
+		stm_chan->prep.cr  |= STM32_DMA_CR_MINC;
+	} else {
+		stm_chan->prep.m0ar = (u32)&empty_buf;
+	}
 
 	if (sconfig->device_fc) {
 		/*
@@ -484,6 +490,13 @@ stm_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
 		break;
 	default:
 		return NULL;
+	}
+
+	if (stm_chan->prep.ndtr > STM32_DMA_NDT_MAX) {
+		dev_err(chan2dev(chan),
+			"prep_slave_sg: transfer 0x%x is too large\n",
+			stm_chan->prep.ndtr);
+                return NULL;
 	}
 
 	/* Client is in control of flags ack */

@@ -427,6 +427,8 @@
 			interrupts = <35>;
 			clocks = <&rcc 0 172>;
 			resets = <&rst STM32F4_APB2_RESET(SPI1)>;
+			dmas = <&dma2 0 3>, <&dma2 3 3>;
+			dma-names = "rx", "tx";
 			status = "disabled";
 		};
 

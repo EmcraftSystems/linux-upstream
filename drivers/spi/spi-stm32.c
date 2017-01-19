@@ -1,7 +1,7 @@
 /*
- * Device driver for the SPI controller of the STM32F2/F4/F7
+ * Device driver for the SPI controller of the STM32Fx
  *
- * Copyright 2013-2015 Emcraft Systems
+ * Copyright 2013-2017 Emcraft Systems
  * Vladimir Khusainov, vlad@emcraft.com
  * Yuri Tikhonov, yur@emcraft.com
  *
@@ -30,7 +30,13 @@
 #include <linux/spi/spi.h>
 #include <linux/of_irq.h>
 #include <linux/of_gpio.h>
+#include <linux/dma-mapping.h>
+#include <linux/dmaengine.h>
+#include <linux/platform_data/dma-stm32.h>
 
+/******************************************************************************
+ * Constants and macros
+ ******************************************************************************/
 /*
  * Driver params
  */
@@ -39,11 +45,133 @@
 
 /*
  * Debug output control. While debugging, have SPI_STM32_DEBUG defined (to
- * default verbosity level).
- * In deployment, make sure that SPI_STM32_DEBUG is undefined
- * to avoid the performance and size overhead of debug messages.
+ * default verbosity level). In deployment, make sure that SPI_STM32_DEBUG is
+ * undefined to avoid the performance and size overhead of debug messages.
  */
 #undef SPI_STM32_DEBUG
+
+/*
+ * Some bits in various CSRs
+ */
+#define SPI_CR1_DFF			(1 << 11)
+#define SPI_CR1_SSM			(1 << 9)
+#define SPI_CR1_SSI			(1 << 8)
+#define SPI_CR1_SPE			(1 << 6)
+#define SPI_CR1_BR(x)			((x) << 3)
+#define SPI_CR1_MSTR			(1 << 2)
+#define SPI_CR1_CPOL			(1 << 1)
+#define SPI_CR1_CPHA			(1 << 0)
+
+#define SPI_CR2_FRXTH			(1 << 12)
+#define SPI_CR2_DS(x)			((x) << 8)
+#define SPI_CR2_TXEIE			(1 << 7)
+#define SPI_CR2_RXNEIE			(1 << 6)
+#define SPI_CR2_ERRIE			(1 << 5)
+#define SPI_CR2_TXDMAEN			(1 << 1)
+#define SPI_CR2_RXDMAEN			(1 << 0)
+
+#define SPI_SR_FTLVL_FULL		(3 << 11)
+#define SPI_SR_FRE			(1 << 8)
+#define SPI_SR_BSY			(1 << 7)
+#define SPI_SR_OVR			(1 << 6)
+#define SPI_SR_UDR			(1 << 3)
+#define SPI_SR_TXE			(1 << 1)
+#define SPI_SR_RXNE			(1 << 0)
+
+/******************************************************************************
+ * C-types
+ ******************************************************************************/
+/*
+ * DMA controls
+ */
+struct stm32_dma_data {
+	struct dma_async_tx_descriptor	*dsc;
+	struct dma_chan			*chan;
+	dma_cookie_t			cookie;
+	struct scatterlist		sg;
+};
+
+/*
+ * Private data structure for an SPI controller instance
+ */
+struct spi_stm32 {
+	int				bus;		/* Bus (ID) */
+	struct clk			*clk;		/* Clock */
+	struct reset_control		*rst;		/* Reset */
+	volatile struct stm32_spi_regs __iomem *regs;	/* Registers base */
+	unsigned int			speed_hz;	/* Max clock rate */
+	unsigned char			stopping;	/* Is being stopped? */
+	spinlock_t			lock;		/* Exclusive access */
+	wait_queue_head_t		wait;		/* Wait queue */
+	int				irq;		/* IRQ # */
+	struct device			*dev;		/* SPI controller dev */
+	struct spi_device		*slave;		/* Current SPI slave */
+	struct spi_message		*msg;		/* SPI message */
+	volatile int			xfer_status;	/* Xfer status */
+	int				len;		/* Xfer len */
+	int				wb;		/* Xfer width */
+	struct spi_transfer		*tx_t;		/* Cur Tx xfer */
+	struct spi_transfer		*rx_t;		/* Cur Rx xfer */
+
+	int				tx_l;		/* Tx len */
+	int				rx_l;		/* Rx len */
+
+	int				tx_i;		/* Cur Tx index */
+	int				rx_i;		/* Cur Rx index */
+
+	int				ti;		/* Tx count */
+	int				ri;		/* Rx count */
+
+	const struct stm32_of_data	*priv;		/* STM chip specific */
+	struct stm32_dma_data		dma_rx;
+	struct stm32_dma_data		dma_tx;
+	bool				dma_use;
+	unsigned int			cs_gpio[DRIVER_CS_MAX];
+	unsigned int			cs_timeout[DRIVER_CS_MAX];
+};
+
+/*
+ * STM chip specific data
+ */
+struct stm32_of_data {
+	int	(*hw_bt_set)(struct spi_stm32 *c, int bt);
+};
+
+/*
+ * Description of the the STM32 SPI hardware registers
+ */
+struct stm32_spi_regs {
+	u16	cr1;
+	u16	align1;
+	u16	cr2;
+	u16	align2;
+	u16	sr;
+	u16	align3;
+	u16	dr;
+	u16	align4;
+	u16	crcpr;
+	u16	align5;
+	u16	rxcrcr;
+	u16	align6;
+	u16	txcrcr;
+	u16	align7;
+	u16	i2scfgr;
+	u16	align8;
+	u16	i2spr;
+};
+
+/******************************************************************************
+ * Local variables and prototypes
+ ******************************************************************************/
+
+static int stm32_spi_dma_rx_next(struct spi_stm32 *c);
+static int stm32_spi_dma_tx_next(struct spi_stm32 *c);
+
+static void inline stm32_spi_transfer_done(struct spi_stm32 *c);
+
+/******************************************************************************
+ * Debug stuff
+ ******************************************************************************/
 
 #if defined(SPI_STM32_DEBUG)
 /*
@@ -83,90 +211,9 @@ __setup("stm32_spi_debug=", stm32_spi_debug_setup);
 #define d_printk(level, fmt, args...)
 #endif /* defined(SPI_STM32_DEBUG) */
 
-/*
- * Private data structure for an SPI controller instance
- */
-struct spi_stm32 {
-	int				bus;		/* Bus (ID) */
-	struct clk			*clk;		/* Clock */
-	struct reset_control		*rst;		/* Reset */
-	volatile struct stm32_spi_regs __iomem *regs;	/* Registers base */
-	unsigned int			speed_hz;	/* Max clock rate */
-	unsigned char			stopping;	/* Is being stopped? */
-	spinlock_t			lock;		/* Exclusive access */
-	wait_queue_head_t		wait;		/* Wait queue */
-	int				irq;		/* IRQ # */
-	struct spi_device		*slave;		/* Current SPI slave */
-	struct spi_message		*msg;		/* SPI message */
-	volatile int			xfer_status;	/* Xfer status */
-	int				len;		/* Xfer len */
-	int				wb;		/* Xfer width */
-	struct spi_transfer		*tx_t;		/* Cur Tx xfer */
-	struct spi_transfer		*rx_t;		/* Cur Rx xfer */
-	int				tx_l;		/* Tx len */
-	int				rx_l;		/* Rx len */
-	int				tx_i;		/* Cur Tx index */
-	int				rx_i;		/* Cur Rx index */
-	int				ti;		/* Tx count */
-	int				ri;		/* Rx count */
-	const struct stm32_of_data	*priv;		/* STM chip specific */
-	unsigned int			cs_gpio[DRIVER_CS_MAX];
-	unsigned int			cs_timeout[DRIVER_CS_MAX];
-};
-
-/*
- * STM chip specific data
- */
-struct stm32_of_data {
-	int	(*hw_bt_set)(struct spi_stm32 *c, int bt);
-};
-
-/*
- * Description of the the STM32 SPI hardware registers
- */
-struct stm32_spi_regs {
-	u16	cr1;
-	u16	align1;
-	u16	cr2;
-	u16	align2;
-	u16	sr;
-	u16	align3;
-	u16	dr;
-	u16	align4;
-	u16	crcpr;
-	u16	align5;
-	u16	rxcrcr;
-	u16	align6;
-	u16	txcrcr;
-	u16	align7;
-	u16	i2scfgr;
-	u16	align8;
-	u16	i2spr;
-};
-
-/*
- * Some bits in various CSRs
- */
-#define SPI_CR1_DFF			(1<<11)
-#define SPI_CR1_SSM			(1<<9)
-#define SPI_CR1_SSI			(1<<8)
-#define SPI_CR1_SPE			(1<<6)
-#define SPI_CR1_BR(x)			((x)<<3)
-#define SPI_CR1_MSTR			(1<<2)
-#define SPI_CR1_CPOL			(1<<1)
-#define SPI_CR1_CPHA			(1<<0)
-#define SPI_CR2_FRXTH			(1<<12)
-#define SPI_CR2_DS(x)			((x)<<8)
-#define SPI_CR2_TXEIE			(1<<7)
-#define SPI_CR2_RXNEIE			(1<<6)
-#define SPI_CR2_ERRIE			(1<<5)
-#define SPI_SR_FTLVL_FULL		(3<<11)
-#define SPI_SR_FRE			(1<<8)
-#define SPI_SR_BSY			(1<<7)
-#define SPI_SR_OVR			(1<<6)
-#define SPI_SR_UDR			(1<<3)
-#define SPI_SR_TXE			(1<<1)
-#define SPI_SR_RXNE			(1<<0)
+/******************************************************************************
+ * Hw configuration functions
+ ******************************************************************************/
 
 /*
  * Hardware initialization of the SPI controller
@@ -205,9 +252,17 @@ static int stm32_spi_hw_init(struct spi_stm32 *c)
 	 */
 
 	/*
+	 * Enable DMA if necessary
+	 */
+	if (c->dma_use)
+		c->regs->cr2 |= SPI_CR2_TXDMAEN | SPI_CR2_RXDMAEN;
+	else
+		c->regs->cr2 |= SPI_CR2_RXNEIE;
+
+	/*
 	 * Enable interrupts
 	 */
-	c->regs->cr2 |= SPI_CR2_RXNEIE | SPI_CR2_ERRIE;
+	c->regs->cr2 |= SPI_CR2_ERRIE;
 
 	/*
 	 * Enable the SPI contoller
@@ -348,18 +403,6 @@ static int stm32f7_spi_hw_bt_set(struct spi_stm32 *c, int bt)
 }
 
 /*
- * Set transfer length
- * @param c		controller data structure
- * @param len		transfer size
- */
-static inline void stm32_spi_hw_tfsz_set(struct spi_stm32 *c, int len)
-{
-	/*
-	 * This is a dummy for PIO mode
-	 */
-}
-
-/*
  * Set SPI mode
  * @param c		controller data structure
  * @param mode		mode
@@ -425,7 +468,7 @@ static inline void stm32_spi_hw_txfifo_put(struct spi_stm32 *c,
 	if (p) {
 		for (j = 0; j < wb; j++) {
 			d <<= 8;
-			d |= p[i*wb + j];
+			d |= p[i * wb + j];
 		}
 	}
 
@@ -465,8 +508,7 @@ static inline int stm32_spi_hw_rxfifo_error(struct spi_stm32 *c)
 static inline void stm32_spi_hw_rxfifo_get(struct spi_stm32 *c, unsigned int wb,
 					   void *rx, int i)
 {
-	int j;
-	unsigned char *p = (unsigned char *)rx;
+	unsigned char *p = rx;
 
 	if (wb == 1) {
 		u8 d = readb(&c->regs->dr);
@@ -475,8 +517,8 @@ static inline void stm32_spi_hw_rxfifo_get(struct spi_stm32 *c, unsigned int wb,
 	} else {
 		u16 d = readw(&c->regs->dr);
 		if (p) {
-			p[i*wb] = d & 0xFF;
-			p[i*wb + 1] = (d >> 8) & 0xFF;
+			p[i * wb] = d & 0xFF;
+			p[i * wb + 1] = (d >> 8) & 0xFF;
 		}
 	}
 }
@@ -501,6 +543,17 @@ static inline void stm32_spi_hw_rxfifo_purge(struct spi_stm32 *c)
  */
 static void stm32_spi_hw_release(struct spi_stm32 *c)
 {
+	if (c->dma_use) {
+		if (c->dma_tx.chan && c->dma_tx.cookie >= 0) {
+			dmaengine_terminate_all(c->dma_tx.chan);
+			c->dma_tx.cookie = 0;
+		}
+		if (c->dma_rx.chan && c->dma_rx.cookie >= 0) {
+			dmaengine_terminate_all(c->dma_rx.chan);
+			c->dma_rx.cookie = 0;
+		}
+	}
+
 	/*
 	 * Disable the SPI contoller
 	 */
@@ -512,6 +565,10 @@ static void stm32_spi_hw_release(struct spi_stm32 *c)
 	d_printk(2, "bus=%d\n", c->bus);
 }
 
+/******************************************************************************
+ * SPI Slave API
+ ******************************************************************************/
+
 /*
  * Prepare to transfer to a slave
  * @param c		controller data structure
@@ -521,6 +578,7 @@ static void stm32_spi_hw_release(struct spi_stm32 *c)
 static int stm32_spi_prepare_for_slave(struct spi_stm32 *c,
 				       struct spi_device *s)
 {
+	struct device *dev = &s->dev;
 	unsigned int spd;
 	int ret = 0;
 
@@ -529,24 +587,24 @@ static int stm32_spi_prepare_for_slave(struct spi_stm32 *c,
 	 */
 	if (!c->priv || !c->priv->hw_bt_set ||
 	    c->priv->hw_bt_set(c, s->bits_per_word)) {
-		dev_err(&c->slave->dev, "unsupported frame size: %d\n",
+		dev_err(dev, "unsupported frame size: %d\n",
 			s->bits_per_word);
 		ret = -EINVAL;
 		goto Done;
 	}
 	if (stm32_spi_hw_clk_set(c, spd = min(s->max_speed_hz, c->speed_hz))) {
-		dev_err(&c->slave->dev, "slave rate too low: %d\n", spd);
+		dev_err(dev, "slave rate too low: %d\n", spd);
 		ret = -EINVAL;
 		goto Done;
 	}
 	if (stm32_spi_hw_mode_set(c, s->mode)) {
-		dev_err(&c->slave->dev, "unsupported mode: %x\n", s->mode);
+		dev_err(dev, "unsupported mode: %x\n", s->mode);
 		ret = -EINVAL;
 		goto Done;
 	}
 
 Done:
-	d_printk(2, "slv=%s,ret=%d\n", dev_name(&c->slave->dev), ret);
+	d_printk(2, "slv=%s,ret=%d\n", dev_name(dev), ret);
 	return ret;
 }
 
@@ -591,68 +649,17 @@ Done:
 		c->slave ? dev_name(&c->slave->dev) : "");
 }
 
-/*
- * Prepare for a transfer
- * @param c		controller data structure
- * @param s		slave data structure
- */
-static void inline stm32_spi_xfer_init(struct spi_stm32 *c,
-				       struct spi_device *s)
-{
-	struct spi_transfer *t;
+/******************************************************************************
+ * Interrupted SPI xfers
+ ******************************************************************************/
 
-	/*
-	 * Count the total length of the message.
-	 */
-	c->len = 0;
-	c->wb = (s->bits_per_word + 7) / 8;
-	list_for_each_entry(t, &c->msg->transfers, transfer_list)
-		c->len += t->len;
-	c->len /= c->wb;
-
-	/*
-	 * Set the size of the transfer in the SPI controller
-	 */
-	stm32_spi_hw_tfsz_set(c, c->len);
-
-	/*
-	 * Prepare to traverse the message list.
-	 * We will need to advance separately over
-	 * transmit and receive data
-	 */
-	c->tx_t = list_entry((&c->msg->transfers)->next,
-		   struct spi_transfer, transfer_list);
-	c->tx_l = c->tx_t->len / c->wb;
-	c->tx_i = 0;
-	c->ti = 0;
-	c->rx_t = list_entry((&c->msg->transfers)->next,
-		   struct spi_transfer, transfer_list);
-	c->rx_l = c->rx_t->len / c->wb;
-	c->rx_i = 0;
-	c->ri = 0;
-}
-
-/*
- * Complete frame transfer
- */
-static void inline stm32_spi_xfer_tx_complete(struct spi_stm32 *c)
-{
-	if (!c->tx_t)
-		return;
-
-	if (c->tx_t->delay_usecs)
-		udelay(c->tx_t->delay_usecs);
-
-	if (c->tx_t->cs_change && c->rx_i == c->rx_l)
-		stm32_spi_release_slave(c, c->slave);
-}
 
 /*
  * Advance to next Tx frame
  * @param c		controller data structure
  * @param x		xfer to advance to
  */
-static void inline stm32_spi_xfer_tx_next(struct spi_stm32 *c)
+static void inline stm32_spi_int_tx_next(struct spi_stm32 *c)
 {
 	unsigned long f;
 
@@ -667,7 +674,7 @@ static void inline stm32_spi_xfer_tx_next(struct spi_stm32 *c)
 	 */
 	while (c->tx_i == c->tx_l) {
 		c->tx_t = list_entry(c->tx_t->transfer_list.next,
-	                         struct spi_transfer, transfer_list);
+				     struct spi_transfer, transfer_list);
 		c->tx_l = c->tx_t->len / c->wb;
 		c->tx_i = 0;
 	}
@@ -687,16 +694,15 @@ static void inline stm32_spi_xfer_tx_next(struct spi_stm32 *c)
  * @param c		controller data structure
  * @param x		xfer to advance to
  */
-static void inline stm32_spi_xfer_rx_next(struct spi_stm32 *c)
+static void inline stm32_spi_int_rx_next(struct spi_stm32 *c)
 {
 	unsigned long f;
 
 	/*
-	 * If the receive in the current transfer
-	 * has been finished, go to the next one.
+	 * If the receive in the current transfer has been finished, go to the
+	 * next one.
 	 */
 	while (c->rx_i == c->rx_l) {
-
 		/*
 		 * Advance to the next transfer
 		 */
@@ -726,12 +732,20 @@ static irqreturn_t stm32_spi_irq(int irq, void *dev_id)
 	int sr = c->regs->sr;
 #endif
 
-	if (! stm32_spi_hw_rxfifo_empty(c)) {
+	if (c->dma_use) {
+		/*
+		 * If DMA xfers are used, then we can got SPI IRQs in case
+		 * of errors only; just notify
+		 */
+		dev_err(c->dev, "SPI Error IRQ, SR=%x\n", c->regs->sr);
+		goto out;
+	}
 
+	if (!stm32_spi_hw_rxfifo_empty(c)) {
 		/*
 		 * Read in a frame
 		 */
-		stm32_spi_xfer_rx_next(c);
+		stm32_spi_int_rx_next(c);
 
 		/*
 		 * If the entire transfer has been received, that's it.
@@ -742,7 +756,8 @@ static irqreturn_t stm32_spi_irq(int irq, void *dev_id)
 			wake_up(&c->wait);
 		}
 	}
-	stm32_spi_xfer_tx_complete(c);
+
+	stm32_spi_transfer_done(c);
 
 	/*
 	 * Push a next frame out
@@ -753,39 +768,33 @@ static irqreturn_t stm32_spi_irq(int irq, void *dev_id)
 		 * Write a frame
 		 */
 		while (stm32_spi_hw_txfifo_full(c));
-		stm32_spi_xfer_tx_next(c);
+		stm32_spi_int_tx_next(c);
 	}
 
 	d_printk(4, "ok: sr=%x\n", sr);
-
+out:
 	return IRQ_HANDLED;
 }
 
 /*
- * Transfer a message in PIO, interrupted mode
+ * Transfer a message in interrupted mode
  * @param c		controller data structure
- * @param s		slave data structure
  * @param		pointer to actual transfer length (set here)
  * @returns		0->success, <0->error code
  */
-static int stm32_spi_pio_interrupted(struct spi_stm32 *c, struct spi_device *s,
-				     int *rlen)
+static int stm32_spi_int_xfer(struct spi_stm32 *c, int *rlen)
 {
-	int ret = 0;
+	struct spi_device *s = c->slave;
 	unsigned int timeout = c->cs_timeout[s->chip_select] ?
 			       c->cs_timeout[s->chip_select] : 1;
-
-	/*
-	 * Prepare to run a transfer
-	 */
-	stm32_spi_xfer_init(c, s);
+	int ret = 0;
 
 	/*
 	 * Start the transfer
 	 */
 	c->xfer_status = -EBUSY;
 	*rlen = 0;
-	stm32_spi_xfer_tx_next(c);
+	stm32_spi_int_tx_next(c);
 
 	/*
 	 * Wait for the transfer to complete, one way or another
@@ -809,6 +818,341 @@ static int stm32_spi_pio_interrupted(struct spi_stm32 *c, struct spi_device *s,
 		c->msg, c->len, *rlen, ret);
 
 	return ret;
+}
+
+/******************************************************************************
+ * DMA SPI xfer
+ ******************************************************************************/
+
+static void stm32_spi_dma_xf_done(struct spi_stm32 *c)
+{
+	/*
+	 * If rx or tx is still running - do nothing
+	 */
+	if (c->dma_rx.dsc || c->dma_tx.dsc)
+		goto out;
+
+	/*
+	 * If the entire transfer has been received, that's it.
+	 */
+	if (c->ri == c->len) {
+		c->xfer_status = 0;
+		wake_up(&c->wait);
+		goto out;
+	}
+
+	/*
+	 * Transfer next
+	 */
+	stm32_spi_dma_rx_next(c);
+	stm32_spi_dma_tx_next(c);
+out:
+	return;
+}
+
+static void stm32_spi_dma_rx_done(void *arg)
+{
+	struct spi_stm32 *c = arg;
+	struct stm32_dma_data *dma = &c->dma_rx;
+
+	d_printk(1, "%s %d of %d\n", __func__, c->ri, c->len);
+
+	async_tx_ack(dma->dsc);
+	dma->cookie = -EINVAL;
+	dma->dsc = NULL;
+
+	stm32_spi_dma_xf_done(c);
+}
+
+static int stm32_spi_dma_rx_next(struct spi_stm32 *c)
+{
+	struct stm32_dma_data *dma = &c->dma_rx;
+	struct device *dev = c->dev;
+	char *buf;
+	int rv, len;
+
+	/*
+	 * Check if Rx DMA is idle
+	 */
+	if (dma->dsc) {
+		dev_err(dev, "%s: dma is busy\n", __func__);
+		rv = -EBUSY;
+		goto out;
+	}
+
+	/*
+	 * If the receive in the current transfer has been finished, go to the
+	 * next one.
+	 */
+	while (c->rx_i == c->rx_l) {
+		/*
+		 * Advance to the next transfer
+		 */
+		c->rx_t = list_entry(c->rx_t->transfer_list.next,
+				     struct spi_transfer, transfer_list);
+		c->rx_l = c->rx_t->len / c->wb;
+		c->rx_i = 0;
+	}
+
+	buf = c->rx_t->rx_buf;
+	if (buf)
+		buf = &buf[c->rx_i * c->wb];
+	len = (c->rx_l - c->rx_i) <= STM32_DMA_NDT_MAX ? c->rx_l - c->rx_i :
+							 STM32_DMA_NDT_MAX;
+
+	sg_init_table(&dma->sg, 1);
+	sg_dma_address(&dma->sg) = (u32)buf;
+	sg_dma_len(&dma->sg) = len;
+
+	dma->dsc = dmaengine_prep_slave_sg(dma->chan, &dma->sg, 1,
+			DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+	if (!dma->dsc) {
+		dev_err(dev, "%s: failed to send with DMA\n", __func__);
+		rv = -EIO;
+		goto out;
+	}
+
+	d_printk(1, "ri=%d,len=%d,wb=%d,rx_i=%d,rx_l=%d,buf=%p,len=%x\n",
+		 c->ri, c->len, c->wb, c->rx_i, c->rx_l, buf, len);
+	c->rx_i += len;
+	c->ri += len;
+
+	dma->dsc->callback = stm32_spi_dma_rx_done;
+	dma->dsc->callback_param = c;
+	dma->dsc->cookie = dmaengine_submit(dma->dsc);
+
+	rv = 0;
+out:
+	return rv;
+}
+
+static int stm32_spi_dma_rx_init(struct spi_stm32 *c)
+{
+	struct stm32_dma_data *dma = &c->dma_rx;
+	struct device *dev = c->dev;
+	struct dma_slave_config cfg;
+	int rv;
+
+	/* Configure the slave DMA */
+	memset(&cfg, 0, sizeof(cfg));
+	cfg.direction = DMA_DEV_TO_MEM;
+	cfg.src_addr_width = c->wb;
+	cfg.dst_addr_width = c->wb;
+	cfg.src_addr = (u32)&c->regs->dr;
+	cfg.src_maxburst = 1;
+	rv = dmaengine_slave_config(dma->chan, &cfg);
+	if (rv)
+		dev_err(dev, "%s: configuration failed (%d)\n", __func__, rv);
+
+	return rv;
+}
+
+static void stm32_spi_dma_tx_done(void *arg)
+{
+	struct spi_stm32 *c = arg;
+	struct stm32_dma_data *dma = &c->dma_tx;
+
+	d_printk(1, "%s %d of %d\n", __func__, c->ti, c->len);
+
+	async_tx_ack(dma->dsc);
+	dma->cookie = -EINVAL;
+	dma->dsc = NULL;
+
+	stm32_spi_dma_xf_done(c);
+}
+
+static int stm32_spi_dma_tx_next(struct spi_stm32 *c)
+{
+	struct stm32_dma_data *dma = &c->dma_tx;
+	struct device *dev = c->dev;
+	const char *buf;
+	int rv, len;
+
+	/*
+	 * Check if DMA is idle
+	 */
+	if (dma->dsc) {
+		dev_err(dev, "%s: dma is busy\n", __func__);
+		rv = -EBUSY;
+		goto out;
+	}
+
+	/*
+	 * CS may be deactivated because of previous 'cs_change', so force it
+	 */
+	stm32_spi_capture_slave(c, c->slave);
+
+	/*
+	 * If the trasmit in the current transfer has been finished, go to the
+	 * next one.
+	 */
+	while (c->tx_i == c->tx_l) {
+		c->tx_t = list_entry(c->tx_t->transfer_list.next,
+				     struct spi_transfer, transfer_list);
+		c->tx_l = c->tx_t->len / c->wb;
+		c->tx_i = 0;
+	}
+
+	buf = c->tx_t->tx_buf;
+	if (buf)
+		buf = &buf[c->tx_i * c->wb];
+	len = (c->tx_l - c->tx_i) <= STM32_DMA_NDT_MAX ? c->tx_l - c->tx_i :
+							 STM32_DMA_NDT_MAX;
+
+	sg_init_table(&dma->sg, 1);
+	sg_dma_address(&dma->sg) = (u32)buf;
+	sg_dma_len(&dma->sg) = len;
+
+	dma->dsc = dmaengine_prep_slave_sg(dma->chan, &dma->sg, 1,
+			DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+	if (!dma->dsc) {
+		dev_err(dev, "%s: failed to send with DMA\n", __func__);
+		rv = -EIO;
+		goto out;
+	}
+
+	d_printk(1, "ti=%d,len=%d,wb=%d,tx_i=%d,tx_l=%d,buf=%p,len=%x\n",
+		 c->ti, c->len, c->wb, c->tx_i, c->tx_l, buf, len);
+	c->tx_i += len;
+	c->ti += len;
+
+	dma->dsc->callback = stm32_spi_dma_tx_done;
+	dma->dsc->callback_param = c;
+	dma->dsc->cookie = dmaengine_submit(dma->dsc);
+
+	rv = 0;
+out:
+	return rv;
+}
+
+static int stm32_spi_dma_tx_init(struct spi_stm32 *c)
+{
+	struct stm32_dma_data *dma = &c->dma_tx;
+	struct device *dev = c->dev;
+	struct dma_slave_config cfg;
+	int rv;
+
+	/* Configure the slave DMA */
+	memset(&cfg, 0, sizeof(cfg));
+	cfg.direction = DMA_MEM_TO_DEV;
+	cfg.src_addr_width = c->wb;
+	cfg.dst_addr_width = c->wb;
+	cfg.dst_addr = (u32)&c->regs->dr;
+	cfg.dst_maxburst = 1;
+	rv = dmaengine_slave_config(dma->chan, &cfg);
+	if (rv)
+		dev_err(dev, "%s: configuration failed (%d)\n", __func__, rv);
+
+	return rv;
+}
+
+/*
+ * Transfer a message in DMA mode
+ * @param c		controller data structure
+ * @param s		slave data structure
+ * @param		pointer to actual transfer length (set here)
+ * @returns		0->success, <0->error code
+ */
+static int stm32_spi_dma_xfer(struct spi_stm32 *c, int *rlen)
+{
+	struct spi_device *s = c->slave;
+	u32 tm;
+	int rv;
+
+	/*
+	 * Prepare DMAs
+	 */
+	rv = stm32_spi_dma_rx_init(c);
+	if (rv)
+		goto out;
+	rv = stm32_spi_dma_tx_init(c);
+	if (rv)
+		goto out;
+
+	/*
+	 * Start the transfer
+	 */
+	c->xfer_status = -EBUSY;
+	*rlen = 0;
+
+	stm32_spi_dma_rx_next(c);
+	stm32_spi_dma_tx_next(c);
+
+	/*
+	 * Wait for the transfer to complete, one way or another
+	 */
+	tm = c->cs_timeout[s->chip_select] ? c->cs_timeout[s->chip_select] : 1;
+	if (wait_event_interruptible_timeout(c->wait,
+				c->xfer_status != -EBUSY, tm * HZ) == 0) {
+		rv = -ETIMEDOUT;
+		goto out;
+	}
+
+	rv = c->xfer_status;
+	if (!rv)
+		*rlen = c->ri;
+
+out:
+	c->xfer_status = 0;
+	d_printk(3, "msg=%p,len=%d,rlen=%d,rv=%d\n", c->msg, c->len, *rlen, rv);
+
+	return rv;
+}
+
+
+/******************************************************************************
+ * SPI Master API
+ ******************************************************************************/
+/*
+ * Prepare for a transfer
+ * @param c		controller data structure
+ * @param s		slave data structure
+ */
+static void inline stm32_spi_transfer_init(struct spi_stm32 *c)
+{
+	struct spi_device *s = c->slave;
+	struct spi_transfer *t;
+
+	/*
+	 * Count the total length of the message.
+	 */
+	c->len = 0;
+	c->wb = (s->bits_per_word + 7) / 8;
+	list_for_each_entry(t, &c->msg->transfers, transfer_list)
+		c->len += t->len;
+	c->len /= c->wb;
+
+	/*
+	 * Prepare to traverse the message list.
+	 * We will need to advance separately over
+	 * transmit and receive data
+	 */
+	c->tx_t = list_entry((&c->msg->transfers)->next, struct spi_transfer,
+			     transfer_list);
+	c->tx_l = c->tx_t->len / c->wb;
+	c->tx_i = 0;
+	c->ti = 0;
+
+	c->rx_t = list_entry((&c->msg->transfers)->next, struct spi_transfer,
+			     transfer_list);
+	c->rx_l = c->rx_t->len / c->wb;
+	c->rx_i = 0;
+	c->ri = 0;
+}
+
+/*
+ * Complete frame transfer
+ */
+static void inline stm32_spi_transfer_done(struct spi_stm32 *c)
+{
+	if (!c->tx_t)
+		return;
+
+	if (c->tx_t->delay_usecs)
+		udelay(c->tx_t->delay_usecs);
+
+	if (c->tx_t->cs_change && c->rx_i == c->rx_l)
+		stm32_spi_release_slave(c, c->slave);
 }
 
 /*
@@ -859,7 +1203,9 @@ static int stm32_spi_transfer_message(struct spi_master *master,
 	 * Transfer the message over the wire
 	 */
 	c->msg = msg;
-	ret = stm32_spi_pio_interrupted(c, s, &rlen);
+	stm32_spi_transfer_init(c);
+	ret = c->dma_use ? stm32_spi_dma_xfer(c, &rlen) :
+			   stm32_spi_int_xfer(c, &rlen);
 	if (ret)
 		goto Done;
 
@@ -899,6 +1245,7 @@ Exit:
 static int stm32_spi_setup(struct spi_device *s)
 {
 	struct spi_stm32 *c = spi_master_get_devdata(s->master);
+	struct device *dev = &s->dev;
 	int ret = 0;
 
 	/*
@@ -913,7 +1260,7 @@ static int stm32_spi_setup(struct spi_device *s)
 	 * Check the width of transfer for this device
 	 */
 	if (stm32_spi_hw_bt_check(c, s->bits_per_word)) {
-		dev_err(&s->dev, "unsupported bits per word %d\n",
+		dev_err(dev, "unsupported bits per word %d\n",
 			s->bits_per_word);
 		ret = -EINVAL;
 		goto Done;
@@ -926,7 +1273,7 @@ static int stm32_spi_setup(struct spi_device *s)
 
 Done:
 	d_printk(1, "slv=%s,spd=%d,cs=#%u(%d),bt=%d,md=0x%x,ret=%d\n",
-		 dev_name(&s->dev), s->max_speed_hz,
+		 dev_name(dev), s->max_speed_hz,
 		 s->chip_select, c->cs_gpio[s->chip_select],
 		 s->bits_per_word, s->mode, ret);
 	return ret;
@@ -941,6 +1288,10 @@ static void stm32_spi_cleanup(struct spi_device *s)
 	d_printk(1, "slv=%s\n", dev_name(&s->dev));
 }
 
+/******************************************************************************
+ * Platform device API
+ ******************************************************************************/
+
 /*
  * Instantiate an SPI controller
  * @dev			SPI controller platform device
@@ -951,6 +1302,7 @@ static int stm32_spi_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
 	const struct of_device_id *of_dev;
+	struct stm32_dma_data *dma;
 	struct spi_master *m = NULL;
 	struct spi_stm32 *c = NULL;
 	struct resource *mem;
@@ -1002,6 +1354,7 @@ static int stm32_spi_probe(struct platform_device *pdev)
 		goto Error_release_nothing;
 	}
 	c = spi_master_get_devdata(m);
+	c->dev = dev;
 
 	of_dev = of_match_node(dev->driver->of_match_table, np);
 	if (!of_dev) {
@@ -1032,6 +1385,28 @@ static int stm32_spi_probe(struct platform_device *pdev)
 				i, ret);
 			goto Error_release_master;
 		}
+	}
+
+	c->dma_use = false;
+	if (of_get_property(np, "dmas", NULL) &&
+	    of_get_property(np, "st,use-dma", NULL)) {
+		dma = &c->dma_rx;
+		memset(dma, 0, sizeof(struct stm32_dma_data));
+		dma->chan = dma_request_slave_channel(dev, "rx");
+		if (!dma->chan) {
+			dev_err(dev, "%s: no dma-rx found\n", __func__);
+			goto Error_release_dma;
+		}
+
+		dma = &c->dma_tx;
+		memset(dma, 0, sizeof(struct stm32_dma_data));
+		dma->chan = dma_request_slave_channel(dev, "tx");
+		if (!dma->chan) {
+			dev_err(dev, "%s: no dma-tx found\n", __func__);
+			goto Error_release_dma;
+		}
+
+		c->dma_use = true;
 	}
 
 	if (of_property_count_u32_elems(np, "timeouts") != cs_num) {
@@ -1068,7 +1443,7 @@ static int stm32_spi_probe(struct platform_device *pdev)
 		dev_err(dev, "unable to map registers for "
 			"SPI controller %d, base=%08x\n", bus, mem->start);
 		ret = -EINVAL;
-		goto Error_release_master;
+		goto Error_release_dma;
 	}
 
 	/*
@@ -1159,6 +1534,17 @@ Error_release_irq:
 	free_irq(c->irq, c);
 Error_release_regs:
 	iounmap(c->regs);
+Error_release_dma:
+	if (c->dma_use) {
+		if (c->dma_tx.chan) {
+			dma_release_channel(c->dma_tx.chan);
+			c->dma_tx.chan = NULL;
+		}
+		if (c->dma_rx.chan) {
+			dma_release_channel(c->dma_rx.chan);
+			c->dma_rx.chan = NULL;
+		}
+	}
 Error_release_master:
 	spi_master_put(m);
 	platform_set_drvdata(pdev, NULL);
@@ -1199,6 +1585,18 @@ static int stm32_spi_remove(struct platform_device *pdev)
 	 * Shut the hardware down
 	 */
 	stm32_spi_hw_release(c);
+
+	if (c->dma_use) {
+		if (c->dma_tx.chan) {
+			dma_release_channel(c->dma_tx.chan);
+			c->dma_tx.chan = NULL;
+		}
+
+		if (c->dma_rx.chan) {
+			dma_release_channel(c->dma_rx.chan);
+			c->dma_rx.chan = NULL;
+		}
+	}
 
 	/*
 	 * Exit point

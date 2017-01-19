@@ -13,6 +13,11 @@
 #define _STM32_DMA_H_
 
 /**
+ * Maximum number of items which may be transferred with DMA
+ */
+#define STM32_DMA_NDT_MAX	0xFFFF
+
+/**
  * struct stm32_dma_platform_data - Controller configuration parameters
  * @nr_channels: Number of channels supported by hardware
  * @cap_mask: dma_capability flags supported by the platform
