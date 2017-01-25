@@ -105,6 +105,7 @@ static const struct stm32f4_gate_data stm32f4_gates[] __initconst = {
 
 	{ STM32F4_RCC(AHB3),  0,	"fmc",		"ahb_div",
 		CLK_IGNORE_UNUSED },
+	{ STM32F4_RCC(AHB3),  1,	"qspi",		"ahb_div", },
 
 	{ STM32F4_RCC(APB1),  0,	"tim2",		"apb1_mul" },
 	{ STM32F4_RCC(APB1),  1,	"tim3",		"apb1_mul" },
@@ -167,7 +168,7 @@ static const struct stm32f4_gate_data stm32f4_gates[] __initconst = {
  * MAX_CLKS is the maximum value in the enumeration below plus the combined
  * hweight of stm32f42xx_gate_map (plus one).
  */
-#define MAX_CLKS 78
+#define MAX_CLKS 79
 
 enum { SYSTICK, FCLK };
 
@@ -176,7 +177,7 @@ enum { SYSTICK, FCLK };
  * have gate bits associated with them. Its combined hweight is MAX_CLKS.
  */
 static const u64 stm32f42xx_gate_map[] = { 0x000000f17ef417ffull,
-					   0x0000000000000001ull,
+					   0x0000000000000003ull,
 					   0x0cf77fb3f7fec9ffull };
 
 static struct clk *clks[MAX_CLKS];

@@ -36,6 +36,9 @@
 #define SPINOR_OP_RDCR		0x35	/* Read configuration register */
 #define SPINOR_OP_RDFSR		0x70	/* Read flag status register */
 
+#define SPINOR_OP_FAST_PROGRAM	0x38	/* Extended quad input fast program */
+#define SPINOR_OP_FAST_READ	0xeb	/* Quad input/output fast read */
+
 /* 4-byte address opcodes - used on Spansion and some Macronix flashes. */
 #define SPINOR_OP_READ4		0x13	/* Read data bytes (low frequency) */
 #define SPINOR_OP_READ4_FAST	0x0c	/* Read data bytes (high frequency) */

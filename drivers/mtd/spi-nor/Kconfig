@@ -28,4 +28,11 @@ config SPI_FSL_QUADSPI
 	  This enables support for the Quad SPI controller in master mode.
 	  We only connect the NOR to this controller now.
 
+config SPI_STM32_QUADSPI
+	tristate "STM32 Quad SPI controller"
+	depends on ARCH_STM32
+	help
+	 This enables support for the Quad SPI controller in master mode.
+	 We only connect the NOR to this controller now.
+
 endif # MTD_SPI_NOR
