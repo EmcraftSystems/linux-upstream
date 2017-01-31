@@ -242,6 +242,7 @@ struct stm32_dsi_struct {
 	struct stm32_dsi_regs __iomem *regs;
 	struct clk		*clk;
 	struct gpio_desc	*backlight_gpio;
+	struct gpio_desc	*reset_gpio;
 };
 
 static inline void stm32_dsi_send(struct stm32_dsi_struct *stm32_dsi,
@@ -344,6 +345,7 @@ static int stm32_dsi_probe(struct platform_device *pdev)
 	struct device_node *display_node;
 	int i;
 	int hactive = -1;
+	u32 lanes = 0;
 
 	ltdc_node = of_find_compatible_node(NULL, NULL, "st,stm32f4-ltdc");
 	panel_node = of_parse_phandle(pdev->dev.of_node, "panel", 0);
@@ -411,16 +413,30 @@ static int stm32_dsi_probe(struct platform_device *pdev)
 
 	stm32_dsi->clk = devm_clk_get(stm32_dsi->dev, NULL);
 	if (IS_ERR_OR_NULL(stm32_dsi->clk)) {
-		dev_err(stm32_dsi->dev, "no clock specified\n");
+		dev_err(stm32_dsi->dev, "no clock specified in DTS\n");
 	}
 	clk_prepare_enable(stm32_dsi->clk);
 
 	stm32_dsi->backlight_gpio = devm_gpiod_get_optional(stm32_dsi->dev,
 						      "backlight", GPIOD_OUT_HIGH);
-	if (IS_ERR(stm32_dsi->backlight_gpio)) {
+	if (IS_ERR_OR_NULL(stm32_dsi->backlight_gpio)) {
 		dev_info(stm32_dsi->dev, "Operating without backlight gpio: %li\n",
 			 PTR_ERR(stm32_dsi->backlight_gpio));
 		stm32_dsi->backlight_gpio = NULL;
+	}
+
+	stm32_dsi->reset_gpio = devm_gpiod_get_optional(stm32_dsi->dev,
+						      "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR_OR_NULL(stm32_dsi->reset_gpio)) {
+		dev_info(stm32_dsi->dev, "Operating without reset gpio: %li\n",
+			 PTR_ERR(stm32_dsi->reset_gpio));
+		stm32_dsi->reset_gpio = NULL;
+	}
+
+	err = of_property_read_u32(pdev->dev.of_node, "lanes", &lanes);
+	if (err < 0) {
+		dev_err(&pdev->dev, "failed to get number of lanes from DTS: %d\n", err);
+		return err;
 	}
 
 	stm32_dsi->regs->wrpcr = STM32_DSI_WRPCR_REGEN;
@@ -446,7 +462,7 @@ static int stm32_dsi_probe(struct platform_device *pdev)
 
 	stm32_dsi->regs->pctlr = STM32_DSI_PCTLR_DEN | STM32_DSI_PCTLR_CKE;
 	stm32_dsi->regs->clcr = STM32_DSI_CLCR_DPCC;
-	stm32_dsi->regs->pconfr = STM32_DSI_PCONFR_NL_TWO_LANES
+	stm32_dsi->regs->pconfr = ((lanes == 2) ? STM32_DSI_PCONFR_NL_TWO_LANES : STM32_DSI_PCONFR_NL_ONE_LANE)
 		| STM32_DSI_PCONFR_SW_TIME(10);
 	stm32_dsi->regs->ccr = STM32_DSI_CCR_TXECKDIV(4);
 	stm32_dsi->regs->wpcr0 = STM32_DSI_WPCR0_UIX4(8);
@@ -485,6 +501,15 @@ static int stm32_dsi_probe(struct platform_device *pdev)
 	stm32_dsi_gpsr_wait(stm32_dsi, &stm32_dsi->regs->wisr, STM32_DSI_WISR_BUSY, false);
 
 	stm32_dsi->regs->lpcr = 0;
+
+	if (stm32_dsi->reset_gpio) {
+		gpiod_set_value(stm32_dsi->reset_gpio, 0);
+		msleep(500);
+		gpiod_set_value(stm32_dsi->reset_gpio, 1);
+		msleep(500);
+		gpiod_set_value(stm32_dsi->reset_gpio, 0);
+		msleep(500);
+	}
 
 	stm32_dsi->regs->cr |= 1;
 	stm32_dsi->regs->wcr |= STM32_DSI_WCR_DSIEN;
