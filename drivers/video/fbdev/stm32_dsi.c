@@ -22,6 +22,8 @@
 #include <linux/of_platform.h>
 #include <video/of_display_timing.h>
 #include <video/videomode.h>
+#include <linux/freezer.h>
+#include <linux/kthread.h>
 
 #include "stm32_dsi.h"
 
@@ -243,6 +245,7 @@ struct stm32_dsi_struct {
 	struct clk		*clk;
 	struct gpio_desc	*backlight_gpio;
 	struct gpio_desc	*reset_gpio;
+	int			refresh_period_ms;
 };
 
 static inline void stm32_dsi_send(struct stm32_dsi_struct *stm32_dsi,
@@ -329,6 +332,23 @@ void stm32_dsi_write_cmd(void *dsi, int length, u8 *p)
 		stm32_dsi_write_long(stm32_dsi, 0, STM32_DSI_LONG_PKT_WRITE, length, p[length], p);
 }
 
+static int stm32_dsi_refresh_task(void *param)
+{
+	struct stm32_dsi_struct *stm32_dsi = param;
+
+	set_freezable();
+
+	while (!kthread_should_stop()) {
+		stm32_dsi->regs->wcr |= STM32_DSI_WCR_LTDCEN;
+
+		schedule_timeout_interruptible(msecs_to_jiffies(stm32_dsi->refresh_period_ms));
+
+		try_to_freeze();
+	}
+
+	return 0;
+}
+
 static int stm32_dsi_probe(struct platform_device *pdev)
 {
 	struct stm32_dsi_struct *stm32_dsi;
@@ -345,7 +365,7 @@ static int stm32_dsi_probe(struct platform_device *pdev)
 	struct device_node *display_node;
 	int i;
 	int hactive = -1;
-	u32 lanes = 0;
+	u32 lanes = 0, te = 0, refresh_period_ms = 0;
 
 	ltdc_node = of_find_compatible_node(NULL, NULL, "st,stm32f4-ltdc");
 	panel_node = of_parse_phandle(pdev->dev.of_node, "panel", 0);
@@ -438,6 +458,19 @@ static int stm32_dsi_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to get number of lanes from DTS: %d\n", err);
 		return err;
 	}
+	err = of_property_read_u32(pdev->dev.of_node, "te", &te);
+	if (err < 0) {
+		dev_err(&pdev->dev, "failed to get TE selector from DTS: %d\n", err);
+		return err;
+	}
+	if (!te) {
+		err = of_property_read_u32(pdev->dev.of_node, "refresh-period-ms", &refresh_period_ms);
+		if (err < 0) {
+			dev_err(&pdev->dev, "failed to get refresh period from DTS, required without TE: %d\n", err);
+			return err;
+		}
+		stm32_dsi->refresh_period_ms = refresh_period_ms;
+	}
 
 	stm32_dsi->regs->wrpcr = STM32_DSI_WRPCR_REGEN;
 	stm32_dsi_gpsr_wait(stm32_dsi, &stm32_dsi->regs->wisr, STM32_DSI_WISR_RRS, true);
@@ -474,15 +507,15 @@ static int stm32_dsi_probe(struct platform_device *pdev)
 	stm32_dsi->regs->lcolcr = STM32_DSI_LCOLCR_COLC_24BIT;
 	stm32_dsi->regs->wcfgr = STM32_DSI_WCFGR_COLMUX_24BIT
 		| STM32_DSI_WCFGR_DSIM
-		| STM32_DSI_WCFGR_AR
-		| STM32_DSI_WCFGR_TESRC;
+		| (te ? STM32_DSI_WCFGR_AR : 0)
+		| (te ? STM32_DSI_WCFGR_TESRC : 0);
 
 	stm32_dsi->regs->gvcidr = STM32_DSI_GVCIDR_VCID(0);
 	stm32_dsi->regs->lvcidr = 0;
 
 	stm32_dsi->regs->lccr = STM32_DSI_LCCR_CMDSIZE(hactive);
 
-	stm32_dsi->regs->cmcr |= STM32_DSI_CMCR_TEARE
+	stm32_dsi->regs->cmcr |= (te ? STM32_DSI_CMCR_TEARE : 0)
 		| STM32_DSI_CMCR_GSW0TX
 		| STM32_DSI_CMCR_GSW1TX
 		| STM32_DSI_CMCR_GSW2TX
@@ -515,7 +548,7 @@ static int stm32_dsi_probe(struct platform_device *pdev)
 	stm32_dsi->regs->wcr |= STM32_DSI_WCR_DSIEN;
 	stm32_dsi_gpsr_wait(stm32_dsi, &stm32_dsi->regs->wisr, STM32_DSI_WISR_BUSY, false);
 
-	panel->init(stm32_dsi, stm32_dsi_write_cmd, STM32_DSI_ORIENTATION_LANDSCAPE);
+	panel->init(stm32_dsi, stm32_dsi_write_cmd, STM32_DSI_ORIENTATION_LANDSCAPE, !!te);
 
 	stm32_dsi->regs->cmcr &= ~( 0
 		| STM32_DSI_CMCR_GSW0TX
@@ -536,6 +569,9 @@ static int stm32_dsi_probe(struct platform_device *pdev)
 	stm32_dsi->regs->wcr |= STM32_DSI_WCR_LTDCEN;
 
 	dev_set_drvdata(stm32_dsi->dev, stm32_dsi);
+
+	if (!te)
+		kthread_run(stm32_dsi_refresh_task, stm32_dsi, "stm32_dsifb_refresh");
 
 	return 0;
 }

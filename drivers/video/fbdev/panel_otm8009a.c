@@ -161,7 +161,7 @@ static const uint8_t ShortRegData48[] = {OTM8009A_CMD_NOP, 0xB6};
 static const uint8_t ShortRegData49[] = {0xF5, 0x06};
 static const uint8_t ShortRegDataTE[] = {OTM8009A_CMD_TEEON, OTM8009A_TEEON_TELOM_VBLANKING_INFO_ONLY};
 
-static int otm8009a_init(void *dsi, void (*writecmd)(void *dsi, int NbrParams, u8 *pParams), int orientation)
+static int otm8009a_init(void *dsi, void (*writecmd)(void *dsi, int NbrParams, u8 *pParams), int orientation, bool te)
 {
 	/*
 	 * Enable CMD2 to access vendor specific commands
@@ -376,7 +376,8 @@ static int otm8009a_init(void *dsi, void (*writecmd)(void *dsi, int NbrParams, u
 	}
 
 	/* By default the Tearing Signal is off */
-	writecmd(dsi, 1, (uint8_t *)ShortRegDataTE);
+	if (te)
+		writecmd(dsi, 1, (uint8_t *)ShortRegDataTE);
 
 	/* Note : defaut is 0 (lowest Brightness), 0xFF is highest Brightness, try 0x7F : intermediate value */
 	writecmd(dsi, 1, (uint8_t *)ShortRegData40);
