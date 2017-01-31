@@ -167,11 +167,11 @@ static int otm8009a_init(void *dsi, void (*writecmd)(void *dsi, int NbrParams, u
 	 * Enable CMD2 to access vendor specific commands
 	 * Enter in command 2 mode and set EXTC to enable address shift function (0x00)
 	 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData1);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData1);
 	writecmd(dsi, 3, (uint8_t *)lcdRegData1);
 
 	/* Enter ORISE Command 2 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData2); /* Shift address to 0x80 */
+	writecmd(dsi, 1, (uint8_t *)ShortRegData2); /* Shift address to 0x80 */
 	writecmd(dsi, 2, (uint8_t *)lcdRegData2);
 
 	/*
@@ -179,12 +179,12 @@ static int otm8009a_init(void *dsi, void (*writecmd)(void *dsi, int NbrParams, u
 	 * Set SD_PT
 	 * -> Source output level during porch and non-display area to GND
 	 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData2);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData3);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData2);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData3);
 	msleep(10);
 	/* Not documented */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData4);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData5);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData4);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData5);
 	msleep(10);
 
 	/*
@@ -192,8 +192,8 @@ static int otm8009a_init(void *dsi, void (*writecmd)(void *dsi, int NbrParams, u
 	 * Set gvdd_en_test
 	 * -> enable GVDD test mode !!!
 	 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData6);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData7);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData6);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData7);
 
 	/*
 	 * PWR_CTRL2 - 0xC590h - 146th parameter - Default 0x79
@@ -202,145 +202,145 @@ static int otm8009a_init(void *dsi, void (*writecmd)(void *dsi, int NbrParams, u
 	 * Set pump 5 vgh voltage
 	 * -> from -12.0v downto -9.0v
 	 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData8);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData9);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData8);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData9);
 
 	/* P_DRV_M - 0xC0B4h - 181th parameter - Default 0x00
 	 * -> Column inversion
 	 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData10);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData11);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData10);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData11);
 
 	/*
 	 * VCOMDC - 0xD900h - 1st parameter - Default 0x39h
 	 * VCOM Voltage settings
 	 * -> from -1.0000v downto -1.2625v
 	 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData1);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData12);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData1);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData12);
 
 	/* Oscillator adjustment for Idle/Normal mode (LPDT only) set to 65Hz (default is 60Hz) */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData13);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData14);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData13);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData14);
 
 	/* Video mode internal */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData15);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData16);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData15);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData16);
 
 	/*
 	 * PWR_CTRL2 - 0xC590h - 147h parameter - Default 0x00
 	 * Set pump 4&5 x6
 	 * -> ONLY VALID when PUMP4_EN_ASDM_HV = "0"
 	 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData17);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData18);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData17);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData18);
 
 	/*
 	 * PWR_CTRL2 - 0xC590h - 150th parameter - Default 0x33h
 	 * Change pump4 clock ratio
 	 * -> from 1 line to 1/2 line
 	 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData19);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData9);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData19);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData9);
 
 	/* GVDD/NGVDD settings */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData1);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData1);
 	writecmd(dsi,  2, (uint8_t *)lcdRegData5);
 
 	/*
 	 * PWR_CTRL2 - 0xC590h - 149th parameter - Default 0x33h
 	 * Rewrite the default value !
 	 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData20);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData21);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData20);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData21);
 
 	/* Panel display timing Setting 3 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData22);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData23);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData22);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData23);
 
 	/* Power control 1 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData24);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData25);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData24);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData25);
 
 	/* Source driver precharge */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData13);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData26);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData13);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData26);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData15);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData27);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData15);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData27);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData28);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData28);
 	writecmd(dsi, 2, (uint8_t *)lcdRegData6);
 
 	/* GOAVST */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData2);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData2);
 	writecmd(dsi, 6, (uint8_t *)lcdRegData7);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData29);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData29);
 	writecmd(dsi, 14, (uint8_t *)lcdRegData8);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData30);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData30);
 	writecmd(dsi, 14, (uint8_t *)lcdRegData9);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData31);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData31);
 	writecmd(dsi, 10, (uint8_t *)lcdRegData10);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData32);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData46);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData32);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData46);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData2);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData2);
 	writecmd(dsi, 10, (uint8_t *)lcdRegData11);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData33);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData33);
 	writecmd(dsi, 15, (uint8_t *)lcdRegData12);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData29);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData29);
 	writecmd(dsi, 15, (uint8_t *)lcdRegData13);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData30);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData30);
 	writecmd(dsi, 10, (uint8_t *)lcdRegData14);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData31);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData31);
 	writecmd(dsi, 15, (uint8_t *)lcdRegData15);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData32);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData32);
 	writecmd(dsi, 15, (uint8_t *)lcdRegData16);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData34);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData34);
 	writecmd(dsi, 10, (uint8_t *)lcdRegData17);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData35);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData35);
 	writecmd(dsi, 10, (uint8_t *)lcdRegData18);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData2);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData2);
 	writecmd(dsi, 10, (uint8_t *)lcdRegData19);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData33);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData33);
 	writecmd(dsi, 15, (uint8_t *)lcdRegData20);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData29);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData29);
 	writecmd(dsi, 15, (uint8_t *)lcdRegData21);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData30);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData30);
 	writecmd(dsi, 10, (uint8_t *)lcdRegData22);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData31);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData31);
 	writecmd(dsi, 15, (uint8_t *)lcdRegData23);
 
-	writecmd(dsi, 0, (uint8_t *)ShortRegData32);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData32);
 	writecmd(dsi, 15, (uint8_t *)lcdRegData24);
 
 	/*
 	 * PWR_CTRL1 - 0xc580h - 130th parameter - default 0x00
 	 * Pump 1 min and max DM
 	 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData13);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData47);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData48);
-	writecmd(dsi, 0, (uint8_t *)ShortRegData49);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData13);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData47);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData48);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData49);
 
 	/* Exit CMD2 mode */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData1);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData1);
 	writecmd(dsi, 3, (uint8_t *)lcdRegData25);
 
 	/*************************************************************************** */
@@ -348,60 +348,60 @@ static int otm8009a_init(void *dsi, void (*writecmd)(void *dsi, int NbrParams, u
 	/*************************************************************************** */
 
 	/* NOP - goes back to DCS std command ? */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData1);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData1);
 
 	/* Gamma correction 2.2+ table (HSDT possible) */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData1);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData1);
 	writecmd(dsi, 16, (uint8_t *)lcdRegData3);
 
 	/* Gamma correction 2.2- table (HSDT possible) */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData1);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData1);
 	writecmd(dsi, 16, (uint8_t *)lcdRegData4);
 
 	/* Send Sleep Out command to display : no parameter */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData36);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData36);
 
 	/* Wait for sleep out exit */
 	msleep(120);
 
 	/* Set Pixel color format to RGB888 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData38);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData38);
 
 	/* By default the orientation mode is portrait */
 	if(orientation == STM32_DSI_ORIENTATION_LANDSCAPE)
 	{
-		writecmd(dsi, 0, (uint8_t *)ShortRegData39);
+		writecmd(dsi, 1, (uint8_t *)ShortRegData39);
 		writecmd(dsi, 4, (uint8_t *)lcdRegData27);
 		writecmd(dsi, 4, (uint8_t *)lcdRegData28);
 	}
 
 	/* By default the Tearing Signal is off */
-	writecmd(dsi, 0, (uint8_t *)ShortRegDataTE);
+	writecmd(dsi, 1, (uint8_t *)ShortRegDataTE);
 
 	/* Note : defaut is 0 (lowest Brightness), 0xFF is highest Brightness, try 0x7F : intermediate value */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData40);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData40);
 
 	/* defaut is 0, try 0x2C - Brightness Control Block, Display Dimming & BackLight on */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData41);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData41);
 
 	/* defaut is 0, try 0x02 - image Content based Adaptive Brightness [Still Picture] */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData42);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData42);
 
 	/* defaut is 0 (lowest Brightness), 0xFF is highest Brightness */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData43);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData43);
 
 	/* Send Command Display On */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData44);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData44);
 
 	/* NOP command */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData1);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData1);
 
 	/*
 	 * Send Command GRAM memory write (no parameters) : this initiates
 	 * frame write via other DSI commands sent by
 	 * DSI host from LTDC incoming pixels in video mode
 	 */
-	writecmd(dsi, 0, (uint8_t *)ShortRegData45);
+	writecmd(dsi, 1, (uint8_t *)ShortRegData45);
 
 	return 0;
 }
