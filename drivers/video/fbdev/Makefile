@@ -136,6 +136,7 @@ obj-$(CONFIG_FB_OPENCORES)	  += ocfb.o
 obj-$(CONFIG_FB_STM32)		  += stm32f4_lcdfb.o
 obj-$(CONFIG_FB_STM32_DSI)	  += stm32_dsi.o
 obj-$(CONFIG_FB_PANEL_OTM8009A)	  += panel_otm8009a.o
+obj-$(CONFIG_FB_PANEL_LS013B3SY)  += panel_ls013b3sy.o
 
 # Platform or fallback drivers go here
 obj-$(CONFIG_FB_UVESA)            += uvesafb.o

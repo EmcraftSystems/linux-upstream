@@ -1022,6 +1022,12 @@ config FB_PANEL_OTM8009A
 	help
 	 This enables support for the Orise Tech OTM8009A LCD panel.
 
+config FB_PANEL_LS013B3SY
+	tristate "Sharp LS013B3SY 320x300 DSI LCD panel support"
+	depends on FB_STM32_DSI
+	help
+	 This enables support for the Sharp LS013B3SY 320x300 DSI LCD panel.
+
 config FB_NVIDIA
 	tristate "nVidia Framebuffer Support"
 	depends on FB && PCI
