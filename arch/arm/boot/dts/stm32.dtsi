@@ -317,6 +317,8 @@
 			reg = <0x40004800 0x400>;
 			interrupts = <39>;
 			clocks = <&rcc 0 146>;
+			dmas = <&dma1 1 4>, <&dma1 3 4>;
+			dma-names = "rx", "tx";
 			status = "disabled";
 		};
 
