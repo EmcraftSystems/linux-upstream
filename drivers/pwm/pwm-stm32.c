@@ -30,6 +30,7 @@
  * Register offsets
  */
 #define TIM_CR1			0x00
+#define TIM_CR2			0x04
 #define TIM_EGR			0x14
 #define TIM_CCMR1		0x18
 #define TIM_CCER		0x20
@@ -42,6 +43,9 @@
  */
 #define CR1_CEN			(1 << 0)
 #define CR1_ARPE		(1 << 7)
+
+#define CR2_MMS_MASK		(7 << 4)
+#define CR2_MMS_OC_REF(x)	((3 + (x)) << 4)
 
 #define EGR_UG			(1 << 0)
 
@@ -69,6 +73,7 @@ struct stm_pwm_chip {
 	int		bits;
 
 	bool		high_on_init;
+	bool		trigger_output;
 };
 
 /*
@@ -257,6 +262,12 @@ static int stm_pwm_probe(struct platform_device *pdev)
 	}
 
 	/*
+	 * 'trigger-output' allows to generate internal TRGO
+	 */
+	pc->trigger_output = device_property_read_bool(pc->chip.dev,
+						       "trigger-output");
+
+	/*
 	 * 'high-on-init' allows to initialize PWM with HIGH output until
 	 * first PWM run.
 	 */
@@ -276,7 +287,19 @@ static int stm_pwm_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	/* Configure */
+	if (pc->trigger_output) {
+		/*
+		 * Configure timer for triggering internal event
+		 */
+		val = readl(pc->regs + TIM_CR2);
+		val &= ~CR2_MMS_MASK;
+		val |= CR2_MMS_OC_REF(chan);
+		writel(val, pc->regs + TIM_CR2);
+	}
+
+	/*
+	 * Configure the specified timer channel
+	 */
 	ofs = TIM_CCMR1 + ((pc->chan / 2) << 2);
 	val = readl(pc->regs + ofs);
 	if (chan % 2) {

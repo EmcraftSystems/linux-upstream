@@ -214,8 +214,15 @@ enum stm32f4_adc_smpr {
 #define STM32F4_JSQ1_MASK		GENMASK(4, 0)
 
 /* STM32F4_ADC_CCR - bit fields */
-#define STM32F4_ADC_ADCPRE_SHIFT	16
-#define STM32F4_ADC_ADCPRE_MASK		GENMASK(17, 16)
+#define STM32F4_CCR_TSVREFE		BIT(23)
+#define STM32F4_CCR_VBATE		BIT(22)
+#define STM32F4_CCR_ADCPRE_SHIFT	16
+#define STM32F4_CCR_ADCPRE_MASK		GENMASK(17, 16)
+#define STM32F4_CCR_DMA_SHIFT		14
+#define STM32F4_CCR_DMA_MASK		GENMASK(15, 14)
+#define STM32F4_CCR_DDS			(1 << 13)
+#define STM32F4_CCR_MULTI_SHIFT		0
+#define STM32F4_CCR_MULTI_MASK		GENMASK(4, 0)
 
 /*
  * stm32 ADC1, ADC2 & ADC3 are tightly coupled and may be used in multi mode
@@ -239,10 +246,11 @@ static const struct stm32_adc_chan_spec stm32f4_adc1_channels[] = {
 	{ IIO_VOLTAGE, 13, "in13" },
 	{ IIO_VOLTAGE, 14, "in14" },
 	{ IIO_VOLTAGE, 15, "in15" },
-	/* internal analog sources available on input 16 to 18 */
-	{ IIO_VOLTAGE, 16, "in16" },
-	{ IIO_VOLTAGE, 17, "in17" },
-	{ IIO_VOLTAGE, 18, "in18" },
+	/* internal analog sources */
+	{ IIO_TEMP,    16, "ts" },	/* STM32F40x & STM32F41x Temperature */
+	{ IIO_VOLTAGE, 17, "vrefint" },
+	{ IIO_VOLTAGE, 18, "vbat" },
+	{ IIO_TEMP,    18, "ts" },	/* STM32F42x & STM32F43x Temperature */
 };
 
 static const struct stm32_adc_chan_spec stm32f4_adc23_channels[] = {
@@ -425,6 +433,7 @@ static const struct stm32_adc_reginfo stm32f4_adc_reginfo = {
 	.eocie = STM32F4_EOCIE,
 	.jeocie = STM32F4_JEOCIE,
 	.dr = STM32F4_ADCX_DR,
+	.cdr = STM32F4_ADC_CDR,
 	.jdr = {
 		STM32F4_ADCX_JDR1,
 		STM32F4_ADCX_JDR2,
@@ -457,6 +466,37 @@ static bool stm32f4_adc_injected_started(struct stm32_adc *adc)
 	u32 val = stm32_adc_readl(adc, STM32F4_ADCX_SR) & STM32F4_JSTRT;
 
 	return !!val;
+}
+
+/**
+ * stm32f4_adc_prepare_conv() - Prepare for conversion
+ * @adc: stm32 adc instance
+ * @chan: ADC channel
+ *
+ * Internal ADC sources (Temperature, VREF, VBAT) require additional
+ * configuring.
+ */
+static void stm32f4_adc_prepare_conv(struct stm32_adc *adc,
+		const struct iio_chan_spec *chan)
+{
+	u32 val;
+
+	if (adc->id != 0 || chan->channel < 16)
+		goto out;
+
+	val = stm32_adc_common_readl(adc->common, STM32F4_ADC_CCR);
+	val &= ~(STM32F4_CCR_TSVREFE | STM32F4_CCR_VBATE);
+
+	/* Temperature sensor or VREFINT */
+	if (chan->type == IIO_TEMP || chan->channel == 17)
+		val |= STM32F4_CCR_TSVREFE;
+	/* VBAT */
+	if (chan->type == IIO_VOLTAGE && chan->channel == 18)
+		val |= STM32F4_CCR_VBATE;
+
+	stm32_adc_common_writel(adc->common, STM32F4_ADC_CCR, val);
+out:
+	return;
 }
 
 /**
@@ -505,8 +545,19 @@ static int stm32f4_adc_start_conv(struct stm32_adc *adc)
 	}
 
 	/* Software start ? (e.g. trigger detection disabled ?) */
-	if (!(stm32_adc_readl(adc, STM32F4_ADCX_CR2) & trig_msk))
-		stm32_adc_set_bits(adc, STM32F4_ADCX_CR2, start_msk);
+	if (!adc->multi && !(stm32_adc_readl(adc, STM32F4_ADCX_CR2) & trig_msk)) {
+		int i, inum;
+
+		/*
+		 * Workaround a problem with injected conversions in 'Combined
+		 * regular simultaneous + alternate trigger mode'. In the Triple
+		 * mode only each 3d conversion is passed. So to avoid timeouts
+		 * we just repeat sw start multiple times here
+		 */
+		inum = (adc->injected && stm32_avg_is_enabled(adc)) ? 3 : 1;
+		for (i = 0; i < inum; i++)
+			stm32_adc_set_bits(adc, STM32F4_ADCX_CR2, start_msk);
+	}
 
 	return 0;
 }
@@ -572,12 +623,56 @@ static int stm32f4_adc_clk_sel(struct stm32_adc *adc)
 		return -EINVAL;
 
 	val = stm32_adc_common_readl(common, STM32F4_ADC_CCR);
-	val &= ~STM32F4_ADC_ADCPRE_MASK;
-	val |= i << STM32F4_ADC_ADCPRE_SHIFT;
+	val &= ~STM32F4_CCR_ADCPRE_MASK;
+	val |= i << STM32F4_CCR_ADCPRE_SHIFT;
 	stm32_adc_common_writel(common, STM32F4_ADC_CCR, val);
 
 	dev_dbg(common->dev, "Using analog clock source at %ld kHz\n",
 		rate / (stm32f4_pclk_div[i] * 1000));
+
+	return 0;
+}
+
+/**
+ * stm32f4_multi_dma() - configure multi ADC mode
+ * @com:	ADC common structure pointer
+ * @dm:		DMA mode
+ * @mm:		multi ADC mode
+ */
+static int stm32f4_adc_multi_dma_sel(struct stm32_adc_common *com,
+	enum stm32_adc_dma_mode dm, enum stm32_adc_multi_mode mm)
+{
+	/* 0xIR mask: injected/regular channels marked as `multi`;
+	 * array indexes are `enum stm32_adc_multi_mode`
+	 */
+	static u8 multi_msk[] = {
+		0x00,
+		0x22, 0x02, 0x00, 0x00, 0x20, 0x02, 0x02, 0x00, 0x20, /* DUAL */
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x66, 0x06, 0x00, 0x00, 0x60, 0x06, 0x06, 0x00, 0x60  /* TRPL */
+	};
+	struct stm32_adc *adc;
+	u32 msk, val;
+
+	list_for_each_entry(adc, &com->adc_list, adc_list) {
+		msk = 1 << adc->id;
+		if (adc->injected)
+			msk = msk << 4;
+		if (msk & multi_msk[mm])
+			adc->multi = true;
+	}
+
+	val = stm32_adc_common_readl(com, STM32F4_ADC_CCR);
+
+	val &= ~STM32F4_CCR_DMA_MASK;
+	val |= dm << STM32F4_CCR_DMA_SHIFT;
+
+	val &= ~STM32F4_CCR_MULTI_MASK;
+	val |= mm << STM32F4_CCR_MULTI_SHIFT;
+
+	val |= STM32F4_CCR_DDS;
+
+	stm32_adc_common_writel(com, STM32F4_ADC_CCR, val);
 
 	return 0;
 }
@@ -623,11 +718,13 @@ static const struct stm32_adc_ops stm32f4_adc_ops = {
 	.highres = 12,
 	.max_clock_rate = 36000000,
 	.clk_sel = stm32f4_adc_clk_sel,
+	.prepare_conv = stm32f4_adc_prepare_conv,
 	.start_conv = stm32f4_adc_start_conv,
 	.stop_conv = stm32f4_adc_stop_conv,
 	.is_started = stm32f4_adc_is_started,
 	.regular_started = stm32f4_adc_regular_started,
 	.injected_started = stm32f4_adc_injected_started,
+	.multi_dma_sel = stm32f4_adc_multi_dma_sel,
 };
 
 static const struct of_device_id stm32f4_adc_of_match[] = {

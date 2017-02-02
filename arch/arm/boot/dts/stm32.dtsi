@@ -417,6 +417,8 @@
 				#io-channel-cells = <1>;
 				reg = <0x0>;
 				clocks = <&rcc 0 168>;
+				dmas = <&dma2 4 0>;
+				dma-names = "rx";
 				status = "disabled";
 			};
 

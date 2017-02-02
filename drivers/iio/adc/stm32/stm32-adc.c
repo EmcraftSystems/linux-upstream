@@ -406,6 +406,7 @@ static int stm32_adc_single_conv(struct iio_dev *indio_dev,
 		goto adc_disable;
 	}
 
+	stm32_adc_prepare_conv(adc, chan);
 	stm32_adc_conv_irq_enable(adc);
 
 	ret = stm32_adc_start_conv(adc);
@@ -452,8 +453,12 @@ static int stm32_adc_read_raw(struct iio_dev *indio_dev,
 
 	switch (mask) {
 	case IIO_CHAN_INFO_RAW:
-		if (chan->type == IIO_VOLTAGE)
+		if (chan->type == IIO_VOLTAGE || chan->type == IIO_TEMP)
 			ret = stm32_adc_single_conv(indio_dev, chan, val);
+		break;
+	case IIO_CHAN_INFO_AVERAGE_RAW:
+		if (chan->type == IIO_VOLTAGE)
+			ret = stm32_adc_avg_get(indio_dev, chan, val);
 		break;
 	case IIO_CHAN_INFO_SCALE:
 		*val = adc->common->vref_mv;
@@ -503,16 +508,22 @@ static irqreturn_t stm32_adc_isr(struct stm32_adc *adc)
 	struct iio_dev *indio_dev = iio_priv_to_dev(adc);
 	const struct stm32_adc_reginfo *reginfo =
 		adc->common->data->adc_reginfo;
-	u32 mask, clr_mask, status = stm32_adc_readl(adc, reginfo->isr);
+	u32 mask, emask, clr_mask, status = stm32_adc_readl(adc, reginfo->isr);
 
 	if (adc->injected) {
 		mask = reginfo->jeoc;
+		emask = reginfo->jeocie;
 		clr_mask = mask;
 	} else {
 		mask = reginfo->eoc;
+		emask = reginfo->eocie;
 		/* don't clear 'eoc' as it is cleared when reading 'dr' */
 		clr_mask = 0;
 	}
+
+	/* If EOC isn't enabled, then ignore this event */
+	if (!(stm32_adc_readl(adc, reginfo->ier) & emask))
+		return IRQ_NONE;
 
 	/* clear irq */
 	stm32_adc_writel(adc, reginfo->isr, status & ~clr_mask);
@@ -982,7 +993,18 @@ static void stm32_adc_chan_init_one(struct iio_dev *indio_dev,
 	chan->extend_name = channel->name;
 	chan->scan_index = scan_index;
 	chan->indexed = 1;
-	chan->info_mask_separate = BIT(IIO_CHAN_INFO_RAW);
+
+	/*
+	 * Support averaging for `regular` channels only
+	 */
+	if (adc->injected) {
+		chan->info_mask_separate = BIT(IIO_CHAN_INFO_RAW);
+	} else {
+		chan->info_mask_separate = stm32_avg_is_enabled(adc) ?
+					   BIT(IIO_CHAN_INFO_AVERAGE_RAW) :
+					   BIT(IIO_CHAN_INFO_RAW);
+	}
+
 	chan->info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE);
 	chan->scan_type.sign = 'u';
 	chan->scan_type.realbits = adc->common->data->highres;
@@ -1209,6 +1231,7 @@ int stm32_adc_probe(struct platform_device *pdev)
 	const struct of_device_id *match;
 	struct stm32_adc_common *common;
 	struct stm32_adc *adc;
+	struct stm32_avg *avg;
 	struct resource *res;
 	int ret;
 
@@ -1275,7 +1298,7 @@ int stm32_adc_probe(struct platform_device *pdev)
 		goto err_clk_disable;
 	}
 
-	ret = devm_request_irq(&pdev->dev, common->irq,	stm32_adc_common_isr,
+	ret = devm_request_irq(&pdev->dev, common->irq, stm32_adc_common_isr,
 			       0, pdev->name, common);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to request irq\n");
@@ -1286,11 +1309,80 @@ int stm32_adc_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_clk_disable;
 
+	/* Check if want to operate in the averaging mode */
+	avg = &common->avg;
+	ret = of_property_read_u32(np, "avg-num", &avg->num);
+	if (!ret && avg->num) {
+		avg->pwm = devm_of_pwm_get(&pdev->dev, np, NULL);
+		if (IS_ERR(avg->pwm)) {
+			dev_err(&pdev->dev, "can't get pwm\n");
+			goto err_clk_disable;
+		}
+
+		ret = of_property_read_u32(np, "avg-rate", &avg->rate);
+		if (ret || !avg->rate) {
+			dev_err(&pdev->dev, "failed get `avg-rate`\n");
+			goto err_clk_disable;
+		}
+	}
+
 	/* Parse adc child nodes to retrieve master/slave instances data */
 	for_each_available_child_of_node(np, child) {
 		ret = stm32_adc_register(common, child);
 		if (ret)
 			goto err_unregister;
+	}
+
+	/* Complete average initialization */
+	if (avg->num) {
+		struct iio_trigger *tr = NULL;
+		const char *tr_name;
+
+		ret = of_property_read_string(np, "avg-trigger", &tr_name);
+		if (ret) {
+			dev_err(&pdev->dev, "no `avg-trigger` specified\n");
+			goto err_unregister;
+		}
+
+		list_for_each_entry(adc, &common->adc_list, adc_list) {
+			if (adc->injected)
+				continue;
+			list_for_each_entry(tr, &adc->extrig_list, alloc_list) {
+				if (!strstr(tr->name, tr_name))
+					continue;
+				avg->tr = tr;
+				break;
+			}
+			break;
+		}
+		if (!avg->tr) {
+			dev_err(&pdev->dev, "no `%s` trigger found\n", tr_name);
+			goto err_unregister;
+		}
+
+		ret = stm32_adc_avg_init(common);
+		if (ret) {
+			dev_err(&pdev->dev, "adc avg enable failed\n");
+			goto err_unregister;
+		}
+
+		ret = stm32_adc_set_trig(iio_trigger_get_drvdata(tr), tr);
+		if (ret) {
+			dev_err(&pdev->dev, "can't set trigger\n");
+			goto err_unregister;
+		}
+
+		list_for_each_entry(adc, &common->adc_list, adc_list) {
+			if (adc->injected)
+				continue;
+			stm32_adc_start_conv(adc);
+		}
+
+		ret = stm32_adc_avg_run(common);
+		if (ret) {
+			dev_err(&pdev->dev, "can't run averaging\n");
+			goto err_unregister;
+		}
 	}
 
 	dev_info(&pdev->dev, "registered\n");

@@ -22,9 +22,11 @@
 #ifndef __STM32_ADC_H
 #define __STM32_ADC_H
 
+#include <linux/platform_device.h>
 #include <linux/dmaengine.h>
 #include <linux/gpio/consumer.h>
 #include <linux/irq_work.h>
+#include <linux/pwm.h>
 
 /*
  * STM32 - ADC global register map
@@ -127,6 +129,31 @@ enum stm32_adc_jextsel {
 	STM32_JEXT31,
 };
 
+enum stm32_adc_dma_mode {
+	STM32_DM_DIS		= 0,
+	STM32_DM_DMA1,
+	STM32_DM_DMA2,
+	STM32_DM_DMA3
+};
+
+enum stm32_adc_multi_mode {
+	STM32_MM_INDEPEND	= 0,
+
+	STM32_MM_DUAL_CRS_ISM	= 1,
+	STM32_MM_DUAL_CRS_ATM	= 2,
+	STM32_MM_DUAL_ISM	= 5,
+	STM32_MM_DUAL_RSM	= 6,
+	STM32_MM_DUAL_IM	= 7,
+	STM32_MM_DUAL_ATM	= 9,
+
+	STM32_MM_TRIPLE_CRS_ISM	= 17,
+	STM32_MM_TRIPLE_CRS_ATM	= 18,
+	STM32_MM_TRIPLE_ISM	= 21,
+	STM32_MM_TRIPLE_RSM	= 22,
+	STM32_MM_TRIPLE_IM	= 23,
+	STM32_MM_TRIPLE_ATM	= 25
+};
+
 #define	STM32_ADC_TIMEOUT_US	100000
 #define	STM32_ADC_TIMEOUT	(msecs_to_jiffies(STM32_ADC_TIMEOUT_US / 1000))
 
@@ -211,6 +238,7 @@ struct stm32_adc_trig_reginfo {
  * @eocie:		end of conversion interrupt enable mask in @ier
  * @jeocie:		end of injected conversion sequence interrupt en mask
  * @dr:			data register offset
+ * @cdr:		common regular data register for dual and triple modes
  * @jdr:		injected data registers offsets
  * @sqr_regs:		Regular sequence registers description
  * @jsqr_reg:		Injected sequence register description
@@ -226,6 +254,7 @@ struct stm32_adc_reginfo {
 	u32 eocie;
 	u32 jeocie;
 	u32 dr;
+	u32 cdr;
 	u32 jdr[4];
 	const struct stm32_adc_regs *sqr_regs;
 	const struct stm32_adc_regs *jsqr_reg;
@@ -235,6 +264,7 @@ struct stm32_adc_reginfo {
 };
 
 struct stm32_adc;
+struct stm32_adc_common;
 
 /**
  * struct stm32_adc_ops - stm32 ADC, compatible dependent data
@@ -248,6 +278,7 @@ struct stm32_adc;
  * @highres:		Max resolution
  * @max_clock_rate:	Max input clock rate
  * @clk_sel:		routine to select common clock and prescaler
+ * @prepare_conv:	routine to prepare conversions
  * @start_conv:		routine to start conversions
  * @stop_conv:		routine to stop conversions
  * @is_started:		routine to get adc 'started' state
@@ -256,6 +287,7 @@ struct stm32_adc;
  * @enable:		optional routine to enable stm32 adc
  * @disable:		optional routine to disable stm32 adc
  * @is_enabled		reports enabled state
+ * @multi_dma_sel:	configure multi DMA mode parameters
  */
 struct stm32_adc_ops {
 	const struct stm32_adc_info *adc_info;
@@ -266,6 +298,8 @@ struct stm32_adc_ops {
 	int highres;
 	unsigned long max_clock_rate;
 	int (*clk_sel)(struct stm32_adc *adc);
+	void (*prepare_conv)(struct stm32_adc *adc,
+		const struct iio_chan_spec *chan);
 	int (*start_conv)(struct stm32_adc *adc);
 	int (*stop_conv)(struct stm32_adc *adc);
 	bool (*is_started)(struct stm32_adc *adc);
@@ -274,6 +308,8 @@ struct stm32_adc_ops {
 	int (*enable)(struct stm32_adc *adc);
 	void (*disable)(struct stm32_adc *adc);
 	bool (*is_enabled)(struct stm32_adc *adc);
+	int (*multi_dma_sel)(struct stm32_adc_common *com,
+		enum stm32_adc_dma_mode dm, enum stm32_adc_multi_mode mm);
 };
 
 struct stm32_adc_common;
@@ -292,6 +328,7 @@ struct stm32_adc_common;
  * @bufi:		data buffer index
  * @num_conv:		expected number of scan conversions
  * @injected:		use injected channels on this adc
+ * @multi:		adc is used as slave in multi ADC mode
  * @lock:		spinlock
  * @work:		irq work used to call trigger poll routine
  * @dma_chan:		dma channel
@@ -315,6 +352,7 @@ struct stm32_adc {
 	int			bufi;
 	int			num_conv;
 	bool			injected;
+	bool			multi;
 	spinlock_t		lock;		/* interrupt lock */
 	struct irq_work		work;
 	struct dma_chan		*dma_chan;
@@ -327,12 +365,47 @@ struct stm32_adc {
 };
 
 /**
+ * struct stm32_avg - private data of ADC driver used for averaging
+ * @num:		Average measurements number
+ * @rate:		Average measurements period, ms
+ * @chan_num:		Number of channels used per ADCx
+ * @tr:			ADC start trigger source
+ * @pwm:		Trigger timer PWM
+ * @dma:		DMA channel
+ * @dma_buf:		Raw DMA buffer CPU address
+ * @dma_adr:		Raw DMA buffer DMA address
+ * @raw_pos:		Raw buffer position
+ * @raw_length:		Raw buffer length
+ * @raw_period:		Raw buffer period
+ * @lock:		Filtered data bufer mutex
+ * @raw_buf:		Raw data buffer pointers (seq indexed [*][s])
+ * @flt_buf:		Filtered data buffer (chan indexed [*][c])
+ */
+struct stm32_avg {
+	u32			num;
+	u32			rate;
+	int			chan_num;
+	struct iio_trigger	*tr;
+	struct pwm_device	*pwm;
+	struct dma_chan		*dma;
+	u32			*dma_buf;
+	dma_addr_t		dma_adr;
+	u32			raw_pos;
+	u32			raw_length;
+	u32			raw_period;
+	struct mutex		lock;
+	u32			*raw_buf[STM32_ADC_ID_MAX][STM32_ADC_MAX_SQ];
+	u32			flt_buf[STM32_ADC_ID_MAX][STM32_ADC_MAX_SQ];
+};
+
+/**
  * struct stm32_adc_common - private data of ADC driver, common to all
  * ADC instances (ADC block)
  * @dev:		device for this controller
  * @phys_base:		control registers base physical addr
  * @base:		control registers base cpu addr
  * @irq:		Common irq line for all adc instances
+ * @avg:		Averaging info
  * @data:		STM32 dependent data from compatible
  * @adc_list:		list of all stm32 ADC in this ADC block
  * @aclk:		common clock for the analog circuitry
@@ -347,6 +420,7 @@ struct stm32_adc_common {
 	phys_addr_t			phys_base;
 	void __iomem			*base;
 	int				irq;
+	struct stm32_avg		avg;
 	const struct stm32_adc_ops	*data;
 	struct list_head		adc_list;
 	struct clk			*aclk;
@@ -365,6 +439,17 @@ static inline struct stm32_adc_chan *to_stm32_chan(struct stm32_adc *adc,
 	struct stm32_adc_chan *stm32_chans = adc->common->stm32_chans[adc->id];
 
 	return &stm32_chans[chan->channel];
+}
+
+static inline int stm32_avg_is_enabled(struct stm32_adc *adc)
+{
+	return !!adc->common->avg.num;
+}
+
+static inline void stm32_adc_prepare_conv(struct stm32_adc *adc,
+			const struct iio_chan_spec *chan)
+{
+	adc->common->data->prepare_conv(adc, chan);
 }
 
 static inline int stm32_adc_start_conv(struct stm32_adc *adc)
@@ -427,6 +512,12 @@ static inline void stm32_adc_disable(struct stm32_adc *adc)
 		adc->en = false;
 }
 
+static inline int stm32_adc_multi_dma_sel(struct stm32_adc_common *com,
+		enum stm32_adc_dma_mode dm, enum stm32_adc_multi_mode mm)
+{
+	return com->data->multi_dma_sel(com, dm, mm);
+}
+
 /* STM32 ADC registers access routines */
 static inline u32 stm32_adc_common_readl(struct stm32_adc_common *com, u32 reg)
 {
@@ -485,5 +576,11 @@ int stm32_adc_get_smpr(struct iio_dev *indio_dev,
 		       const struct iio_chan_spec *chan);
 int stm32_adc_probe(struct platform_device *pdev);
 int stm32_adc_remove(struct platform_device *pdev);
+
+/* STM32 average ADC driver API */
+int stm32_adc_avg_init(struct stm32_adc_common *common);
+int stm32_adc_avg_run(struct stm32_adc_common *common);
+int stm32_adc_avg_get(struct iio_dev *indio_dev,
+		      struct iio_chan_spec const *chan, int *val);
 
 #endif
