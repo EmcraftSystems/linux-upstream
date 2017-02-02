@@ -59,7 +59,9 @@
  * Calculated using a program from AN4235 for 100KHz of the I2C clock and 50MHz
  * of the source clock.
  */
-#define STM32F7_I2Cx_TIMING	0x10806190
+#define STM32_I2Cx_DEFAULT_CLK		100000
+#define STM32_I2Cx_TIMING_50MHz_100kHz	0x10806190
+#define STM32_I2Cx_DEFAULT_TIMING	STM32_I2Cx_TIMING_50MHz_100kHz
 
 /*
  * ISR register bits
@@ -112,6 +114,7 @@ struct stm32f7_i2c {
 	struct clk		*clk;		/* Clock		      */
 	struct reset_control	*rst;		/* Reset		      */
 	int			bus;		/* Bus (ID)		      */
+	u32			timingr;	/* Calculated timing settings */
 
 	volatile struct stm32f7_i2c_regs __iomem *regs; /* Regs base (virt)   */
 	u32			regs_base;	/* Regs base (phys)	      */
@@ -119,7 +122,6 @@ struct stm32f7_i2c {
 
 	int			irq;		/* IRQ #		      */
 	u32			ref_clk;	/* Ref clock		      */
-	u32			i2c_clk;	/* Bus clock		      */
 	volatile int		msg_status;	/* Message status	      */
 	struct i2c_adapter	adap;		/* I2C adapter data	      */
 	wait_queue_head_t	wait;		/* Wait queue		      */
@@ -165,17 +167,6 @@ static int stm32_i2c_hw_init(struct stm32f7_i2c *c)
 	int rv;
 
 	/*
-	 * First, figure out if we are able to configure the clocks
-	 * If not, we want to bail out without enabling anything.
-	 */
-	if (c->i2c_clk != 100000 || c->ref_clk != 50000000) {
-		dev_err(c->dev, "bus(%d) or ref(%d) clock is not supported\n",
-			c->i2c_clk, c->ref_clk);
-		rv = -EINVAL;
-		goto out;
-	}
-
-	/*
 	 * Reset the I2C controller and then bring it out of reset.
 	 * Enable the I2C controller clock.
 	 */
@@ -193,7 +184,7 @@ static int stm32_i2c_hw_init(struct stm32f7_i2c *c)
 	/*
 	 * Set-up speed
 	 */
-	c->regs->timingr = STM32F7_I2Cx_TIMING;
+	c->regs->timingr = c->timingr;
 
 	/*
 	 * Enable the I2C controller
@@ -606,12 +597,6 @@ static int stm32f7_i2c_probe(struct platform_device *pdev)
 	}
 	c->ref_clk = clk_get_rate(c->clk);
 
-	if (of_property_read_u32(np, "st,i2c-clk", &c->i2c_clk) < 0) {
-		dev_err(dev, "no i2c_clk value specified\n");
-		rv = -EINVAL;
-		goto err_unmap_regs;
-	}
-
 	c->rst = devm_reset_control_get(dev, NULL);
 	if (IS_ERR(c->rst)) {
 		dev_err(dev, "no reset controller specified\n");
@@ -639,6 +624,18 @@ static int stm32f7_i2c_probe(struct platform_device *pdev)
 		goto err_release_irq1;
 	}
 	disable_irq_nosync(irq + 1);
+
+	rv = of_property_read_u32(np, "timingr", &c->timingr);
+	if (rv < 0) {
+		if (c->ref_clk != 50000000) {
+			dev_err(c->dev, "ref(%d) clock is not supported without setting the timing\n",
+				c->ref_clk);
+			rv = -EINVAL;
+			goto err_release_irq1;
+		}
+		dev_info(dev, "Assuming default I2C frequency: %dHz\n", STM32_I2Cx_DEFAULT_CLK);
+		c->timingr = STM32_I2Cx_DEFAULT_TIMING;
+	}
 
 	/*
 	 * Link the private data to dev
