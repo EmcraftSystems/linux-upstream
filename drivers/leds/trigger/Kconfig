@@ -108,4 +108,12 @@ config LEDS_TRIGGER_CAMERA
 	  This enables direct flash/torch on/off by the driver, kernel space.
 	  If unsure, say Y.
 
+config LEDS_TRIGGER_SOCK
+	tristate "LED Socket Trigger"
+	depends on LEDS_TRIGGERS
+	depends on PROC_FS
+	help
+	  This allows LEDs to be controlled by network Socket(s) activity.
+	  If unsure, say Y.
+
 endif # LEDS_TRIGGERS

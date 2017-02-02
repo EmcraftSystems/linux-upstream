@@ -117,6 +117,7 @@
 #include <linux/static_key.h>
 #include <linux/memcontrol.h>
 #include <linux/prefetch.h>
+#include <linux/leds.h>
 
 #include <asm/uaccess.h>
 
@@ -2640,11 +2641,15 @@ struct prot_inuse {
 };
 
 static DECLARE_BITMAP(proto_inuse_idx, PROTO_INUSE_NR);
+static int sock_all_inuse;
 
 #ifdef CONFIG_NET_NS
 void sock_prot_inuse_add(struct net *net, struct proto *prot, int val)
 {
 	__this_cpu_add(net->core.inuse->val[prot->inuse_idx], val);
+
+	sock_all_inuse += val;
+	ledtrig_sock_activity(sock_all_inuse);
 }
 EXPORT_SYMBOL_GPL(sock_prot_inuse_add);
 
@@ -2691,6 +2696,9 @@ static DEFINE_PER_CPU(struct prot_inuse, prot_inuse);
 void sock_prot_inuse_add(struct net *net, struct proto *prot, int val)
 {
 	__this_cpu_add(prot_inuse.val[prot->inuse_idx], val);
+
+	sock_all_inuse += val;
+	ledtrig_sock_activity(sock_all_inuse);
 }
 EXPORT_SYMBOL_GPL(sock_prot_inuse_add);
 

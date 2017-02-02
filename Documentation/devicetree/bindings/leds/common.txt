@@ -27,6 +27,7 @@ Optional properties for child nodes:
 		    property in Documentation/devicetree/bindings/gpio/led.txt)
      "heartbeat" - LED "double" flashes at a load average based rate
      "ide-disk" - LED indicates disk activity
+     "sock" - LED indicates networking socket activity
      "timer" - LED flashes at a fixed, configurable rate
 
 - max-microamp : maximum intensity in microamperes of the LED

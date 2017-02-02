@@ -309,6 +309,12 @@ static inline void ledtrig_flash_ctrl(bool on) {}
 static inline void ledtrig_torch_ctrl(bool on) {}
 #endif
 
+#if defined(CONFIG_LEDS_TRIGGER_SOCK)
+extern void ledtrig_sock_activity(int count);
+#else
+static inline void ledtrig_sock_activity(int count) {}
+#endif
+
 /*
  * Generic LED platform data for describing LED names and default triggers.
  */
