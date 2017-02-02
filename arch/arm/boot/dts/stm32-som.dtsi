@@ -125,17 +125,17 @@
 			pinctrl_sdio: sdio-0 {
 				st,pins {
 					d0 = <&gpioc 8 ALT12
-						NO_PULL PUSH_PULL FAST_SPEED>;
+						PULL_UP PUSH_PULL HIGH_SPEED>;
 					d1 = <&gpioc 9 ALT12
-						NO_PULL PUSH_PULL FAST_SPEED>;
+						PULL_UP PUSH_PULL HIGH_SPEED>;
 					d2 = <&gpioc 10 ALT12
-						NO_PULL PUSH_PULL FAST_SPEED>;
+						PULL_UP PUSH_PULL HIGH_SPEED>;
 					d3 = <&gpioc 11 ALT12
-						NO_PULL PUSH_PULL FAST_SPEED>;
+						PULL_UP PUSH_PULL HIGH_SPEED>;
 					ck = <&gpioc 12 ALT12
-						NO_PULL PUSH_PULL FAST_SPEED>;
+						PULL_UP PUSH_PULL HIGH_SPEED>;
 					cmd = <&gpiod 2 ALT12
-						NO_PULL PUSH_PULL FAST_SPEED>;
+						PULL_UP PUSH_PULL HIGH_SPEED>;
 				};
 			};
 		};
@@ -257,4 +257,13 @@
  */
 &clk_hse {
 	clock-frequency = <12000000>;
+};
+
+
+/*
+ * SD/MMC interface
+ */
+&sdio {
+      /* Reduce clocks, to avoid MMC errors */
+	max-frequency = <20000000>;
 };
