@@ -42,6 +42,7 @@ struct stm32_port {
 	struct uart_port	port;
 	struct clk		*clk;
 	struct gpio_desc	*de;
+	struct gpio_desc	*link;
 	bool			hw_flow_control;
 
 	struct circ_buf		rx_ring;

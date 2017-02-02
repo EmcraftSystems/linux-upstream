@@ -42,6 +42,14 @@ int stm32_uart_of_init(struct uart_port *port, struct platform_device *pdev)
 		stm32_port->dma_tx.use = true;
 	}
 
+	stm32_port->link = devm_gpiod_get_optional(&pdev->dev, "link",
+						   GPIOD_IN);
+	if (stm32_port->link) {
+		rv = gpiod_direction_output(stm32_port->link, 1);
+		if (rv)
+			goto out;
+	}
+
 	/*
 	 * Note: STM32F7 USART has hw support for RS-485. This driver has no
 	 * support for this (at least now), but even when this support will
@@ -68,7 +76,14 @@ void stm32_uart_of_deinit(struct uart_port *port)
 {
 	struct stm32_port *stm32_port = to_stm32_port(port);
 
+	if (stm32_port->link) {
+		gpiod_set_value(stm32_port->link, 0);
+		gpiod_put(stm32_port->link);
+		stm32_port->link = NULL;
+	}
+
 	if (stm32_port->de) {
+		gpiod_set_value(stm32_port->de, 0);
 		gpiod_put(stm32_port->de);
 		stm32_port->de = NULL;
 	}
