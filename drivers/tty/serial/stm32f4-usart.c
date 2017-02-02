@@ -220,9 +220,12 @@ static void stm32_rx_from_ring(struct uart_port *port)
 
 static void stm32_transmit_chars(struct uart_port *port)
 {
+	struct stm32_port *stm32_port = to_stm32_port(port);
 	struct circ_buf *xmit = &port->state->xmit;
 
 	if (port->x_char) {
+		if (stm32_port->de)
+			gpiod_set_value(stm32_port->de, 1);
 		writel_relaxed(port->x_char, port->membase + USART_DR);
 		port->x_char = 0;
 		port->icount.tx++;
@@ -233,6 +236,9 @@ static void stm32_transmit_chars(struct uart_port *port)
 		stm32_stop_tx(port);
 		return;
 	}
+
+	if (stm32_port->de)
+		gpiod_set_value(stm32_port->de, 1);
 
 	writel_relaxed(xmit->buf[xmit->tail], port->membase + USART_DR);
 	stm32_set_bits(port, USART_CR1, USART_CR1_TXEIE);
@@ -299,6 +305,15 @@ static unsigned int stm32_get_mctrl(struct uart_port *port)
 /* Transmit stop */
 static void stm32_stop_tx(struct uart_port *port)
 {
+	struct stm32_port *stm32_port = to_stm32_port(port);
+
+	if (stm32_port->de) {
+		unsigned long timeout = 1000000;
+		if (stm32_port->tx_active)
+			while (stm32_port->tx_active(port) && --timeout);
+		gpiod_set_value(stm32_port->de, 0);
+	}
+
 	stm32_clr_bits(port, USART_CR1, USART_CR1_TXEIE);
 }
 
@@ -344,9 +359,16 @@ static void stm32_break_ctl(struct uart_port *port, int break_state)
 {
 }
 
+static int stm32_tx_active(struct uart_port *port)
+{
+	return !(readl_relaxed(port->membase + USART_SR) & USART_SR_TC);
+}
+
 static void stm32_set_ops(struct uart_port *port)
 {
 	struct stm32_port	*stm32_port = to_stm32_port(port);
+
+	stm32_port->tx_active = stm32_tx_active;
 
 	if (stm32_use_dma_rx(port)) {
 		stm32_port->prepare_rx = stm32_prepare_rx_dma;
@@ -392,23 +414,30 @@ static void stm32_init_property(struct uart_port *port,
 	struct stm32_port *stm32_port = to_stm32_port(port);
 	struct device_node *np = pdev->dev.of_node;
 
-	/*
-	 * Don't use DMA by defaul
-	 */
+	/* Defaults */
 	stm32_port->dma_rx.use = false;
 	stm32_port->dma_tx.use = false;
+	stm32_port->de = NULL;
 
-	if (np) {
-		if (of_get_property(np, "st,use-dma-rx", NULL) &&
-		    of_get_property(np, "dmas", NULL)) {
-			stm32_port->dma_rx.use  = true;
-		}
+	if (!np)
+		goto out;
 
-		if (of_get_property(np, "st,use-dma-tx", NULL) &&
-		    of_get_property(np, "dmas", NULL)) {
-			stm32_port->dma_tx.use = true;
-		}
+	if (of_get_property(np, "st,use-dma-rx", NULL) &&
+	    of_get_property(np, "dmas", NULL)) {
+		stm32_port->dma_rx.use  = true;
 	}
+
+	if (of_get_property(np, "st,use-dma-tx", NULL) &&
+	    of_get_property(np, "dmas", NULL)) {
+		stm32_port->dma_tx.use = true;
+	}
+
+	stm32_port->de = devm_gpiod_get_optional(&pdev->dev, "rs485-de",
+						 GPIOD_IN);
+	if (stm32_port->de)
+		gpiod_direction_output(stm32_port->de, 0);
+out:
+	return;
 }
 
 static int stm32_startup(struct uart_port *port)
@@ -493,6 +522,11 @@ static void stm32_shutdown(struct uart_port *port)
 	stm32_port->rx_ring.tail = 0;
 
 	free_irq(port->irq, port);
+
+	if (stm32_port->de) {
+		gpiod_put(stm32_port->de);
+		stm32_port->de = NULL;
+	}
 }
 
 static void stm32_set_termios(struct uart_port *port, struct ktermios *termios,

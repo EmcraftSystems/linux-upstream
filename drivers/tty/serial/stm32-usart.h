@@ -12,6 +12,7 @@
 #include <linux/dmaengine.h>
 #include <linux/serial_core.h>
 #include <linux/tty_flip.h>
+#include <linux/gpio/consumer.h>
 
 /*
  * Char descriptor
@@ -39,6 +40,7 @@ struct stm32_dma_data {
 struct stm32_port {
 	struct uart_port	port;
 	struct clk		*clk;
+	struct gpio_desc	*de;
 	bool			hw_flow_control;
 
 	struct circ_buf		rx_ring;
@@ -47,6 +49,8 @@ struct stm32_port {
 
 	struct stm32_dma_data	dma_rx;
 	struct stm32_dma_data	dma_tx;
+
+	int  (*tx_active)(struct uart_port *);
 
 	int  (*prepare_rx)(struct uart_port *, unsigned int, unsigned int);
 	void (*schedule_rx)(struct uart_port *);

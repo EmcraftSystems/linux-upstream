@@ -227,6 +227,12 @@ static void stm32_complete_tx_dma(void *arg)
 	 */
 	if (!uart_circ_empty(xmit))
 		tasklet_schedule(&stm32_port->tasklet);
+	else if (stm32_port->de) {
+		unsigned long timeout = 1000000;
+		if (stm32_port->tx_active)
+			while (stm32_port->tx_active(port) && --timeout);
+		gpiod_set_value(stm32_port->de, 0);
+	}
 
 	spin_unlock_irqrestore(&port->lock, flags);
 }
@@ -255,6 +261,9 @@ void stm32_tx_with_dma(struct uart_port *port)
 		return;
 
 	if (!uart_circ_empty(xmit) && !uart_tx_stopped(port)) {
+		if (stm32_port->de)
+			gpiod_set_value(stm32_port->de, 1);
+
 		/*
 		 * DMA is idle now.
 		 * Port xmit buffer is already mapped,
