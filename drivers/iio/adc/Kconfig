@@ -363,4 +363,6 @@ config XILINX_XADC
 	  The driver can also be build as a module. If so, the module will be called
 	  xilinx-xadc.
 
+source "drivers/iio/adc/stm32/Kconfig"
+
 endmenu
