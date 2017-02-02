@@ -14,14 +14,12 @@
 #include <linux/serial.h>
 #include <linux/console.h>
 #include <linux/sysrq.h>
-#include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/irq.h>
 #include <linux/tty.h>
 #include <linux/delay.h>
 #include <linux/pm_runtime.h>
 #include <linux/of.h>
-#include <linux/of_platform.h>
 
 #include "stm32-usart.h"
 
@@ -408,38 +406,6 @@ static void stm32_tasklet_func(unsigned long data)
 	spin_unlock(&port->lock);
 }
 
-static void stm32_init_property(struct uart_port *port,
-				struct platform_device *pdev)
-{
-	struct stm32_port *stm32_port = to_stm32_port(port);
-	struct device_node *np = pdev->dev.of_node;
-
-	/* Defaults */
-	stm32_port->dma_rx.use = false;
-	stm32_port->dma_tx.use = false;
-	stm32_port->de = NULL;
-
-	if (!np)
-		goto out;
-
-	if (of_get_property(np, "st,use-dma-rx", NULL) &&
-	    of_get_property(np, "dmas", NULL)) {
-		stm32_port->dma_rx.use  = true;
-	}
-
-	if (of_get_property(np, "st,use-dma-tx", NULL) &&
-	    of_get_property(np, "dmas", NULL)) {
-		stm32_port->dma_tx.use = true;
-	}
-
-	stm32_port->de = devm_gpiod_get_optional(&pdev->dev, "rs485-de",
-						 GPIOD_IN);
-	if (stm32_port->de)
-		gpiod_direction_output(stm32_port->de, 0);
-out:
-	return;
-}
-
 static int stm32_startup(struct uart_port *port)
 {
 	struct platform_device *pdev = to_platform_device(port->dev);
@@ -454,9 +420,9 @@ static int stm32_startup(struct uart_port *port)
 		return ret;
 
 	/*
-	 * Initialize DMA (if necessary)
+	 * Common initialization
 	 */
-	stm32_init_property(port, pdev);
+	stm32_uart_of_init(port, pdev);
 	stm32_set_ops(port);
 
 	if (stm32_port->prepare_rx) {
@@ -522,11 +488,7 @@ static void stm32_shutdown(struct uart_port *port)
 	stm32_port->rx_ring.tail = 0;
 
 	free_irq(port->irq, port);
-
-	if (stm32_port->de) {
-		gpiod_put(stm32_port->de);
-		stm32_port->de = NULL;
-	}
+	stm32_uart_of_deinit(port);
 }
 
 static void stm32_set_termios(struct uart_port *port, struct ktermios *termios,

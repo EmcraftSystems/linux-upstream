@@ -13,6 +13,7 @@
 #include <linux/serial_core.h>
 #include <linux/tty_flip.h>
 #include <linux/gpio/consumer.h>
+#include <linux/platform_device.h>
 
 /*
  * Char descriptor
@@ -70,8 +71,11 @@ static inline struct stm32_port *to_stm32_port(struct uart_port *port)
 }
 
 /*
- * DMA prototypes
+ * Common prototypes
  */
+int  stm32_uart_of_init(struct uart_port *port, struct platform_device *pdev);
+void stm32_uart_of_deinit(struct uart_port *port);
+
 bool stm32_use_dma_rx(struct uart_port *port);
 int  stm32_prepare_rx_dma(struct uart_port *port, unsigned int dr_offset,
 			  unsigned int ring_size);

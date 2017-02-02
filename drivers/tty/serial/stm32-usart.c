@@ -1,15 +1,78 @@
 /*
- * Copyright (C) EmCraft Systems 2015
+ * Copyright (C) EmCraft Systems 2015-2017
  * Author: Yuri Tikhonov <yur@emcraft.com>
  * License terms:  GNU General Public License (GPL), version 2
  *
- * STM32 DMA routines used by STM32 UART drivers
+ * STM32 common routines used by STM32 UART drivers
  */
 
+#include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/dma-mapping.h>
 #include <linux/dmaengine.h>
 
 #include "stm32-usart.h"
+
+/*
+ * OF init
+ */
+int stm32_uart_of_init(struct uart_port *port, struct platform_device *pdev)
+{
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	struct device_node *np = pdev->dev.of_node;
+	int rv;
+
+	/* Defaults */
+	stm32_port->dma_rx.use = false;
+	stm32_port->dma_tx.use = false;
+	stm32_port->de = NULL;
+
+	if (!np) {
+		rv = 0;
+		goto out;
+	}
+
+	if (of_get_property(np, "st,use-dma-rx", NULL) &&
+	    of_get_property(np, "dmas", NULL)) {
+		stm32_port->dma_rx.use  = true;
+	}
+
+	if (of_get_property(np, "st,use-dma-tx", NULL) &&
+	    of_get_property(np, "dmas", NULL)) {
+		stm32_port->dma_tx.use = true;
+	}
+
+	/*
+	 * Note: STM32F7 USART has hw support for RS-485. This driver has no
+	 * support for this (at least now), but even when this support will
+	 * be implemented, the `rs485-de` feature will be still usefull for
+	 * the configurations with non-standard `DE` GPIOs
+	 */
+	stm32_port->de = devm_gpiod_get_optional(&pdev->dev, "rs485-de",
+						 GPIOD_IN);
+	if (stm32_port->de) {
+		rv = gpiod_direction_output(stm32_port->de, 0);
+		if (rv)
+			goto out;
+	}
+
+	rv = 0;
+out:
+	return rv;
+}
+
+/*
+ * OF deinit
+ */
+void stm32_uart_of_deinit(struct uart_port *port)
+{
+	struct stm32_port *stm32_port = to_stm32_port(port);
+
+	if (stm32_port->de) {
+		gpiod_put(stm32_port->de);
+		stm32_port->de = NULL;
+	}
+}
 
 /*
  * RX DMA routines
