@@ -171,6 +171,16 @@ static struct stm_flh_geo stm_geo[] = {
 			{  5,  7, SZ_256K, 0x040000 },
 			{  0,  0,       0,        0 },
 		},
+	}, {	/* STM32F76xxx, STM32F77xxx 2MB: */
+		.name	= "stm32f76x.2M",
+		.snbm	= 0xF,
+		.acr	= STM_FLH_ACR_ICEN | STM_FLH_ACR_PRFTEN,
+		.blk	= {
+			{  0,  3,  SZ_32K, 0x000000 },
+			{  4,  4, SZ_128K, 0x020000 },
+			{  5, 11, SZ_256K, 0x040000 },
+			{  0,  0,       0,        0 },
+		},
 	},
 };
 
