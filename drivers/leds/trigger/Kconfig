@@ -116,4 +116,12 @@ config LEDS_TRIGGER_SOCK
 	  This allows LEDs to be controlled by network Socket(s) activity.
 	  If unsure, say Y.
 
+config LEDS_TRIGGER_SDF
+	bool "LED Serial Data Flash Trigger"
+	depends on MTD_SPI_NOR
+	depends on LEDS_TRIGGERS
+	help
+	  This allows LEDs to be controlled by Serial Data Flash activity.
+	  If unsure, say Y.
+
 endif # LEDS_TRIGGERS

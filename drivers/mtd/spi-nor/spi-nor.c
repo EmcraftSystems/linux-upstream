@@ -16,6 +16,7 @@
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/math64.h>
+#include <linux/leds.h>
 
 #include <linux/mtd/cfi.h>
 #include <linux/mtd/mtd.h>
@@ -340,6 +341,7 @@ static int spi_nor_erase(struct mtd_info *mtd, struct erase_info *instr)
 		while (len) {
 			write_enable(nor);
 
+			ledtrig_sdf_activity();
 			if (nor->erase(nor, addr)) {
 				ret = -EIO;
 				goto erase_err;
@@ -738,6 +740,7 @@ static int spi_nor_read(struct mtd_info *mtd, loff_t from, size_t len,
 	if (ret)
 		return ret;
 
+	ledtrig_sdf_activity();
 	ret = nor->read(nor, from, len, retlen, buf);
 
 	spi_nor_unlock_and_unprep(nor, SPI_NOR_OPS_READ);
@@ -767,6 +770,7 @@ static int sst_write(struct mtd_info *mtd, loff_t to, size_t len,
 		nor->program_opcode = SPINOR_OP_BP;
 
 		/* write one byte. */
+		ledtrig_sdf_activity();
 		nor->write(nor, to, 1, retlen, buf);
 		ret = spi_nor_wait_till_ready(nor);
 		if (ret)
@@ -779,6 +783,7 @@ static int sst_write(struct mtd_info *mtd, loff_t to, size_t len,
 		nor->program_opcode = SPINOR_OP_AAI_WP;
 
 		/* write two bytes. */
+		ledtrig_sdf_activity();
 		nor->write(nor, to, 2, retlen, buf + actual);
 		ret = spi_nor_wait_till_ready(nor);
 		if (ret)
@@ -798,6 +803,7 @@ static int sst_write(struct mtd_info *mtd, loff_t to, size_t len,
 		write_enable(nor);
 
 		nor->program_opcode = SPINOR_OP_BP;
+		ledtrig_sdf_activity();
 		nor->write(nor, to, 1, retlen, buf + actual);
 
 		ret = spi_nor_wait_till_ready(nor);
@@ -834,10 +840,12 @@ static int spi_nor_write(struct mtd_info *mtd, loff_t to, size_t len,
 
 	/* do all the bytes fit onto one page? */
 	if (page_offset + len <= nor->page_size) {
+		ledtrig_sdf_activity();
 		nor->write(nor, to, len, retlen, buf);
 	} else {
 		/* the size of data remaining on the first page */
 		page_size = nor->page_size - page_offset;
+		ledtrig_sdf_activity();
 		nor->write(nor, to, page_size, retlen, buf);
 
 		/* write everything in nor->page_size chunks */
@@ -852,6 +860,7 @@ static int spi_nor_write(struct mtd_info *mtd, loff_t to, size_t len,
 
 			write_enable(nor);
 
+			ledtrig_sdf_activity();
 			nor->write(nor, to + i, page_size, retlen, buf + i);
 		}
 	}

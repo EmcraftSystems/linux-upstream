@@ -315,6 +315,12 @@ extern void ledtrig_sock_activity(int count);
 static inline void ledtrig_sock_activity(int count) {}
 #endif
 
+#ifdef CONFIG_LEDS_TRIGGER_SDF
+extern void ledtrig_sdf_activity(void);
+#else
+static inline void ledtrig_sdf_activity(void) {}
+#endif
+
 /*
  * Generic LED platform data for describing LED names and default triggers.
  */
