@@ -17,6 +17,8 @@
 
 #include "stm32-adc.h"
 
+static int avg_dma_init(struct stm32_adc_common *com);
+
 /**
  * avg_adc_process() - process ADC data collected
  * @adc:	ADC identifier
@@ -48,6 +50,26 @@ static void avg_dma_buf_done(void *data)
 	struct iio_dev *iio;
 	int i, j, k, val;
 	u32 *p;
+
+	if (avg->dma_cookie < 0) {
+		/*
+		 * DMA terminated (overrun), restart DMA
+		 */
+		val = avg_dma_init(com);
+		if (val) {
+			dev_err(com->dev, "Avg DMA reinit error\n");
+			goto out;
+		}
+
+		val = stm32_adc_avg_run(com);
+		if (val) {
+			dev_err(com->dev, "Avg rerun error\n");
+			goto out;
+		}
+
+		avg->msk = 0;
+		goto out;
+	}
 
 	/*
 	 * Collect raw data
@@ -105,6 +127,8 @@ static void avg_dma_buf_done(void *data)
 			mutex_unlock(&avg->lock);
 		}
 	}
+out:
+	return;
 }
 
 /**
@@ -216,14 +240,17 @@ static int avg_dma_init(struct stm32_adc_common *com)
 	 * since in ADC Simultaneous mode DMA operates with 32-bit transfers.
 	 */
 	avg->raw_pos = 0;
-	avg->raw_period = avg->num * 3 * avg->chan_num * sizeof(u32);
-	avg->raw_length = avg->raw_period * 2;
-	avg->dma_buf = dma_alloc_coherent(com->dev, PAGE_ALIGN(avg->raw_length),
-					  &avg->dma_adr, GFP_KERNEL);
 	if (!avg->dma_buf) {
-		dev_err(com->dev, "DMA buf allocation failed\n");
-		rv = -ENOMEM;
-		goto out;
+		avg->raw_period = avg->num * 3 * avg->chan_num * sizeof(u32);
+		avg->raw_length = avg->raw_period * 2;
+		avg->dma_buf = dma_alloc_coherent(com->dev,
+						  PAGE_ALIGN(avg->raw_length),
+						  &avg->dma_adr, GFP_KERNEL);
+		if (!avg->dma_buf) {
+			dev_err(com->dev, "DMA buf allocation failed\n");
+			rv = -ENOMEM;
+			goto out;
+		}
 	}
 
 	/* Configure DMA channel to read data register */
@@ -232,14 +259,17 @@ static int avg_dma_init(struct stm32_adc_common *com)
 	cfg.src_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
 
 	rv = dmaengine_slave_config(dma, &cfg);
-	if (rv)
+	if (rv) {
+		dev_err(com->dev, "DMA slave cfg failed (%d)\n", rv);
 		goto out;
+	}
 
 	/* Prepare a DMA cyclic transaction */
 	dsc = dmaengine_prep_dma_cyclic(dma, avg->dma_adr,
 					avg->raw_length, avg->raw_period,
 					DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT);
 	if (!dsc) {
+		dev_err(com->dev, "DMA prep cyclic failed\n");
 		rv = -ENODEV;
 		goto out;
 	}
@@ -249,10 +279,13 @@ static int avg_dma_init(struct stm32_adc_common *com)
 
 	cookie = dmaengine_submit(dsc);
 	rv = dma_submit_error(cookie);
-	if (rv)
+	if (rv) {
+		dev_err(com->dev, "DMA submit error (%d)\n", rv);
 		goto out;
+	}
 
 	/* Issue pending DMA requests */
+	avg->dma_cookie = cookie;
 	dma_async_issue_pending(dma);
 	rv = 0;
 out:
@@ -360,6 +393,32 @@ out:
 int stm32_adc_avg_run(struct stm32_adc_common *com)
 {
 	return pwm_enable(com->avg.pwm);
+}
+
+/**
+ * stm32_adc_avg_overrun() - process Overrun events
+ * @adc:	STM32 ADC device
+ */
+int stm32_adc_avg_overrun(struct stm32_adc *adc)
+{
+	struct stm32_adc_common *com = adc->common;
+	struct stm32_avg *avg = &com->avg;
+	int rv = 0;
+
+	/*
+	 * Wait for Overruns from all ADCs
+	 */
+	avg->msk |= 1 << adc->id;
+	if (avg->msk != 0x7)
+		goto out;
+
+	pwm_disable(adc->common->avg.pwm);
+	dmaengine_terminate_all(avg->dma);
+	avg->dma_cookie = -EINVAL;
+
+	avg->msk = 0;
+out:
+	return rv;
 }
 
 /**

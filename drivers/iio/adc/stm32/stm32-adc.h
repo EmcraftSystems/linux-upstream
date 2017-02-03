@@ -232,9 +232,11 @@ struct stm32_adc_trig_reginfo {
 /**
  * struct stm32_adc_reginfo - stm32 ADC registers description
  * @isr:		interrupt status register offset
+ * @ovr:		onverrun mask in @isr
  * @eoc:		end of conversion mask in @isr
  * @jeoc:		end of injected conversion sequence mask in @isr
  * @ier:		interrupt enable register offset
+ * @ovrie:		overrun interrupt enable mask in @ier
  * @eocie:		end of conversion interrupt enable mask in @ier
  * @jeocie:		end of injected conversion sequence interrupt en mask
  * @dr:			data register offset
@@ -248,9 +250,11 @@ struct stm32_adc_trig_reginfo {
  */
 struct stm32_adc_reginfo {
 	u32 isr;
+	u32 ovr;
 	u32 eoc;
 	u32 jeoc;
 	u32 ier;
+	u32 ovrie;
 	u32 eocie;
 	u32 jeocie;
 	u32 dr;
@@ -368,12 +372,14 @@ struct stm32_adc {
  * struct stm32_avg - private data of ADC driver used for averaging
  * @num:		Average measurements number
  * @rate:		Average measurements period, ms
+ * @msk:		Overrun channels mask
  * @chan_num:		Number of channels used per ADCx
  * @tr:			ADC start trigger source
  * @pwm:		Trigger timer PWM
  * @dma:		DMA channel
  * @dma_buf:		Raw DMA buffer CPU address
  * @dma_adr:		Raw DMA buffer DMA address
+ * @dma_cookie:		DMA transfer cookie
  * @raw_pos:		Raw buffer position
  * @raw_length:		Raw buffer length
  * @raw_period:		Raw buffer period
@@ -384,12 +390,14 @@ struct stm32_adc {
 struct stm32_avg {
 	u32			num;
 	u32			rate;
+	u32			msk;
 	int			chan_num;
 	struct iio_trigger	*tr;
 	struct pwm_device	*pwm;
 	struct dma_chan		*dma;
 	u32			*dma_buf;
 	dma_addr_t		dma_adr;
+	dma_cookie_t		dma_cookie;
 	u32			raw_pos;
 	u32			raw_length;
 	u32			raw_period;
@@ -580,6 +588,7 @@ int stm32_adc_remove(struct platform_device *pdev);
 /* STM32 average ADC driver API */
 int stm32_adc_avg_init(struct stm32_adc_common *common);
 int stm32_adc_avg_run(struct stm32_adc_common *common);
+int stm32_adc_avg_overrun(struct stm32_adc *adc);
 int stm32_adc_avg_get(struct iio_dev *indio_dev,
 		      struct iio_chan_spec const *chan, int *val);
 

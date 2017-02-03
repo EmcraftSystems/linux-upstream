@@ -613,6 +613,7 @@ static int stm_terminate_all(struct dma_chan *chan)
 
 	stm_chan->regs->cr &= ~STM32_DMA_CR_EN;
 
+	async_tx_ack(txd);
 	dma_descriptor_unmap(txd);
 	dma_run_dependencies(txd);
 

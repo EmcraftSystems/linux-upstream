@@ -508,29 +508,31 @@ static irqreturn_t stm32_adc_isr(struct stm32_adc *adc)
 	struct iio_dev *indio_dev = iio_priv_to_dev(adc);
 	const struct stm32_adc_reginfo *reginfo =
 		adc->common->data->adc_reginfo;
-	u32 mask, emask, clr_mask, status = stm32_adc_readl(adc, reginfo->isr);
+	u32 mask, clr_mask;
+	u32 ier = stm32_adc_readl(adc, reginfo->ier);
+	u32 isr = stm32_adc_readl(adc, reginfo->isr);
 
 	if (adc->injected) {
-		mask = reginfo->jeoc;
-		emask = reginfo->jeocie;
+		mask = reginfo->ovr | reginfo->jeoc;
 		clr_mask = mask;
 	} else {
-		mask = reginfo->eoc;
-		emask = reginfo->eocie;
+		mask = reginfo->ovr | reginfo->eoc;
 		/* don't clear 'eoc' as it is cleared when reading 'dr' */
-		clr_mask = 0;
+		clr_mask = reginfo->ovr;
 	}
 
-	/* If EOC isn't enabled, then ignore this event */
-	if (!(stm32_adc_readl(adc, reginfo->ier) & emask))
-		return IRQ_NONE;
-
 	/* clear irq */
-	stm32_adc_writel(adc, reginfo->isr, status & ~clr_mask);
-	status &= mask;
+	stm32_adc_writel(adc, reginfo->isr, isr & ~clr_mask);
+	isr &= mask;
+
+	/* Overruns */
+	if (isr & reginfo->ovr) {
+		if (stm32_avg_is_enabled(adc))
+			stm32_adc_avg_overrun(adc);
+	}
 
 	/* Regular data (when dma isn't used) */
-	if ((status & reginfo->eoc) && (!adc->rx_buf)) {
+	if ((ier & reginfo->eocie) && (isr & reginfo->eoc) && !adc->rx_buf) {
 		adc->buffer[adc->bufi] = stm32_adc_readl(adc, reginfo->dr);
 		if (iio_buffer_enabled(indio_dev)) {
 			adc->bufi++;
@@ -544,7 +546,7 @@ static irqreturn_t stm32_adc_isr(struct stm32_adc *adc)
 	}
 
 	/* Injected data */
-	if (status & reginfo->jeoc) {
+	if ((ier & reginfo->jeocie) && (isr & reginfo->jeoc)) {
 		int i;
 
 		for (i = 0; i < adc->num_conv; i++) {
@@ -564,7 +566,7 @@ static irqreturn_t stm32_adc_isr(struct stm32_adc *adc)
 	 * In case end of conversion flags have been handled, this has been
 	 * handled for this ADC instance
 	 */
-	if (status)
+	if (isr)
 		return IRQ_HANDLED;
 
 	/* This adc instance didn't trigger this interrupt */

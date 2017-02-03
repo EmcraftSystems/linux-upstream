@@ -427,9 +427,11 @@ static const struct stm32_adc_trig_reginfo stm32f4_adc_jtrig_reginfo = {
 
 static const struct stm32_adc_reginfo stm32f4_adc_reginfo = {
 	.isr = STM32F4_ADCX_SR,
+	.ovr = STM32F4_OVR,
 	.eoc = STM32F4_EOC,
 	.jeoc = STM32F4_JEOC,
 	.ier = STM32F4_ADCX_CR1,
+	.ovrie = STM32F4_OVRIE,
 	.eocie = STM32F4_EOCIE,
 	.jeocie = STM32F4_JEOCIE,
 	.dr = STM32F4_ADCX_DR,
@@ -543,6 +545,9 @@ static int stm32f4_adc_start_conv(struct stm32_adc *adc)
 		trig_msk = STM32F4_EXTEN_MASK;
 		start_msk = STM32F4_SWSTART;
 	}
+
+	/* Enable overrun interrupts */
+	stm32_adc_set_bits(adc, STM32F4_ADCX_CR1, STM32F4_OVRIE);
 
 	/* Software start ? (e.g. trigger detection disabled ?) */
 	if (!adc->multi && !(stm32_adc_readl(adc, STM32F4_ADCX_CR2) & trig_msk)) {
