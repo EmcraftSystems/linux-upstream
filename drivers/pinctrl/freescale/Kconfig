@@ -101,6 +101,14 @@ config PINCTRL_IMX7D
 	help
 	  Say Y here to enable the imx7d pinctrl driver
 
+config PINCTRL_KINETIS
+	bool "Kinetis pinctrl driver"
+	depends on OF
+	depends on SOC_K70
+	select PINMUX
+	help
+	  Say Y here to enable the Kinetis pinctrl driver
+
 config PINCTRL_VF610
 	bool "Freescale Vybrid VF610 pinctrl driver"
 	depends on SOC_VF610

@@ -1,0 +1,25 @@
+#ifndef _DT_BINDINGS_CLOCK_KINETIS_MCG_H
+#define _DT_BINDINGS_CLOCK_KINETIS_MCG_H
+
+#define CLOCK_MCGOUTCLK		 0
+#define CLOCK_CCLK		 1
+#define CLOCK_PCLK		 2
+#define CLOCK_PIT		 3
+#define CLOCK_PORTA		 4
+#define CLOCK_PORTB		 5
+#define CLOCK_PORTC		 6
+#define CLOCK_PORTD		 7
+#define CLOCK_PORTE		 8
+#define CLOCK_PORTF		 9
+#define CLOCK_EDMA		10
+#define CLOCK_DMAMUX0		11
+#define CLOCK_DMAMUX1		12
+#define CLOCK_UART0		13
+#define CLOCK_UART1		14
+#define CLOCK_UART2		15
+#define CLOCK_UART3		16
+#define CLOCK_UART4		17
+#define CLOCK_UART5		18
+#define CLOCK_END		19
+
+#endif /* _DT_BINDINGS_CLOCK_KINETIS_MCG_H */

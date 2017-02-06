@@ -103,6 +103,13 @@ config ARM_HAS_SG_CHAIN
 config NEED_SG_DMA_LENGTH
 	bool
 
+config NEED_MACH_IDLE_H
+	bool
+
+config ARM_CPU_IDLE_QUIRKS
+	bool
+	select NEED_MACH_IDLE_H
+
 config ARM_DMA_USE_IOMMU
 	bool
 	select ARM_HAS_SG_CHAIN
@@ -766,6 +773,8 @@ source "arch/arm/mach-ixp4xx/Kconfig"
 
 source "arch/arm/mach-keystone/Kconfig"
 
+source "arch/arm/mach-kinetis/Kconfig"
+
 source "arch/arm/mach-ks8695/Kconfig"
 
 source "arch/arm/mach-meson/Kconfig"
@@ -870,6 +879,18 @@ config ARCH_EFM32
 	help
 	  Support for Energy Micro's (now Silicon Labs) efm32 Giant Gecko
 	  processors.
+
+config ARCH_KINETIS
+	bool "Freescale Kinetis MCU"
+	depends on ARM_SINGLE_ARMV7M
+	select CPU_V7M
+	select ARM_CPU_IDLE_QUIRKS
+	select ARMV7M_SYSTICK
+	select CLKSRC_KINETIS
+	select PINCTRL
+	select ZLIB_INFLATE_STACK_SAVING if ZLIB_INFLATE
+	help
+	  This enables support for the Freescale Kinetis MCUs
 
 config ARCH_LPC18XX
 	bool "NXP LPC18xx/LPC43xx"
@@ -1702,7 +1723,7 @@ source "mm/Kconfig"
 
 config FORCE_MAX_ZONEORDER
 	int "Maximum zone order"
-	default "12" if SOC_AM33XX
+	default "12" if SOC_AM33XX || ARCH_KINETIS
 	default "9" if SA1111 || ARCH_EFM32
 	default "12" if !MMU
 	default "11"

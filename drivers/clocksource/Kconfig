@@ -157,6 +157,11 @@ config CLKSRC_EFM32
 	  Support to use the timers of EFM32 SoCs as clock source and clock
 	  event device.
 
+config CLKSRC_KINETIS
+	bool "Clocksource for Kinetis SoCs"
+	depends on OF && ARM && ARCH_KINETIS
+	select CLKSRC_OF
+
 config CLKSRC_LPC32XX
 	bool "Clocksource for LPC32XX" if COMPILE_TEST
 	depends on GENERIC_CLOCKEVENTS && HAS_IOMEM

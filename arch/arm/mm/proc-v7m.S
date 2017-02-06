@@ -85,7 +85,7 @@ ENDPROC(cpu_v7m_do_resume)
 __v7m_setup:
 	@ Configure the vector table base address
 	ldr	r0, =BASEADDR_V7M_SCB
-#if defined(CONFIG_ARCH_STM32F7)
+#if CONFIG_COPY_VECTOR_TABLE_TO_SRAM_ADDR > 0x00000000
 	/*
 	 * Copy vector table into internal SRAM. If caches are enabled, then
 	 * updating table in external RAM we'll get IC/DC non-coherency because
@@ -93,7 +93,7 @@ __v7m_setup:
 	 * Alternative here is to create the appropriate non-cacheable/write-
 	 * through-cacheable region with MPU.
 	 */
-	ldr	r12, =SRAM_PHYS_OFFSET
+	ldr	r12, =CONFIG_COPY_VECTOR_TABLE_TO_SRAM_ADDR
 	mov	r5, r12			@ Copy the kernel vector_table to
 	ldr	r6, =vector_table	@ the in-SRAM vector table
 	ldr	r4, =vector_table_end

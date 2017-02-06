@@ -37,6 +37,10 @@
 #include <asm/tls.h>
 #include <asm/vdso.h>
 
+#ifdef CONFIG_NEED_MACH_IDLE_H
+#include <mach/idle.h>
+#endif
+
 #ifdef CONFIG_CC_STACKPROTECTOR
 #include <linux/stackprotector.h>
 unsigned long __stack_chk_guard __read_mostly;
@@ -70,6 +74,9 @@ void arch_cpu_idle(void)
 		arm_pm_idle();
 	else
 		cpu_do_idle();
+#ifdef CONFIG_ARM_CPU_IDLE_QUIRKS
+	handle_cpu_idle_quirks();
+#endif
 	local_irq_enable();
 }
 

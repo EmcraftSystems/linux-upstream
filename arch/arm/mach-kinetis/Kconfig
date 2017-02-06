@@ -1,0 +1,15 @@
+if ARCH_KINETIS
+
+config SOC_K70
+	bool
+	depends on ARCH_KINETIS
+	select PINCTRL_KINETIS
+
+config MACH_KINETIS
+	bool "Kinetis K70 based development board"
+	default y
+	select SOC_K70
+	help
+	  Say Y here if you are using Kinetis K70 based development board
+
+endif

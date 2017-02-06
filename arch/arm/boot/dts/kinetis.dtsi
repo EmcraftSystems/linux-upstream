@@ -1,0 +1,215 @@
+/*
+ * Device tree for Freescale Kinetis SoC.
+ *
+ */
+#include "armv7-m.dtsi"
+#include "dt-bindings/clock/kinetis-mcg.h"
+
+/ {
+	aliases {
+		pit0 = &pit0;
+		pit1 = &pit1;
+		pit2 = &pit2;
+		pit3 = &pit3;
+		pmx0 = &portA;
+		pmx1 = &portB;
+		pmx2 = &portC;
+		pmx3 = &portD;
+		pmx4 = &portE;
+		pmx5 = &portF;
+		serial0 = &uart0;
+		serial1 = &uart1;
+		serial2 = &uart2;
+		serial3 = &uart3;
+		serial4 = &uart4;
+		serial5 = &uart5;
+	};
+
+	soc {
+		uart0: serial@4006a000 {
+			compatible = "fsl,kinetis-lpuart";
+			reg = <0x4006a000 0x1000>;
+			interrupts = <45>, <46>;
+			interrupt-names = "uart-stat", "uart-err";
+			clocks = <&mcg CLOCK_UART0>;
+			clock-names = "ipg";
+			dmas = <&edma 0 2>;
+			dma-names = "rx";
+			status = "disabled";
+		};
+
+		uart1: serial@4006b000 {
+			compatible = "fsl,kinetis-lpuart";
+			reg = <0x4006b000 0x1000>;
+			interrupts = <47>, <48>;
+			interrupt-names = "uart-stat", "uart-err";
+			clocks = <&mcg CLOCK_UART1>;
+			clock-names = "ipg";
+			dmas = <&edma 0 4>;
+			dma-names = "rx";
+			status = "disabled";
+		};
+
+		uart2: serial@4006c000 {
+			compatible = "fsl,kinetis-lpuart";
+			reg = <0x4006c000 0x1000>;
+			interrupts = <49>, <50>;
+			interrupt-names = "uart-stat", "uart-err";
+			clocks = <&mcg CLOCK_UART2>;
+			clock-names = "ipg";
+			dmas = <&edma 0 6>;
+			dma-names = "rx";
+			status = "disabled";
+		};
+
+		uart3: serial@4006d000 {
+			compatible = "fsl,kinetis-lpuart";
+			reg = <0x4006d000 0x1000>;
+			interrupts = <51>, <52>;
+			interrupt-names = "uart-stat", "uart-err";
+			clocks = <&mcg CLOCK_UART3>;
+			clock-names = "ipg";
+			dmas = <&edma 0 8>;
+			dma-names = "rx";
+			status = "disabled";
+		};
+
+		uart4: serial@400ea000 {
+			compatible = "fsl,kinetis-lpuart";
+			reg = <0x400ea000 0x1000>;
+			interrupts = <53>, <54>;
+			interrupt-names = "uart-stat", "uart-err";
+			clocks = <&mcg CLOCK_UART4>;
+			clock-names = "ipg";
+			dmas = <&edma 0 10>;
+			dma-names = "rx";
+			status = "disabled";
+		};
+
+		uart5: serial@400eb000 {
+			compatible = "fsl,kinetis-lpuart";
+			reg = <0x400eb000 0x1000>;
+			interrupts = <55>, <56>;
+			interrupt-names = "uart-stat", "uart-err";
+			clocks = <&mcg CLOCK_UART5>;
+			clock-names = "ipg";
+			dmas = <&edma 0 12>;
+			dma-names = "rx";
+			status = "disabled";
+		};
+
+		edma: dma-controller@40008000 {
+			compatible = "fsl,kinetis-edma";
+			reg = <0x40008000 0x2000>, /* DMAC */
+				<0x40021000 0x1000>, /* DMAMUX0 */
+				<0x40022000 0x1000>; /* DMAMUX1 */
+			#dma-cells = <2>;
+			dma-channels = <32>;
+			interrupts =	 <0>,  <1>,  <2>,  <3>,
+					 <4>,  <5>,  <6>,  <7>,
+					 <8>,  <9>, <10>, <11>,
+					<12>, <13>, <14>, <15>,
+					<16>;
+			interrupt-names = "edma-tx-0,16",
+					  "edma-tx-1,17",
+					  "edma-tx-2,18",
+					  "edma-tx-3,19",
+					  "edma-tx-4,20",
+					  "edma-tx-5,21",
+					  "edma-tx-6,22",
+					  "edma-tx-7,23",
+					  "edma-tx-8,24",
+					  "edma-tx-9,25",
+					  "edma-tx-10,26",
+					  "edma-tx-11,27",
+					  "edma-tx-12,28",
+					  "edma-tx-13,29",
+					  "edma-tx-14,30",
+					  "edma-tx-15,31",
+					  "edma-err";
+			clocks = <&mcg CLOCK_EDMA>,
+				 <&mcg CLOCK_DMAMUX0>, <&mcg CLOCK_DMAMUX1>;
+			clock-names = "edma", "dmamux0", "dmamux1";
+		};
+
+		portA: pinmux@40049000 {
+			compatible = "fsl,kinetis-padconf";
+			reg = <0x40049000 0x1000>;
+			clocks = <&mcg CLOCK_PORTA>;
+			status = "disabled";
+		};
+
+		portB: pinmux@4004a000 {
+			compatible = "fsl,kinetis-padconf";
+			reg = <0x4004a000 0x1000>;
+			clocks = <&mcg CLOCK_PORTB>;
+			status = "disabled";
+		};
+
+		portC: pinmux@4004b000 {
+			compatible = "fsl,kinetis-padconf";
+			reg = <0x4004b000 0x1000>;
+			clocks = <&mcg CLOCK_PORTC>;
+			status = "disabled";
+		};
+
+		portD: pinmux@4004c000 {
+			compatible = "fsl,kinetis-padconf";
+			reg = <0x4004c000 0x1000>;
+			clocks = <&mcg CLOCK_PORTD>;
+			status = "disabled";
+		};
+
+		portE: pinmux@4004d000 {
+			compatible = "fsl,kinetis-padconf";
+			reg = <0x4004d000 0x1000>;
+			clocks = <&mcg CLOCK_PORTE>;
+			status = "disabled";
+		};
+
+		portF: pinmux@4004e000 {
+			compatible = "fsl,kinetis-padconf";
+			reg = <0x4004e000 0x1000>;
+			clocks = <&mcg CLOCK_PORTF>;
+			status = "disabled";
+		};
+
+		pit0: timer@40037100 {
+			compatible = "fsl,kinetis-pit-timer";
+			reg = <0x40037100 0x10>;
+			interrupts = <68>;
+			clocks = <&mcg CLOCK_PIT>;
+			status = "disabled";
+		};
+
+		pit1: timer@40037110 {
+			compatible = "fsl,kinetis-pit-timer";
+			reg = <0x40037110 0x10>;
+			interrupts = <69>;
+			clocks = <&mcg CLOCK_PIT>;
+			status = "disabled";
+		};
+
+		pit2: timer@40037120 {
+			compatible = "fsl,kinetis-pit-timer";
+			reg = <0x40037120 0x10>;
+			interrupts = <70>;
+			clocks = <&mcg CLOCK_PIT>;
+			status = "disabled";
+		};
+
+		pit3: timer@40037130 {
+			compatible = "fsl,kinetis-pit-timer";
+			reg = <0x40037130 0x10>;
+			interrupts = <71>;
+			clocks = <&mcg CLOCK_PIT>;
+			status = "disabled";
+		};
+
+		mcg: cmu@40064000 {
+			compatible = "fsl,kinetis-cmu";
+			reg = <0x40064000 0x14>;
+			#clock-cells = <1>;
+		};
+	};
+};

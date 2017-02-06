@@ -1,0 +1,43 @@
+/*
+ * Device tree for TWR-K70F120M development board.
+ *
+ */
+
+/dts-v1/;
+#include "kinetis.dtsi"
+
+/ {
+	model = "Freescale TWR-K70F120M Development Kit";
+	compatible = "fsl,kinetis-twr-k70f120m";
+
+	chosen {
+		bootargs = "console=ttyLP2,115200";
+	};
+
+	memory {
+		reg = <0x8000000 0x8000000>;
+	};
+};
+
+&uart2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart2_pins>;
+	status = "ok";
+};
+
+&portE {
+	status = "ok";
+
+	uart2 {
+		uart2_pins: pinmux_uart2_pins {
+			fsl,pins = <
+				16	0x300 /* E.16 = UART2_TX */
+				17	0x300 /* E.17 = UART2_RX */
+			>;
+		};
+	};
+};
+
+&pit0 {
+	status = "ok";
+};

@@ -215,9 +215,7 @@ SECTIONS
 		INIT_CALLS
 		CON_INITCALL
 		SECURITY_INITCALL
-#ifndef CONFIG_INITRAMFS_IS_LARGE
 		INIT_RAM_FS
-#endif
 	}
 #ifndef CONFIG_XIP_KERNEL
 	.exit.data : {
@@ -273,14 +271,25 @@ SECTIONS
 
 		_edata = .;
 	}
-
-#ifdef CONFIG_INITRAMFS_IS_LARGE
-	.initramfs : {
-		INIT_RAM_FS
-	}
-#endif
-
 	_edata_loc = __data_loc + SIZEOF(.data);
+
+
+#ifdef SRAM_PHYS_OFFSET
+	/*
+	 * SRAM code for Flash/SDRAM issue, see errata 2.8.7
+	 */
+	. = ALIGN(PAGE_SIZE);
+	__sram_loc = .;
+	.sram SRAM_PHYS_OFFSET + vector_table_end - vector_table : AT(__sram_loc) {
+		_sram_start = .;
+		*(.sram.text)
+		*(.sram.data)
+		_sram_end = .;
+	}
+	_esram_loc = __sram_loc + SIZEOF(.sram);
+	. = _esram_loc;
+	. = ALIGN(4);
+#endif
 
 #ifdef CONFIG_HAVE_TCM
         /*

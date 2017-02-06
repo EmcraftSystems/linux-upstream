@@ -62,3 +62,19 @@ config ARM_MPU
 
          If your CPU has an MPU then you should choose 'y' here unless you
          know that you do not want to use the MPU.
+
+config ZLIB_INFLATE_STACK_SAVING
+	bool 'Do not place huge encoder tables on stack' if ZLIB_INFLATE
+	depends on ZLIB_INFLATE
+
+config COPY_VECTOR_TABLE_TO_SRAM_ADDR
+	hex 'If non-zero, copy Vector Table to this SRAM Address' if CPU_V7M
+	default 0x20000000 if ARCH_KINETIS
+	default 0x00000000
+	depends on CPU_V7M
+	help
+	  The ARM v7M allows setting the vector table either in
+	  the boot memory or in the internal SRAM memory, controlled
+	  by Bit 29 in the Vector Table Base register.
+	  This implies that the OS vector table needs to be copied to
+	  the internal RAM.
