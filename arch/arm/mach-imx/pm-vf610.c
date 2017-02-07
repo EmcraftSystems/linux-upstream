@@ -187,6 +187,7 @@ int vf610_set_lpm(enum vf610_cpu_pwr_mode mode)
 		writel_relaxed(ccsr, ccm_base + CCSR);
 
 		if (!IS_ERR(pm_info->sys_sel_clk) && !IS_ERR(pm_info->sys_sel_clk_suspend)) {
+			pm_info->sys_sel_clk_active = clk_get_parent(pm_info->sys_sel_clk);
 			clk_set_parent(pm_info->sys_sel_clk, pm_info->sys_sel_clk_suspend);
 			uarts_reconfig();
 		}

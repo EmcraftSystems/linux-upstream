@@ -116,6 +116,13 @@ config ARM_IMX6Q_CPUFREQ
 
 	  If in doubt, say N.
 
+config ARM_VFXXX_CPUFREQ
+	tristate "Freescale VFXXX cpufreq support"
+	help
+	  This adds cpufreq driver support for Freescale VFxxx series SoCs.
+
+	  If in doubt, say N.
+
 config ARM_INTEGRATOR
 	tristate "CPUfreq driver for ARM Integrator CPUs"
 	depends on ARCH_INTEGRATOR

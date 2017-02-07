@@ -38,6 +38,9 @@ static void __init vf610_init_late(void)
 		system_serial_low = readl(base + OCOTP_CFG1);
 		system_serial_high = readl(base + OCOTP_CFG0);
 	}
+
+	if (IS_ENABLED(CONFIG_ARM_VFXXX_CPUFREQ))
+		platform_device_register_simple("vfxxx-cpufreq", -1, NULL, 0);
 }
 
 static const char * const vf610_dt_compat[] __initconst = {
