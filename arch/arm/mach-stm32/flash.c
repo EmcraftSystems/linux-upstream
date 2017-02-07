@@ -16,6 +16,7 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/mutex.h>
+#include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/map.h>
@@ -37,9 +38,9 @@
 #endif
 
 /*
- * Erase/program timeout, sec
+ * Erase/program timeout, in 10 usec
  */
-#define STM_FLH_TOUT		5
+#define STM_FLH_TOUT		500000	/* 5sec */
 
 /*
  * Maximum number of different block areas supported
@@ -227,14 +228,30 @@ static struct stm_flh_blk *stm_blk_get(struct stm_flh_iface *iface, u32 adr,
 }
 
 /*
- * Wait for completion with <tout> sec timeout
+ * Wait for completion with <tout> x10usec timeout
  */
 static inline int stm_op_wait(struct stm_flh_iface *iface, u32 tout)
 {
-	int rv;
+	int i, rv;
 
-	rv = wait_event_interruptible_timeout(iface->wait,
-				iface->status != -EBUSY, tout * HZ);
+	/*
+	 * Using a polling scheme in programming case allows to avoid
+	 * per-byte/per-word interrupt overheads
+	 */
+	if (iface->reg->cr & STM_FLH_CR_PG) {
+		for (i = 0; i < tout; i++) {
+			if (!(iface->reg->sr & STM_FLH_SR_BSY)) {
+				iface->status = 0;
+				break;
+			}
+			udelay(10);
+		}
+		rv = (i != tout) ? 1 : 0;
+	} else {
+		tout /= 100000;
+		rv = wait_event_interruptible_timeout(iface->wait,
+					iface->status != -EBUSY, tout * HZ);
+	}
 	if (!rv)
 		rv = -ETIMEDOUT;
 	else if (iface->status)
@@ -513,11 +530,13 @@ static int stm_mtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 	}
 
 	stm_cr_unlock(iface);
+	iface->reg->cr &= ~STM_FLH_CR_EOPIE;
 	iface->reg->cr |= STM_FLH_CR_PG;
 
 	rv = iface->stm_prog(mtd, dst, len, retlen, buf);
 
 	iface->reg->cr &= ~STM_FLH_CR_PG;
+	iface->reg->cr |= STM_FLH_CR_EOPIE;
 	stm_cr_lock(iface);
 exit:
 	mutex_unlock(&iface->mutex);
