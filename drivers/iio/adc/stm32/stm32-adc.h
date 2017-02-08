@@ -285,6 +285,7 @@ struct stm32_adc_common;
  * @prepare_conv:	routine to prepare conversions
  * @start_conv:		routine to start conversions
  * @stop_conv:		routine to stop conversions
+ * @recover:		routine to recover after overruns
  * @is_started:		routine to get adc 'started' state
  * @regular_started	routine to check regular conversions status
  * @injected_started	routine to check injected conversions status
@@ -306,6 +307,7 @@ struct stm32_adc_ops {
 		const struct iio_chan_spec *chan);
 	int (*start_conv)(struct stm32_adc *adc);
 	int (*stop_conv)(struct stm32_adc *adc);
+	void (*recover)(struct stm32_adc *adc);
 	bool (*is_started)(struct stm32_adc *adc);
 	bool (*regular_started)(struct stm32_adc *adc);
 	bool (*injected_started)(struct stm32_adc *adc);
@@ -372,7 +374,6 @@ struct stm32_adc {
  * struct stm32_avg - private data of ADC driver used for averaging
  * @num:		Average measurements number
  * @rate:		Average measurements period, ms
- * @msk:		Overrun channels mask
  * @chan_num:		Number of channels used per ADCx
  * @tr:			ADC start trigger source
  * @pwm:		Trigger timer PWM
@@ -390,7 +391,6 @@ struct stm32_adc {
 struct stm32_avg {
 	u32			num;
 	u32			rate;
-	u32			msk;
 	int			chan_num;
 	struct iio_trigger	*tr;
 	struct pwm_device	*pwm;
@@ -518,6 +518,12 @@ static inline void stm32_adc_disable(struct stm32_adc *adc)
 		adc->common->data->disable(adc);
 	else
 		adc->en = false;
+}
+
+static inline void stm32_adc_recover(struct stm32_adc *adc)
+{
+	if (adc->common->data->recover)
+		adc->common->data->recover(adc);
 }
 
 static inline int stm32_adc_multi_dma_sel(struct stm32_adc_common *com,

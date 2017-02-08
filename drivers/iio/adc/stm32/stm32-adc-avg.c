@@ -54,7 +54,8 @@ static void avg_dma_buf_done(void *data)
 
 	if (avg->dma_cookie < 0) {
 		/*
-		 * DMA terminated (overrun), restart DMA
+		 * DMA terminated (overrun). Reinit DMA, clear overruns, and
+		 * restart conversion
 		 */
 		val = avg_dma_init(com);
 		if (val) {
@@ -62,13 +63,16 @@ static void avg_dma_buf_done(void *data)
 			goto out;
 		}
 
+		list_for_each_entry(adc, &com->adc_list, adc_list)
+			if (!adc->injected)
+				stm32_adc_recover(adc);
+
 		val = stm32_adc_avg_run(com);
 		if (val) {
 			dev_err(com->dev, "Avg rerun error\n");
 			goto out;
 		}
 
-		avg->msk = 0;
 		goto out;
 	}
 
@@ -402,24 +406,15 @@ int stm32_adc_avg_run(struct stm32_adc_common *com)
  */
 int stm32_adc_avg_overrun(struct stm32_adc *adc)
 {
-	struct stm32_adc_common *com = adc->common;
-	struct stm32_avg *avg = &com->avg;
-	int rv = 0;
+	struct stm32_avg *avg = &adc->common->avg;
 
-	/*
-	 * Wait for Overruns from all ADCs
-	 */
-	avg->msk |= 1 << adc->id;
-	if (avg->msk != 0x7)
-		goto out;
+	if (!(avg->dma_cookie < 0)) {
+		pwm_disable(avg->pwm);
+		dmaengine_terminate_all(avg->dma);
+		avg->dma_cookie = -EINVAL;
+	}
 
-	pwm_disable(adc->common->avg.pwm);
-	dmaengine_terminate_all(avg->dma);
-	avg->dma_cookie = -EINVAL;
-
-	avg->msk = 0;
-out:
-	return rv;
+	return 0;
 }
 
 /**

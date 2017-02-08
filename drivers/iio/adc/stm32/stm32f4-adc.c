@@ -220,7 +220,7 @@ enum stm32f4_adc_smpr {
 #define STM32F4_CCR_ADCPRE_MASK		GENMASK(17, 16)
 #define STM32F4_CCR_DMA_SHIFT		14
 #define STM32F4_CCR_DMA_MASK		GENMASK(15, 14)
-#define STM32F4_CCR_DDS			(1 << 13)
+#define STM32F4_CCR_DDS			BIT(13)
 #define STM32F4_CCR_MULTI_SHIFT		0
 #define STM32F4_CCR_MULTI_MASK		GENMASK(4, 0)
 
@@ -554,10 +554,12 @@ static int stm32f4_adc_start_conv(struct stm32_adc *adc)
 		int i, inum;
 
 		/*
-		 * Workaround a problem with injected conversions in 'Combined
-		 * regular simultaneous + alternate trigger mode'. In the Triple
-		 * mode only each 3d conversion is passed. So to avoid timeouts
-		 * we just repeat sw start multiple times here
+		 * In Triple ADC we support the CRS+ATM mode only. Alternate
+		 * trigger mode (ATM) operates as follows: when the 1st trigger
+		 * occurs, all injected group channels in ADC1 are converted;
+		 * when the 2nd trig happens, all injected group channels in
+		 * ADC2 are converted; and so on. So to avoid timeouts we just
+		 * repeat sw start multiple times
 		 */
 		inum = (adc->injected && stm32_avg_is_enabled(adc)) ? 3 : 1;
 		for (i = 0; i < inum; i++)
@@ -596,6 +598,13 @@ static int stm32f4_adc_stop_conv(struct stm32_adc *adc)
 				   STM32F4_DMA | STM32F4_DDS);
 
 	return 0;
+}
+
+static void stm32f4_adc_recover(struct stm32_adc *adc)
+{
+	stm32_adc_clr_bits(adc, STM32F4_ADCX_CR2, STM32F4_ADON);
+	stm32_adc_clr_bits(adc, STM32F4_ADCX_SR, STM32F4_OVR);
+	stm32_adc_set_bits(adc, STM32F4_ADCX_CR2, STM32F4_ADON);
 }
 
 /* ADC internal common clock prescaler division ratios */
@@ -726,6 +735,7 @@ static const struct stm32_adc_ops stm32f4_adc_ops = {
 	.prepare_conv = stm32f4_adc_prepare_conv,
 	.start_conv = stm32f4_adc_start_conv,
 	.stop_conv = stm32f4_adc_stop_conv,
+	.recover = stm32f4_adc_recover,
 	.is_started = stm32f4_adc_is_started,
 	.regular_started = stm32f4_adc_regular_started,
 	.injected_started = stm32f4_adc_injected_started,
