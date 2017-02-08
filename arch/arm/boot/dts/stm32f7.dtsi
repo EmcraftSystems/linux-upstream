@@ -179,6 +179,8 @@
 			reg = <0xA0001000 0x1000>, <0x90000000 0x10000000>;
 			clocks = <&rcc 0 65>;
 			resets = <&rst STM32F4_AHB3_RESET(QSPI)>;
+			dmas = <&dma2 7 3>;
+			dma-names = "tx";
 			interrupts = <92>;
 			status = "disabled";
 		};
