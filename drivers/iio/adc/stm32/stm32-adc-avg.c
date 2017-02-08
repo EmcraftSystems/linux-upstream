@@ -48,6 +48,7 @@ static void avg_dma_buf_done(void *data)
 	const struct iio_chan_spec *chan;
 	struct stm32_adc *adc;
 	struct iio_dev *iio;
+	unsigned long flags;
 	int i, j, k, val;
 	u32 *p;
 
@@ -122,9 +123,9 @@ static void avg_dma_buf_done(void *data)
 			val = avg_adc_process(adc->id, chan->channel,
 					avg->raw_buf[adc->id][j], avg->num);
 
-			mutex_lock(&avg->lock);
+			spin_lock_irqsave(&avg->lock, flags);
 			avg->flt_buf[adc->id][chan->channel] = val;
-			mutex_unlock(&avg->lock);
+			spin_unlock_irqrestore(&avg->lock, flags);
 		}
 	}
 out:
@@ -361,7 +362,7 @@ int stm32_adc_avg_init(struct stm32_adc_common *com)
 	}
 
 	avg->chan_num = chan_num;
-	mutex_init(&avg->lock);
+	spin_lock_init(&avg->lock);
 
 	rv = avg_scan_seq_init(com);
 	if (rv) {
@@ -433,10 +434,11 @@ int stm32_adc_avg_get(struct iio_dev *indio_dev,
 	struct stm32_adc *adc = iio_priv(indio_dev);
 	struct stm32_adc_common *common = adc->common;
 	struct stm32_avg *avg = &common->avg;
+	unsigned long flags;
 
-	mutex_lock(&adc->common->avg.lock);
+	spin_lock_irqsave(&adc->common->avg.lock, flags);
 	*val = avg->flt_buf[adc->id][chan->channel] & STM32_RESULT_MASK;
-	mutex_unlock(&adc->common->avg.lock);
+	spin_unlock_irqrestore(&adc->common->avg.lock, flags);
 
 	return IIO_VAL_INT;
 }

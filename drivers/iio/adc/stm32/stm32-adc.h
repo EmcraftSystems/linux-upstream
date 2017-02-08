@@ -383,7 +383,7 @@ struct stm32_adc {
  * @raw_pos:		Raw buffer position
  * @raw_length:		Raw buffer length
  * @raw_period:		Raw buffer period
- * @lock:		Filtered data bufer mutex
+ * @lock:		Filtered data buffer lock
  * @raw_buf:		Raw data buffer pointers (seq indexed [*][s])
  * @flt_buf:		Filtered data buffer (chan indexed [*][c])
  */
@@ -401,7 +401,7 @@ struct stm32_avg {
 	u32			raw_pos;
 	u32			raw_length;
 	u32			raw_period;
-	struct mutex		lock;
+	spinlock_t		lock;
 	u32			*raw_buf[STM32_ADC_ID_MAX][STM32_ADC_MAX_SQ];
 	u32			flt_buf[STM32_ADC_ID_MAX][STM32_ADC_MAX_SQ];
 };
