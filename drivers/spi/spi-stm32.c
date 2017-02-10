@@ -900,11 +900,7 @@ static int stm32_spi_dma_rx_next(struct spi_stm32 *c)
 	len = (c->rx_l - c->rx_i) <= STM32_DMA_NDT_MAX ? c->rx_l - c->rx_i :
 							 STM32_DMA_NDT_MAX;
 
-	sg_init_table(&dma->sg, 1);
-	sg_dma_address(&dma->sg) = (u32)buf;
-	sg_dma_len(&dma->sg) = len;
-
-	dma->dsc = dmaengine_prep_slave_sg(dma->chan, &dma->sg, 1,
+	dma->dsc = dmaengine_prep_slave_single(dma->chan, (dma_addr_t)buf, len,
 			DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
 	if (!dma->dsc) {
 		dev_err(dev, "%s: failed to send with DMA\n", __func__);
@@ -920,6 +916,7 @@ static int stm32_spi_dma_rx_next(struct spi_stm32 *c)
 	dma->dsc->callback = stm32_spi_dma_rx_done;
 	dma->dsc->callback_param = c;
 	dma->dsc->cookie = dmaengine_submit(dma->dsc);
+	dma_async_issue_pending(dma->chan);
 
 	rv = 0;
 out:
@@ -999,11 +996,7 @@ static int stm32_spi_dma_tx_next(struct spi_stm32 *c)
 	len = (c->tx_l - c->tx_i) <= STM32_DMA_NDT_MAX ? c->tx_l - c->tx_i :
 							 STM32_DMA_NDT_MAX;
 
-	sg_init_table(&dma->sg, 1);
-	sg_dma_address(&dma->sg) = (u32)buf;
-	sg_dma_len(&dma->sg) = len;
-
-	dma->dsc = dmaengine_prep_slave_sg(dma->chan, &dma->sg, 1,
+	dma->dsc = dmaengine_prep_slave_single(dma->chan, (dma_addr_t)buf, len,
 			DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
 	if (!dma->dsc) {
 		dev_err(dev, "%s: failed to send with DMA\n", __func__);
@@ -1019,6 +1012,7 @@ static int stm32_spi_dma_tx_next(struct spi_stm32 *c)
 	dma->dsc->callback = stm32_spi_dma_tx_done;
 	dma->dsc->callback_param = c;
 	dma->dsc->cookie = dmaengine_submit(dma->dsc);
+	dma_async_issue_pending(dma->chan);
 
 	rv = 0;
 out:

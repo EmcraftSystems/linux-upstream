@@ -670,6 +670,8 @@ static struct dma_async_tx_descriptor *stm32_dma_prep_slave_sg(
 	u32 sg_len, enum dma_transfer_direction direction,
 	unsigned long flags, void *context)
 {
+	static u32 empty_buf;
+
 	struct stm32_dma_chan *chan = to_stm32_dma_chan(c);
 	struct stm32_dma_desc *desc;
 	struct scatterlist *sg;
@@ -714,8 +716,14 @@ static struct dma_async_tx_descriptor *stm32_dma_prep_slave_sg(
 		desc->sg_req[i].chan_reg.dma_scr = chan->chan_reg.dma_scr;
 		desc->sg_req[i].chan_reg.dma_sfcr = chan->chan_reg.dma_sfcr;
 		desc->sg_req[i].chan_reg.dma_spar = chan->chan_reg.dma_spar;
-		desc->sg_req[i].chan_reg.dma_sm0ar = sg_dma_address(sg);
-		desc->sg_req[i].chan_reg.dma_sm1ar = sg_dma_address(sg);
+		if (sg_dma_address(sg)) {
+			desc->sg_req[i].chan_reg.dma_sm0ar = sg_dma_address(sg);
+			desc->sg_req[i].chan_reg.dma_sm1ar = sg_dma_address(sg);
+		} else {
+			desc->sg_req[i].chan_reg.dma_sm0ar = (u32)&empty_buf;
+			desc->sg_req[i].chan_reg.dma_sm1ar = (u32)&empty_buf;
+			desc->sg_req[i].chan_reg.dma_scr &= ~STM32_DMA_SCR_MINC;
+		}
 		desc->sg_req[i].chan_reg.dma_sndtr = nb_data_items;
 	}
 
