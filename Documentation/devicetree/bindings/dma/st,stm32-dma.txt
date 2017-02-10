@@ -47,6 +47,7 @@ The four cells in order are:
 2. The request line number
 3. A 32bit mask specifying the DMA channel configuration which are device
    dependent:
+  -bit 0: Do not ignore FIFO underrun/overrun errors
   -bit 9: Peripheral Increment Address
 	0x0: no address increment between transfers
 	0x1: increment address between transfers

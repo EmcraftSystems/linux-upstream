@@ -90,8 +90,6 @@
 #define STM32_DMA_SFCR_FTH(n)		(n & STM32_DMA_SFCR_FTH_MASK)
 #define STM32_DMA_SFCR_FEIE		BIT(7) /* FIFO error interrupt enable */
 #define STM32_DMA_SFCR_DMDIS		BIT(2) /* Direct mode disable */
-#define STM32_DMA_SFCR_MASK		(STM32_DMA_SFCR_FEIE \
-					| STM32_DMA_SFCR_DMDIS)
 
 /* DMA direction */
 #define STM32_DMA_DEV_TO_MEM		0x00
@@ -255,7 +253,7 @@ static int stm32_dma_get_burst(struct stm32_dma_chan *chan, u32 maxburst)
 static void stm32_dma_set_fifo_config(struct stm32_dma_chan *chan,
 				      u32 src_maxburst, u32 dst_maxburst)
 {
-	chan->chan_reg.dma_sfcr &= ~STM32_DMA_SFCR_MASK;
+	chan->chan_reg.dma_sfcr &= ~STM32_DMA_SFCR_DMDIS;
 	chan->chan_reg.dma_scr &= ~STM32_DMA_SCR_DMEIE;
 
 	if ((!src_maxburst) && (!dst_maxburst)) {
@@ -263,7 +261,7 @@ static void stm32_dma_set_fifo_config(struct stm32_dma_chan *chan,
 		chan->chan_reg.dma_scr |= STM32_DMA_SCR_DMEIE;
 	} else {
 		/* Using FIFO mode */
-		chan->chan_reg.dma_sfcr |= STM32_DMA_SFCR_MASK;
+		chan->chan_reg.dma_sfcr |= STM32_DMA_SFCR_DMDIS;
 	}
 }
 
@@ -539,7 +537,7 @@ static irqreturn_t stm32_dma_chan_irq(int irq, void *devid)
 		stm32_dma_irq_clear(chan, STM32_DMA_TCI);
 		stm32_dma_handle_chan_done(chan);
 
-	} else {
+	} else if (status) {
 		stm32_dma_irq_clear(chan, status);
 		dev_err(chan2dev(chan), "DMA error: status=0x%08x\n", status);
 	}
@@ -974,6 +972,8 @@ static void stm32_dma_set_config(struct stm32_dma_chan *chan,
 	chan->chan_reg.dma_scr |= STM32_DMA_SCR_TEIE | STM32_DMA_SCR_TCIE;
 
 	chan->chan_reg.dma_sfcr = cfg->threshold & STM32_DMA_SFCR_FTH_MASK;
+	if (cfg->stream_config & BIT(0))
+		chan->chan_reg.dma_sfcr |= STM32_DMA_SFCR_FEIE;
 }
 
 static struct dma_chan *stm32_dma_of_xlate(struct of_phandle_args *dma_spec,
