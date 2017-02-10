@@ -56,4 +56,4 @@ obj-$(CONFIG_NBPFAXI_DMA) += nbpfaxi.o
 obj-$(CONFIG_DMA_SUN6I) += sun6i-dma.o
 obj-$(CONFIG_IMG_MDC_DMA) += img-mdc-dma.o
 obj-$(CONFIG_XGENE_DMA) += xgene-dma.o
-obj-$(CONFIG_STM32_DMA) += stm32_dma.o
+obj-$(CONFIG_STM32_DMA) += stm32-dma.o
