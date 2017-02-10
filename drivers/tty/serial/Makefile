@@ -94,11 +94,6 @@ obj-$(CONFIG_SERIAL_CONEXANT_DIGICOLOR)	+= digicolor-usart.o
 obj-$(CONFIG_SERIAL_MEN_Z135)	+= men_z135_uart.o
 obj-$(CONFIG_SERIAL_SPRD) += sprd_serial.o
 obj-$(CONFIG_SERIAL_STM32)	+= stm32-usart.o
-ifdef CONFIG_ARCH_STM32F7
-  obj-$(CONFIG_SERIAL_STM32)	+= stm32f7-usart.o
-else
-  obj-$(CONFIG_SERIAL_STM32)	+= stm32f4-usart.o
-endif
 
 # GPIOLIB helpers for modem control lines
 obj-$(CONFIG_SERIAL_MCTRL_GPIO)	+= serial_mctrl_gpio.o

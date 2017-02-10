@@ -64,35 +64,35 @@
 		};
 
 		usart2: serial@40004400 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
+			compatible = "st,stm32-usart", "st,stm32f4-uart";
 		};
 
 		usart3: serial@40004800 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
+			compatible = "st,stm32-usart", "st,stm32f4-uart";
 		};
 
 		usart4: serial@40004c00 {
-			compatible = "st,stm32f4-uart";
+			compatible = "st,stm32-uart";
 		};
 
 		usart5: serial@40005000 {
-			compatible = "st,stm32f4-uart";
+			compatible = "st,stm32-uart";
 		};
 
 		usart7: serial@40007800 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
+			compatible = "st,stm32-usart", "st,stm32f4-uart";
 		};
 
 		usart8: serial@40007c00 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
+			compatible = "st,stm32-usart", "st,stm32f4-uart";
 		};
 
 		usart1: serial@40011000 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
+			compatible = "st,stm32-usart", "st,stm32f4-uart";
 		};
 
 		usart6: serial@40011400 {
-			compatible = "st,stm32f4-usart", "st,stm32f4-uart";
+			compatible = "st,stm32-usart", "st,stm32f4-uart";
 		};
 
 		spi_1: spi@40013000 {
