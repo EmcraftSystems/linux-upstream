@@ -31,6 +31,7 @@
 #include <linux/sysrq.h>
 #include <linux/tty_flip.h>
 #include <linux/tty.h>
+#include <linux/gpio/consumer.h>
 
 #include "stm32-usart.h"
 
@@ -455,6 +456,9 @@ static int stm32_startup(struct uart_port *port)
 	val = USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE;
 	stm32_set_bits(port, ofs->cr1, val);
 
+	if (stm32_port->link)
+		gpiod_set_value(stm32_port->link, 1);
+
 	return 0;
 }
 
@@ -464,6 +468,9 @@ static void stm32_shutdown(struct uart_port *port)
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
 	struct stm32_usart_config *cfg = &stm32_port->info->cfg;
 	u32 val;
+
+	if (stm32_port->link)
+		gpiod_set_value(stm32_port->link, 0);
 
 	val = USART_CR1_TXEIE | USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE;
 	val |= BIT(cfg->uart_enable_bit);
@@ -687,6 +694,7 @@ static int stm32_init_port(struct stm32_port *stm32port,
 static struct stm32_port *stm32_of_get_stm32_port(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
+	struct stm32_port *stm32port;
 	int id;
 
 	if (!np)
@@ -698,11 +706,19 @@ static struct stm32_port *stm32_of_get_stm32_port(struct platform_device *pdev)
 
 	if (WARN_ON(id >= STM32_MAX_PORTS))
 		return NULL;
+	stm32port = &stm32_ports[id];
 
-	stm32_ports[id].hw_flow_control = of_property_read_bool(np,
+	stm32port->port.line = id;
+
+	stm32port->hw_flow_control = of_property_read_bool(np,
 							"st,hw-flow-ctrl");
-	stm32_ports[id].port.line = id;
-	return &stm32_ports[id];
+
+	stm32port->link = devm_gpiod_get_optional(&pdev->dev,
+						"st,link", GPIOD_IN);
+	if (stm32port->link)
+		gpiod_direction_output(stm32port->link, 0);
+
+	return stm32port;
 }
 
 #ifdef CONFIG_OF
@@ -721,12 +737,19 @@ static int stm32_of_dma_rx_probe(struct stm32_port *stm32port,
 				 struct platform_device *pdev)
 {
 	struct stm32_usart_offsets *ofs = &stm32port->info->ofs;
+	struct device_node *np = pdev->dev.of_node;
 	struct uart_port *port = &stm32port->port;
 	struct device *dev = &pdev->dev;
 	struct dma_slave_config config;
 	struct dma_async_tx_descriptor *desc = NULL;
 	dma_cookie_t cookie;
 	int ret;
+
+	/* Check if requested to use DMA */
+	if (!of_get_property(np, "st,use-dma-rx", NULL)) {
+		stm32port->rx_ch = NULL;
+		return -EINVAL;
+	}
 
 	/* Request DMA RX channel */
 	stm32port->rx_ch = dma_request_slave_channel(dev, "rx");
@@ -793,12 +816,19 @@ static int stm32_of_dma_tx_probe(struct stm32_port *stm32port,
 				 struct platform_device *pdev)
 {
 	struct stm32_usart_offsets *ofs = &stm32port->info->ofs;
+	struct device_node *np = pdev->dev.of_node;
 	struct uart_port *port = &stm32port->port;
 	struct device *dev = &pdev->dev;
 	struct dma_slave_config config;
 	int ret;
 
 	stm32port->tx_dma_busy = false;
+
+	/* Check if requested to use DMA */
+	if (!of_get_property(np, "st,use-dma-tx", NULL)) {
+		stm32port->tx_ch = NULL;
+		return -EINVAL;
+	}
 
 	/* Request DMA TX channel */
 	stm32port->tx_ch = dma_request_slave_channel(dev, "tx");

@@ -215,6 +215,7 @@ struct stm32_port {
 	struct uart_port port;
 	struct clk *clk;
 	struct stm32_usart_info *info;
+	struct gpio_desc *link;  /* link indication           */
 	struct dma_chan *rx_ch;  /* dma rx channel            */
 	dma_addr_t rx_dma_buf;   /* dma rx buffer bus address */
 	unsigned char *rx_buf;   /* dma rx buffer cpu address */
