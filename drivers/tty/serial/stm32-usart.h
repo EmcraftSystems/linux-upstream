@@ -216,6 +216,7 @@ struct stm32_port {
 	struct clk *clk;
 	struct stm32_usart_info *info;
 	struct gpio_desc *link;  /* link indication           */
+	struct gpio_desc *de;    /* RS-485 DE GPIO            */
 	struct dma_chan *rx_ch;  /* dma rx channel            */
 	dma_addr_t rx_dma_buf;   /* dma rx buffer bus address */
 	unsigned char *rx_buf;   /* dma rx buffer cpu address */
@@ -223,6 +224,7 @@ struct stm32_port {
 	dma_addr_t tx_dma_buf;   /* dma tx buffer bus address */
 	unsigned char *tx_buf;   /* dma tx buffer cpu address */
 	bool tx_dma_busy;	 /* dma tx busy               */
+	bool tx_busy;		 /* tx busy                   */
 	bool hw_flow_control;
 };
 

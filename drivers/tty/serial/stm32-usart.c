@@ -356,6 +356,27 @@ static irqreturn_t stm32_threaded_interrupt(int irq, void *ptr)
 	return IRQ_HANDLED;
 }
 
+static int stm32_config_rs485(struct uart_port *port, struct serial_rs485 *cfg)
+{
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	int v;
+
+	port->rs485 = *cfg;
+
+	if (!(port->rs485.flags & SER_RS485_ENABLED)) {
+		if (stm32_port->de)
+			gpiod_direction_input(stm32_port->de);
+	} else {
+		if (stm32_port->de) {
+			v = (port->rs485.flags &
+			     SER_RS485_RTS_AFTER_SEND) ? 1 : 0;
+			gpiod_direction_output(stm32_port->de, v);
+		}
+	}
+
+	return 0;
+}
+
 static unsigned int stm32_tx_empty(struct uart_port *port)
 {
 	struct stm32_port *stm32_port = to_stm32_port(port);
@@ -388,15 +409,61 @@ static void stm32_stop_tx(struct uart_port *port)
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
 
 	stm32_clr_bits(port, ofs->cr1, USART_CR1_TXEIE);
+
+	if (stm32_port->tx_busy) {
+		if (port->rs485.flags & SER_RS485_ENABLED) {
+			unsigned int isr;
+			int v;
+
+			v = readl_relaxed_poll_timeout_atomic(
+				port->membase + ofs->isr, isr,
+				(isr & USART_SR_TC), 10, 100000);
+			if (v)
+				dev_err(port->dev, "rs485 tx timout\n");
+
+			if (port->rs485.delay_rts_after_send > 0)
+				mdelay(port->rs485.delay_rts_after_send);
+
+			if (!(port->rs485.flags & SER_RS485_RX_DURING_TX))
+				stm32_set_bits(port, ofs->cr1, USART_CR1_RE);
+
+			if (stm32_port->de) {
+				v = (port->rs485.flags &
+				     SER_RS485_RTS_AFTER_SEND) ? 1 : 0;
+				gpiod_set_value(stm32_port->de, v);
+			}
+		}
+		stm32_port->tx_busy = false;
+	}
 }
 
 /* There are probably characters waiting to be transmitted. */
 static void stm32_start_tx(struct uart_port *port)
 {
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
 	struct circ_buf *xmit = &port->state->xmit;
 
 	if (uart_circ_empty(xmit))
 		return;
+
+	if (!stm32_port->tx_busy) {
+		if (port->rs485.flags & SER_RS485_ENABLED) {
+			if (stm32_port->de) {
+				int v;
+				v = (port->rs485.flags &
+				     SER_RS485_RTS_ON_SEND) ? 1 : 0;
+				gpiod_set_value(stm32_port->de, v);
+			}
+
+			if (!(port->rs485.flags & SER_RS485_RX_DURING_TX))
+				stm32_clr_bits(port, ofs->cr1, USART_CR1_RE);
+
+			if (port->rs485.delay_rts_before_send > 0)
+				mdelay(port->rs485.delay_rts_before_send);
+		}
+		stm32_port->tx_busy = true;
+	}
 
 	stm32_transmit_chars(port);
 }
@@ -695,7 +762,9 @@ static struct stm32_port *stm32_of_get_stm32_port(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct stm32_port *stm32port;
-	int id;
+	struct uart_port *port;
+	u32 rs485_delay[2];
+	int v, id;
 
 	if (!np)
 		return NULL;
@@ -718,6 +787,41 @@ static struct stm32_port *stm32_of_get_stm32_port(struct platform_device *pdev)
 	if (stm32port->link)
 		gpiod_direction_output(stm32port->link, 0);
 
+	/*
+	 * Allow to access device driver with RS-485 API only if the `de` pin is
+	 * specified.
+	 */
+	stm32port->de = devm_gpiod_get_optional(&pdev->dev,
+						"st,rs485-de", GPIOD_IN);
+	if (!stm32port->de)
+		goto out;
+
+	/*
+	 * Allow to access device with RS-485 API only if `rs485-de` is
+	 */
+	port = &stm32port->port;
+	memset(&port->rs485, 0, sizeof(port->rs485));
+	port->rs485_config = stm32_config_rs485;
+
+	if (of_property_read_u32_array(np, "rs485-rts-delay",
+				rs485_delay, 2) == 0) {
+		port->rs485.delay_rts_before_send = rs485_delay[0];
+		port->rs485.delay_rts_after_send = rs485_delay[1];
+	}
+
+	port->rs485.flags = SER_RS485_RTS_ON_SEND;
+	if (of_property_read_bool(np, "rs485-rx-during-tx"))
+		port->rs485.flags |= SER_RS485_RX_DURING_TX;
+
+	if (of_property_read_bool(np, "linux,rs485-enabled-at-boot-time"))
+		port->rs485.flags |= SER_RS485_ENABLED;
+
+	if (!(port->rs485.flags & SER_RS485_ENABLED))
+		goto out;
+
+	v = port->rs485.flags & SER_RS485_RTS_AFTER_SEND ? 1 : 0;
+	gpiod_direction_output(stm32port->de, v);
+out:
 	return stm32port;
 }
 
@@ -898,6 +1002,7 @@ static int stm32_serial_probe(struct platform_device *pdev)
 	if (ret)
 		dev_info(&pdev->dev, "interrupt mode used for rx (no dma)\n");
 
+	stm32port->tx_busy = false;
 	ret = stm32_of_dma_tx_probe(stm32port, pdev);
 	if (ret)
 		dev_info(&pdev->dev, "interrupt mode used for tx (no dma)\n");
