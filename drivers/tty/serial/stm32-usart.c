@@ -61,8 +61,7 @@ static void stm32_clr_bits(struct uart_port *port, u32 reg, u32 bits)
 	writel_relaxed(val, port->membase + reg);
 }
 
-static int stm32_pending_rx(struct uart_port *port, u32 *sr, int *last_res,
-			    bool threaded)
+static int stm32_pending_rx(struct uart_port *port, u32 *sr, bool threaded)
 {
 	struct stm32_port *stm32_port = to_stm32_port(port);
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
@@ -76,7 +75,7 @@ static int stm32_pending_rx(struct uart_port *port, u32 *sr, int *last_res,
 					     stm32_port->rx_ch->cookie,
 					     &state);
 		if ((status == DMA_IN_PROGRESS) &&
-		    (*last_res != state.residue))
+		    (stm32_port->rx_remain != state.residue))
 			return 1;
 		else
 			return 0;
@@ -86,17 +85,16 @@ static int stm32_pending_rx(struct uart_port *port, u32 *sr, int *last_res,
 	return 0;
 }
 
-static unsigned long
-stm32_get_char(struct uart_port *port, u32 *sr, int *last_res)
+static unsigned long stm32_get_char(struct uart_port *port, u32 *sr)
 {
 	struct stm32_port *stm32_port = to_stm32_port(port);
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
 	unsigned long c;
 
 	if (stm32_port->rx_ch) {
-		c = stm32_port->rx_buf[RX_BUF_L - (*last_res)--];
-		if ((*last_res) == 0)
-			*last_res = RX_BUF_L;
+		c = stm32_port->rx_buf[RX_BUF_L - stm32_port->rx_remain--];
+		if (stm32_port->rx_remain == 0)
+			stm32_port->rx_remain = RX_BUF_L;
 		return c;
 	} else {
 		return readl_relaxed(port->membase + ofs->rdr);
@@ -111,14 +109,13 @@ static void stm32_receive_chars(struct uart_port *port, bool threaded)
 	unsigned long c;
 	u32 sr;
 	char flag;
-	static int last_res = RX_BUF_L;
 
 	if (port->irq_wake)
 		pm_wakeup_event(tport->tty->dev, 0);
 
-	while (stm32_pending_rx(port, &sr, &last_res, threaded)) {
+	while (stm32_pending_rx(port, &sr, threaded)) {
 		sr |= USART_SR_DUMMY_RX;
-		c = stm32_get_char(port, &sr, &last_res);
+		c = stm32_get_char(port, &sr);
 		flag = TTY_NORMAL;
 		port->icount.rx++;
 
@@ -848,6 +845,8 @@ static int stm32_of_dma_rx_probe(struct stm32_port *stm32port,
 	struct dma_async_tx_descriptor *desc = NULL;
 	dma_cookie_t cookie;
 	int ret;
+
+	stm32port->rx_remain = RX_BUF_L;
 
 	/* Check if requested to use DMA */
 	if (!of_get_property(np, "st,use-dma-rx", NULL)) {
