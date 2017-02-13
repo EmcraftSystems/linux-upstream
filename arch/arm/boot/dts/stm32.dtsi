@@ -554,6 +554,7 @@
 			reg = <0x40026000 0x400>;
 			interrupts = <11 12 13 14 15 16 17 47>;
 			clocks = <&rcc 0 21>;
+			st,streams = <8>;
 			status = "disabled";
 		};
 
@@ -563,6 +564,7 @@
 			reg = <0x40026400 0x400>;
 			interrupts = <56 57 58 59 60 68 69 70>;
 			clocks = <&rcc 0 22>;
+			st,streams = <8>;
 			status = "disabled";
 		};
 

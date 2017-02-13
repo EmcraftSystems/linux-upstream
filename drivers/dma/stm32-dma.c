@@ -110,7 +110,6 @@
 
 #define STM32_DMA_MAX_DATA_ITEMS	0xffff
 #define STM32_DMA_MAX_CHANNELS		0x08
-#define STM32_DMA_MAX_REQUEST_ID	0x08
 #define STM32_DMA_MAX_DATA_PARAM	0x03
 
 enum stm32_dma_width {
@@ -177,6 +176,7 @@ struct stm32_dma_device {
 	struct reset_control *rst;
 	bool mem2mem;
 	struct stm32_dma_chan chan[STM32_DMA_MAX_CHANNELS];
+	int num_lines;
 };
 
 static struct stm32_dma_device *stm32_dma_get_dev(struct stm32_dma_chan *chan)
@@ -993,7 +993,7 @@ static struct dma_chan *stm32_dma_of_xlate(struct of_phandle_args *dma_spec,
 	cfg.threshold = 0;
 
 	if ((cfg.channel_id >= STM32_DMA_MAX_CHANNELS) || (cfg.request_line >=
-				STM32_DMA_MAX_REQUEST_ID))
+							   dmadev->num_lines))
 		return NULL;
 
 	if (dma_spec->args_count > 3)
@@ -1022,6 +1022,7 @@ static int stm32_dma_probe(struct platform_device *pdev)
 	const struct of_device_id *match;
 	struct resource *res;
 	int i, ret;
+	u32 tmp;
 
 	match = of_match_device(stm32_dma_of_match, &pdev->dev);
 	if (!match) {
@@ -1048,6 +1049,12 @@ static int stm32_dma_probe(struct platform_device *pdev)
 
 	dmadev->mem2mem = of_property_read_bool(pdev->dev.of_node,
 						"st,mem2mem");
+	ret = of_property_read_u32(pdev->dev.of_node, "st,streams", &tmp);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "failed to get number of streams: %d\n", ret);
+		return ret;
+	}
+	dmadev->num_lines = tmp;
 
 	dmadev->rst = devm_reset_control_get(&pdev->dev, NULL);
 	if (!IS_ERR(dmadev->rst)) {
