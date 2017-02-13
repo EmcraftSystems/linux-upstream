@@ -228,12 +228,14 @@ static int stm32_qspi_wait_for_flag(struct stm32_qspi_priv *priv)
 {
 	if (!wait_for_completion_timeout(&priv->cmd_complete,
 					 msecs_to_jiffies(QSPI_TIMEOUT_MS))) {
-		dev_err(priv->dev, "%s: timeout (sr 0x%x)\n", __func__, priv->regs->sr);
+		u32 wait_mask = atomic_read(&priv->wait_mask);
+		dev_err(priv->dev, "%s: timeout (sr 0x%x, wait_mask 0x%x)\n", __func__, priv->regs->sr, wait_mask);
 		return -1;
 	}
 
 	if (priv->irq_failed) {
-		dev_err(priv->dev, "%s: failed (sr 0x%x)\n", __func__, priv->regs->sr);
+		u32 wait_mask = atomic_read(&priv->wait_mask);
+		dev_err(priv->dev, "%s: failed (sr 0x%x, wait_mask 0x%x)\n", __func__, priv->regs->sr, wait_mask);
 		return -1;
 	} else {
 		return 0;
@@ -258,7 +260,7 @@ static int stm32_qspi_poll_for_status(struct stm32_qspi_priv *priv, u32 mask, in
 	}
 
 	if (i == timeout) {
-		dev_err(priv->dev, "%s: TIMEOUT: sr 0x%x\n", __func__, reg);
+		dev_err(priv->dev, "%s: TIMEOUT: sr 0x%x, mask 0x%x, active %d\n", __func__, reg, mask, active);
 		return -ETIMEDOUT;
 	} else {
 		return 0;
@@ -267,12 +269,18 @@ static int stm32_qspi_poll_for_status(struct stm32_qspi_priv *priv, u32 mask, in
 
 static int stm32_qspi_wait_while_busy(struct stm32_qspi_priv *priv)
 {
-	return stm32_qspi_poll_for_status(priv, QSPI_SR_BUSY, 0);
+	int err = stm32_qspi_poll_for_status(priv, QSPI_SR_BUSY, 0);
+	if (err)
+		dev_err(priv->dev, "%s: failed: %d\n", __func__, err);
+	return err;
 }
 
 static int stm32_qspi_wait_for_fifo(struct stm32_qspi_priv *priv)
 {
-	return stm32_qspi_poll_for_status(priv, QSPI_SR_FTF, 1);
+	int err = stm32_qspi_poll_for_status(priv, QSPI_SR_FTF, 1);
+	if (err)
+		dev_err(priv->dev, "%s: failed: %d\n", __func__, err);
+	return err;
 }
 
 static int stm32_qspi_wait_until_complete(struct stm32_qspi_priv *priv)
@@ -842,8 +850,10 @@ static irqreturn_t stm32_qspi_irq_thread(int irq, void *data)
 		priv->irq_failed = true;
 	}
 
-	if (!unexpected)
+	if (!unexpected) {
 		complete(&priv->cmd_complete);
+		atomic_set(&priv->wait_mask, 0);
+	}
 
 	return IRQ_HANDLED;
 }
