@@ -569,7 +569,6 @@ static void stm32_qspi_dma_callback(void *param)
 	struct stm32_qspi_priv *priv = param;
 	struct dma_chan *chan = priv->dma_chan;
 
-	async_tx_ack(priv->dma_desc);
 	dma_unmap_single(chan->device->dev, priv->dma_buf, priv->dma_len, DMA_TO_DEVICE);
 }
 
@@ -607,7 +606,7 @@ static int stm32_qspi_write_page(struct stm32_qspi_priv *priv, u32 address, cons
 		goto fail;
 	dma_sync_single_for_device(priv->dev, buf_dma, size, DMA_TO_DEVICE);
 	priv->dma_desc = dmaengine_prep_slave_single(chan, buf_dma, size,
-						     DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+						     DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT);
 
 	if (!priv->dma_desc) {
 		dev_err(priv->dev, "%s[%d]: internal error\n", __func__, __LINE__);
@@ -650,6 +649,8 @@ static int stm32_qspi_write_page(struct stm32_qspi_priv *priv, u32 address, cons
 	err = dma_submit_error(dmaengine_submit(priv->dma_desc));
 	if (err)
 		goto fail;
+
+	dma_async_issue_pending(chan);
 
 	err = stm32_qspi_wait_until_complete(priv);
 	if (err)
