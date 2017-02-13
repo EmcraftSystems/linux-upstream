@@ -90,7 +90,7 @@
 			interrupts = <95 96>;
 			clocks = <&rcc 0 152>;
 			resets = <&rst STM32F4_APB1_RESET(I2C4)>;
-			dmas = <&dma1 2 2>, <&dma1 5 2>;
+			dmas = <&dma1 2 2 0x400 0>, <&dma1 5 2 0x400 0>;
 			dma-names = "rx", "tx";
 			status = "disabled";
 		};
@@ -142,7 +142,7 @@
 			clocks = <&rcc 0 183>;
 			resets = <&rst STM32F4_APB2_RESET(SAI2)>;
 			interrupts = <91>;
-			dmas = <&dma2 4 3>;
+			dmas = <&dma2 4 3 0x400 0>;
 			dma-names = "tx";
 			status = "disabled";
 		};
@@ -164,7 +164,7 @@
 			bus-width = <4>;
 			voltage-ranges = <3200 3300 3300 3400>;
 			/* Use the same DMA both for rx and tx */
-			dmas = <&dma2 0 11>, <&dma2 0 11>;
+			dmas = <&dma2 0 11 0x400 0>, <&dma2 0 11 0x400 0>;
 			dma-names = "rx", "tx";
 			clocks = <&rcc 0 167>;
 			clock-names = "apb_pclk";
@@ -179,7 +179,7 @@
 			reg = <0xA0001000 0x1000>, <0x90000000 0x10000000>;
 			clocks = <&rcc 0 65>;
 			resets = <&rst STM32F4_AHB3_RESET(QSPI)>;
-			dmas = <&dma2 7 3>;
+			dmas = <&dma2 7 3 0x400 0>;
 			dma-names = "tx";
 			interrupts = <92>;
 			status = "disabled";
