@@ -23,7 +23,6 @@ struct stm32_usart_offsets {
 
 struct stm32_usart_config {
 	u8 uart_enable_bit; /* USART_CR1_UE */
-	u8 rxie; /* RX interrupt event enable */
 	bool has_7bits_data;
 };
 
@@ -230,6 +229,3 @@ struct stm32_port {
 	bool tx_busy;		 /* tx busy                   */
 	bool hw_flow_control;
 };
-
-static struct stm32_port stm32_ports[STM32_MAX_PORTS];
-static struct uart_driver stm32_usart_driver;

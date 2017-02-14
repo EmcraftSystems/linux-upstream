@@ -35,6 +35,9 @@
 
 #include "stm32-usart.h"
 
+static struct stm32_port stm32_ports[STM32_MAX_PORTS];
+static struct uart_driver stm32_usart_driver;
+
 static void stm32_stop_tx(struct uart_port *port);
 static void stm32_transmit_chars(struct uart_port *port);
 
@@ -343,8 +346,13 @@ static irqreturn_t stm32_interrupt(int irq, void *ptr)
 	spin_unlock(&port->lock);
 
 	if (stm32_port->rx_ch) {
-		/* Read DR to clear IDLE interrupt */
-		readl_relaxed(port->membase + ofs->rdr);
+		/* Clear IDLE interrupt */
+		if (ofs->icr != UNDEF_REG) {
+			writel_relaxed(USART_ICR_IDLECF,
+					port->membase + ofs->icr);
+		} else {
+			readl_relaxed(port->membase + ofs->rdr);
+		}
 		return IRQ_WAKE_THREAD;
 	} else
 		return IRQ_HANDLED;
@@ -519,15 +527,7 @@ static int stm32_startup(struct uart_port *port)
 {
 	struct stm32_port *stm32_port = to_stm32_port(port);
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
-	const char *name = to_platform_device(port->dev)->name;
 	u32 val;
-	int ret;
-
-	ret = request_threaded_irq(port->irq, stm32_interrupt,
-				   stm32_threaded_interrupt,
-				   IRQF_NO_SUSPEND, name, port);
-	if (ret)
-		return ret;
 
 	val = stm32_port->rx_ie | USART_CR1_TE | USART_CR1_RE;
 	stm32_set_bits(port, ofs->cr1, val);
@@ -552,8 +552,6 @@ static void stm32_shutdown(struct uart_port *port)
 	val |= USART_CR1_TXEIE | USART_CR1_TE | USART_CR1_RE;
 	val |= BIT(cfg->uart_enable_bit);
 	stm32_clr_bits(port, ofs->cr1, val);
-
-	free_irq(port->irq, port);
 }
 
 static void stm32_set_termios(struct uart_port *port, struct ktermios *termios,
@@ -990,6 +988,7 @@ static int stm32_serial_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match;
 	struct stm32_port *stm32port;
+	struct uart_port *port;
 	int ret;
 
 	stm32port = stm32_of_get_stm32_port(pdev);
@@ -1006,7 +1005,14 @@ static int stm32_serial_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	ret = uart_add_one_port(&stm32_usart_driver, &stm32port->port);
+	port = &stm32port->port;
+	ret = uart_add_one_port(&stm32_usart_driver, port);
+	if (ret)
+		return ret;
+
+	ret = request_threaded_irq(port->irq, stm32_interrupt,
+				   stm32_threaded_interrupt,
+				   IRQF_NO_SUSPEND, pdev->name, port);
 	if (ret)
 		return ret;
 
@@ -1021,7 +1027,7 @@ static int stm32_serial_probe(struct platform_device *pdev)
 	if (ret)
 		dev_info(&pdev->dev, "interrupt mode used for tx (no dma)\n");
 
-	platform_set_drvdata(pdev, &stm32port->port);
+	platform_set_drvdata(pdev, port);
 
 	return 0;
 }
@@ -1031,6 +1037,8 @@ static int stm32_serial_remove(struct platform_device *pdev)
 	struct uart_port *port = platform_get_drvdata(pdev);
 	struct stm32_port *stm32_port = to_stm32_port(port);
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
+
+	free_irq(port->irq, port);
 
 	stm32_clr_bits(port, ofs->cr3, USART_CR3_DMAR);
 
