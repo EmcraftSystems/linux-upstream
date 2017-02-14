@@ -866,17 +866,22 @@ static size_t stm32_dma_desc_residue(struct stm32_dma_chan *chan,
 	u32 dma_scr, width, residue, count;
 	int i;
 
-	residue = 0;
+	dma_scr = stm32_dma_read(dmadev, STM32_DMA_SCR(chan->id));
+	width = STM32_DMA_SCR_PSIZE_GET(dma_scr);
+	count = stm32_dma_read(dmadev, STM32_DMA_SNDTR(chan->id));
 
-	for (i = next_sg; i < desc->num_sgs; i++)
-		residue += desc->sg_req[i].len;
+	if (chan->chan_reg.dma_scr & STM32_DMA_SCR_DBM) {
+		residue = count << width;
 
-	if (next_sg != 0) {
-		dma_scr = stm32_dma_read(dmadev, STM32_DMA_SCR(chan->id));
-		width = STM32_DMA_SCR_PSIZE_GET(dma_scr);
-		count = stm32_dma_read(dmadev, STM32_DMA_SNDTR(chan->id));
+		for (i = (next_sg == 0) ? desc->num_sgs - 1 :
+			 (next_sg == 1) ? desc->num_sgs :
+					  next_sg - 1; i < desc->num_sgs; i++)
+			residue += desc->sg_req[i].len;
+	} else {
+		residue = next_sg ? count << width : 0;
 
-		residue += count << width;
+		for (i = next_sg; i < desc->num_sgs; i++)
+			residue += desc->sg_req[i].len;
 	}
 
 	return residue;
