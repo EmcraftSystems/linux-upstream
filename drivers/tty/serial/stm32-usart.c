@@ -79,7 +79,9 @@ static int stm32_pending_rx(struct uart_port *port, u32 *sr, bool threaded)
 					     &state);
 		if ((status == DMA_IN_PROGRESS) &&
 		    (stm32_port->rx_remain != state.residue))
-			return 1;
+			return stm32_port->rx_remain > state.residue ?
+			       stm32_port->rx_remain - state.residue :
+			       RX_BUF_L + stm32_port->rx_remain - state.residue;
 		else
 			return 0;
 	} else if (*sr & USART_SR_RXNE) {
@@ -88,7 +90,7 @@ static int stm32_pending_rx(struct uart_port *port, u32 *sr, bool threaded)
 	return 0;
 }
 
-static unsigned long stm32_get_char(struct uart_port *port, u32 *sr)
+static unsigned long stm32_get_char(struct uart_port *port)
 {
 	struct stm32_port *stm32_port = to_stm32_port(port);
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
@@ -110,19 +112,33 @@ static void stm32_receive_chars(struct uart_port *port, bool threaded)
 	struct stm32_port *stm32_port = to_stm32_port(port);
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
 	unsigned long c;
-	u32 sr;
+	int cnt_done = 0, cnt_recv = 0;
+	u32 sr = 0;
 	char flag;
 
 	if (port->irq_wake)
 		pm_wakeup_event(tport->tty->dev, 0);
 
-	while (stm32_pending_rx(port, &sr, threaded)) {
+	while (1) {
+		/* To avoid rxing too long process one period maximum */
+		if (cnt_done >= RX_BUF_P)
+			break;
+
+		/* Get number of bytes received so far */
+		if (!cnt_recv--) {
+			cnt_recv = stm32_pending_rx(port, &sr, threaded);
+			if (!cnt_recv--)
+				break;
+		}
+
 		sr |= USART_SR_DUMMY_RX;
-		c = stm32_get_char(port, &sr);
+		c = stm32_get_char(port);
 		flag = TTY_NORMAL;
 		port->icount.rx++;
+		cnt_done++;
 
 		if (sr & USART_SR_ERR_MASK) {
+			cnt_recv = 0;
 			if (sr & USART_SR_LBD) {
 				port->icount.brk++;
 				if (uart_handle_break(port))
