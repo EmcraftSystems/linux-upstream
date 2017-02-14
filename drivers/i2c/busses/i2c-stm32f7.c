@@ -361,7 +361,6 @@ static void stm32_i2c_complete(void *arg)
 {
 	struct stm32_dma_data *dma = arg;
 
-	async_tx_ack(dma->dsc);
 	dma->cookie = -EINVAL;
 	dma->dsc = NULL;
 }
@@ -433,11 +432,13 @@ static int stm32f7_i2c_transfer(struct i2c_adapter *a, struct i2c_msg *m, int n)
 			sg_dma_len(&dma->sg) = m[i].len;
 
 			dma->dsc = dmaengine_prep_slave_sg(dma->chan, &dma->sg,
-				1, dir, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+				1, dir, DMA_PREP_INTERRUPT);
 
 			dma->dsc->callback = stm32_i2c_complete;
 			dma->dsc->callback_param = dma;
 			dma->cookie = dmaengine_submit(dma->dsc);
+
+			dma_async_issue_pending(dma->chan);
 		}
 
 		/* Enable interrupts */
