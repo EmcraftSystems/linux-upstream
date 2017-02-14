@@ -223,9 +223,12 @@ static int stm_pwm_probe(struct platform_device *pdev)
 	chan = spec.args[1];
 
 	/*
-	 * Support only TIM2..5 timers with 1..4 channels for now
+	 * Supported for now:
+	 *  - TIM2-5 timers with 1-4 channels
+	 *  - TIM9,12 timers with 1-2 channels
 	 */
-	if (tmr < 2 || tmr > 5 || chan < 1 || chan > 4) {
+	if ((tmr < 2 || tmr > 5 || chan < 1 || chan > 4)
+	    && ((tmr != 9 && tmr != 12) || (chan != 1 && chan != 2))) {
 		dev_err(dev, "not supported timer/channel %d/%d\n",
 			tmr, chan);
 		rv = -EINVAL;

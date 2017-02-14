@@ -184,5 +184,13 @@
 			interrupts = <92>;
 			status = "disabled";
 		};
+
+		timer9: timer@0x40014000 {
+			compatible = "st,stm32-timer";
+			reg = <0x40014000 0x400>;
+			interrupts = <24>;
+			clocks = <&rcc 0 176>;
+			status = "disabled";
+		};
 	};
 };
