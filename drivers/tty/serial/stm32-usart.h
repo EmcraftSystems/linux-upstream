@@ -23,6 +23,7 @@ struct stm32_usart_offsets {
 
 struct stm32_usart_config {
 	u8 uart_enable_bit; /* USART_CR1_UE */
+	u8 rxie; /* RX interrupt event enable */
 	bool has_7bits_data;
 };
 
@@ -207,8 +208,8 @@ struct stm32_usart_info stm32f7_info = {
 #define STM32_SERIAL_NAME "ttyS"
 #define STM32_MAX_PORTS 6
 
-#define RX_BUF_L 200		 /* dma rx buffer length     */
-#define RX_BUF_P RX_BUF_L	 /* dma rx buffer period     */
+#define RX_BUF_L 1024		 /* dma rx buffer length     */
+#define RX_BUF_P 256		 /* dma rx buffer period     */
 #define TX_BUF_L 200		 /* dma tx buffer length     */
 
 struct stm32_port {
@@ -224,6 +225,7 @@ struct stm32_port {
 	dma_addr_t tx_dma_buf;   /* dma tx buffer bus address */
 	unsigned char *tx_buf;   /* dma tx buffer cpu address */
 	int rx_remain;		 /* dma rx buf remain position*/
+	u8 rx_ie;		 /* rx event int enable       */
 	bool tx_dma_busy;	 /* dma tx busy               */
 	bool tx_busy;		 /* tx busy                   */
 	bool hw_flow_control;

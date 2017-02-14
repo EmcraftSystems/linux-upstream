@@ -156,6 +156,16 @@ static void stm32_receive_chars(struct uart_port *port, bool threaded)
 	spin_lock(&port->lock);
 }
 
+static void stm32_rx_dma_complete(void *arg)
+{
+	struct uart_port *port = arg;
+	unsigned long flags;
+
+	spin_lock_irqsave(&port->lock, flags);
+	stm32_receive_chars(port, true);
+	spin_unlock_irqrestore(&port->lock, flags);
+}
+
 static void stm32_tx_dma_complete(void *arg)
 {
 	struct uart_port *port = arg;
@@ -332,9 +342,11 @@ static irqreturn_t stm32_interrupt(int irq, void *ptr)
 
 	spin_unlock(&port->lock);
 
-	if (stm32_port->rx_ch)
+	if (stm32_port->rx_ch) {
+		/* Read DR to clear IDLE interrupt */
+		readl_relaxed(port->membase + ofs->rdr);
 		return IRQ_WAKE_THREAD;
-	else
+	} else
 		return IRQ_HANDLED;
 }
 
@@ -473,7 +485,7 @@ static void stm32_throttle(struct uart_port *port)
 	unsigned long flags;
 
 	spin_lock_irqsave(&port->lock, flags);
-	stm32_clr_bits(port, ofs->cr1, USART_CR1_RXNEIE);
+	stm32_clr_bits(port, ofs->cr1, stm32_port->rx_ie);
 	spin_unlock_irqrestore(&port->lock, flags);
 }
 
@@ -485,7 +497,7 @@ static void stm32_unthrottle(struct uart_port *port)
 	unsigned long flags;
 
 	spin_lock_irqsave(&port->lock, flags);
-	stm32_set_bits(port, ofs->cr1, USART_CR1_RXNEIE);
+	stm32_set_bits(port, ofs->cr1, stm32_port->rx_ie);
 	spin_unlock_irqrestore(&port->lock, flags);
 }
 
@@ -495,7 +507,7 @@ static void stm32_stop_rx(struct uart_port *port)
 	struct stm32_port *stm32_port = to_stm32_port(port);
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
 
-	stm32_clr_bits(port, ofs->cr1, USART_CR1_RXNEIE);
+	stm32_clr_bits(port, ofs->cr1, stm32_port->rx_ie);
 }
 
 /* Handle breaks - ignored by us */
@@ -517,7 +529,7 @@ static int stm32_startup(struct uart_port *port)
 	if (ret)
 		return ret;
 
-	val = USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE;
+	val = stm32_port->rx_ie | USART_CR1_TE | USART_CR1_RE;
 	stm32_set_bits(port, ofs->cr1, val);
 
 	if (stm32_port->link)
@@ -536,7 +548,8 @@ static void stm32_shutdown(struct uart_port *port)
 	if (stm32_port->link)
 		gpiod_set_value(stm32_port->link, 0);
 
-	val = USART_CR1_TXEIE | USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE;
+	val = stm32_port->rx_ie;
+	val |= USART_CR1_TXEIE | USART_CR1_TE | USART_CR1_RE;
 	val |= BIT(cfg->uart_enable_bit);
 	stm32_clr_bits(port, ofs->cr1, val);
 
@@ -565,7 +578,8 @@ static void stm32_set_termios(struct uart_port *port, struct ktermios *termios,
 	/* Stop serial port and reset value */
 	writel_relaxed(0, port->membase + ofs->cr1);
 
-	cr1 = USART_CR1_TE | USART_CR1_RE | USART_CR1_RXNEIE;
+	cr1 = stm32_port->rx_ie;
+	cr1 |= USART_CR1_TE | USART_CR1_RE;
 	cr1 |= BIT(cfg->uart_enable_bit);
 	cr2 = 0;
 	cr3 = 0;
@@ -891,9 +905,8 @@ static int stm32_of_dma_rx_probe(struct stm32_port *stm32port,
 		goto config_err;
 	}
 
-	/* No callback as dma buffer is drained on usart interrupt */
-	desc->callback = NULL;
-	desc->callback_param = NULL;
+	desc->callback = stm32_rx_dma_complete;
+	desc->callback_param = port;
 
 	/* Push current DMA transaction in the pending queue */
 	cookie = dmaengine_submit(desc);
@@ -1000,6 +1013,8 @@ static int stm32_serial_probe(struct platform_device *pdev)
 	ret = stm32_of_dma_rx_probe(stm32port, pdev);
 	if (ret)
 		dev_info(&pdev->dev, "interrupt mode used for rx (no dma)\n");
+	stm32port->rx_ie = stm32port->rx_ch ? USART_CR1_IDLEIE :
+					      USART_CR1_RXNEIE;
 
 	stm32port->tx_busy = false;
 	ret = stm32_of_dma_tx_probe(stm32port, pdev);
