@@ -609,6 +609,8 @@ static int stm32_gpio_to_irq(struct gpio_chip *chip, unsigned offset)
 
 	regmap_field_write(pctl->irqmux[offset], bank->range.id);
 
+	pr_info("%s: Event line %d now points to fire interrupts from bank %c\n", __func__, offset, 'A' + bank->range.id);
+
 	irq = irq_create_mapping(pctl->domain, offset);
 	if (!irq) {
 		printk("%s: irq_create_mapping failed\n", __func__);
