@@ -17,6 +17,7 @@
 #include <linux/of_gpio.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
+#include <linux/of_platform.h>
 #include <linux/pinctrl/pinctrl.h>
 #include <linux/pinctrl/pinmux.h>
 #include <linux/pinctrl/pinconf.h>
@@ -741,8 +742,25 @@ static int stm32_pctrl_dt_setup_irq(struct platform_device *pdev,
 		return -ENXIO;
 
 	pctl->regmap = syscon_regmap_lookup_by_phandle(np, "st,syscfg");
-	if (IS_ERR(pctl->regmap))
+	if (IS_ERR(pctl->regmap)) {
 		return PTR_ERR(pctl->regmap);
+	} else {
+		const u32 *p = of_get_property(np, "st,syscfg", NULL);
+		struct device_node *syscfg_np = p ? of_find_node_by_phandle(be32_to_cpup(p)) : NULL;
+		struct platform_device *pdev = syscfg_np ? of_find_device_by_node(syscfg_np) : NULL;
+		struct clk *syscfg_clk = pdev ? devm_clk_get(&pdev->dev, "core_clk") : NULL;
+		if (!p || !syscfg_np || !pdev || !syscfg_clk) {
+			dev_err(dev, "%s: unable to get syscfg clock\n", __func__);
+			return -ENXIO;
+		}
+		if (IS_ERR(syscfg_clk)) {
+			int err = PTR_ERR(syscfg_clk);
+			dev_err(dev, "%s: unable to get syscfg clock: %d\n", __func__, err);
+			return err;
+		}
+
+		clk_prepare_enable(syscfg_clk);
+	}
 
 	rm = pctl->regmap;
 

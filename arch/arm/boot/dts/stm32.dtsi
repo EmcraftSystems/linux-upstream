@@ -505,6 +505,8 @@
 		syscfg: syscon@40013800 {
 			compatible = "st,stm32-syscfg", "syscon";
 			reg = <0x40013800 0x24>;
+			clocks = <&rcc 0 174>;
+			clock-names = "core_clk";
 		};
 
 		spi_5: spi@40015000 {
