@@ -4,6 +4,8 @@
  *
  * Copyright (c) 2010  Focal tech Ltd.
  *
+ * Copyright (c) 2017 Emcraft Systems
+ *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
  * may be copied, distributed, and modified under those terms.
@@ -68,8 +70,11 @@ struct ft5x0x_ts_data {
 	unsigned int x_max;
 	unsigned int y_max;
 	struct gpio_desc *reset_gpio;
+	struct gpio_desc *irq_gpio;
+	int irq;
 	struct workqueue_struct *workqueue;
 	struct work_struct work;
+	int max_touch_points;
 };
 
 #define ANDROID_INPUT_PROTOCOL_B
@@ -217,7 +222,7 @@ static int ft5x0x_read_Touchdata(struct ft5x0x_ts_data *data)
 	memset(event, 0, sizeof(struct ts_event));
 
 	event->touch_point = 0;
-	for (i = 0; i < CFG_MAX_TOUCH_POINTS; i++) {
+	for (i = 0; i < data->max_touch_points; i++) {
 		pointid = (buf[FT_TOUCH_ID_POS + FT_TOUCH_STEP * i]) >> 4;
 		if (pointid >= FT_MAX_ID)
 			break;
@@ -292,13 +297,13 @@ static void ft5x0x_ts_work(struct work_struct *work)
 	    container_of(work, struct ft5x0x_ts_data, work);
 	int ret;
 
-	disable_irq_nosync(ft5x0x_ts->client->irq);
+	disable_irq_nosync(ft5x0x_ts->irq);
 
 	ret = ft5x0x_read_Touchdata(ft5x0x_ts);
 	if (ret == 0)
 		ft5x0x_report_value(ft5x0x_ts);
 
-	enable_irq(ft5x0x_ts->client->irq);
+	enable_irq(ft5x0x_ts->irq);
 }
 
 /*The ft5x0x device will signal the host about TRIGGER_FALLING.
@@ -311,12 +316,12 @@ static irqreturn_t ft5x0x_ts_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-void ft5x0x_reset_tp(struct i2c_client *client, int HighOrLow)
+void ft5x0x_reset_tp(struct i2c_client *client, int active)
 {
 	struct ft5x0x_ts_data *ft5x0x_ts = i2c_get_clientdata(client);
 	if (ft5x0x_ts->reset_gpio) {
-		dev_info(&client->dev, "set tp reset pin to %d\n", HighOrLow);
-		gpiod_set_value(ft5x0x_ts->reset_gpio, HighOrLow);
+		dev_info(&client->dev, "set tp reset pin to %s\n", active ? "active" : "inactive");
+		gpiod_set_value(ft5x0x_ts->reset_gpio, active);
 	} else
 		dev_warn(&client->dev, "reset pin is not set\n");
 }
@@ -332,8 +337,6 @@ static void fts_un_init_gpio_hw(struct ft5x0x_ts_data *ft5x0x_ts)
 static int ft5x0x_ts_probe(struct i2c_client *client,
 			   const struct i2c_device_id *id)
 {
-	/*struct ft5x0x_platform_data *pdata =
-	   (struct ft5x0x_platform_data *)client->dev.platform_data; */
 	struct device_node *node = client->dev.of_node;
 	struct ft5x0x_ts_data *ft5x0x_ts;
 	struct input_dev *input_dev;
@@ -360,6 +363,34 @@ static int ft5x0x_ts_probe(struct i2c_client *client,
 	ft5x0x_ts->client = client;
 	i2c_set_clientdata(client, ft5x0x_ts);
 
+	ft5x0x_ts->reset_gpio = devm_gpiod_get(&client->dev,
+					       "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR_OR_NULL(ft5x0x_ts->reset_gpio)) {
+		err = ft5x0x_ts->reset_gpio ? PTR_ERR(ft5x0x_ts->reset_gpio) : -EINVAL;
+		ft5x0x_ts->reset_gpio = NULL;
+		dev_warn(&client->dev, "Operating withoug nReset pin (%d)\n",
+			 err);
+	}
+
+	ft5x0x_reset_tp(client, 1);
+	msleep(5);
+	ft5x0x_reset_tp(client, 0);
+	/* Make sure CTP already finish startup process */
+	msleep(300);
+
+	uc_reg_addr = FT5X0X_REG_FOCALTECH_ID;
+	err = ft5x0x_i2c_Read(client, &uc_reg_addr, 1, &uc_reg_value, 1);
+	if (err < 0) {
+		dev_err(&client->dev, "failed to read panel ID\n");
+		goto exit_alloc_data_failed;
+	}
+	dev_info(&client->dev, "Panel ID = 0x%x\n", uc_reg_value);
+
+	if (FT_FOCALTECH_ID_6x06 == uc_reg_value)
+		ft5x0x_ts->max_touch_points = 2;
+	else
+		ft5x0x_ts->max_touch_points = CFG_MAX_TOUCH_POINTS;
+
 	if (of_property_read_u32(node, "x-max", &ft5x0x_ts->x_max)) {
 		dev_err(&client->dev, "x-resolution is not set\n");
 		ft5x0x_ts->x_max = 800;
@@ -374,33 +405,25 @@ static int ft5x0x_ts_probe(struct i2c_client *client,
 	dev_info(&client->dev, "resolution: %dx%d\n", ft5x0x_ts->x_max,
 		 ft5x0x_ts->y_max);
 
-	ft5x0x_ts->reset_gpio = devm_gpiod_get(&client->dev,
-					       "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR_OR_NULL(ft5x0x_ts->reset_gpio)) {
-		err =
-		    ft5x0x_ts->
-		    reset_gpio ? PTR_ERR(ft5x0x_ts->reset_gpio) : -EINVAL;
-		ft5x0x_ts->reset_gpio = NULL;
-		dev_warn(&client->dev, "Operating withoug nReset pin (%d)\n",
-			 err);
-	}
-
-	if (client->irq) {
-		err =
-		    devm_request_irq(&client->dev, client->irq,
-				     ft5x0x_ts_interrupt,
-				     IRQF_TRIGGER_FALLING,
-				     client->dev.driver->name, ft5x0x_ts);
-
-		if (err < 0) {
-			dev_err(&client->dev, "request irq failed\n");
-			goto exit_irq_request_failed;
-		}
-		disable_irq(client->irq);
-	} else {
+	ft5x0x_ts->irq_gpio = devm_gpiod_get_optional(&client->dev, "irq", GPIOD_IN);
+	ft5x0x_ts->irq = device_property_present(&client->dev, "interrupts") ?
+		client->irq : (ft5x0x_ts->irq_gpio ? gpiod_to_irq(ft5x0x_ts->irq_gpio) : -1);
+	if (ft5x0x_ts->irq <= 0) {
 		dev_err(&client->dev, "mode without irq is not supported\n");
 		goto exit_irq_request_failed;
 	}
+
+	err =
+		devm_request_irq(&client->dev, ft5x0x_ts->irq,
+				 ft5x0x_ts_interrupt,
+				 IRQF_TRIGGER_FALLING,
+				 client->dev.driver->name, ft5x0x_ts);
+	if (err < 0) {
+		dev_err(&client->dev, "request irq failed\n");
+		goto exit_irq_request_failed;
+	}
+
+	disable_irq(ft5x0x_ts->irq);
 
 	input_dev = input_allocate_device();
 	if (!input_dev) {
@@ -417,8 +440,7 @@ static int ft5x0x_ts_probe(struct i2c_client *client,
 	__set_bit(ABS_X, input_dev->absbit);
 	__set_bit(ABS_Y, input_dev->absbit);
 
-	//input_mt_init_slots(input_dev, CFG_MAX_TOUCH_POINTS);
-	input_mt_init_slots(input_dev, CFG_MAX_TOUCH_POINTS, 0);
+	input_mt_init_slots(input_dev, ft5x0x_ts->max_touch_points, 0);
 	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0, PRESS_MAX, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_POSITION_X,
 			     0, ft5x0x_ts->x_max, 0, 0);
@@ -436,8 +458,6 @@ static int ft5x0x_ts_probe(struct i2c_client *client,
 			dev_name(&client->dev));
 		goto exit_input_register_device_failed;
 	}
-	/*make sure CTP already finish startup process */
-	msleep(150);
 
 #ifdef FTS_CTL_IIC
 	if (ft_rw_iic_drv_init(client) < 0)
@@ -448,16 +468,28 @@ static int ft5x0x_ts_probe(struct i2c_client *client,
 
 	/*get some register information */
 	uc_reg_addr = FT5x0x_REG_FW_VER;
-	ft5x0x_i2c_Read(client, &uc_reg_addr, 1, &uc_reg_value, 1);
-	pr_info("[FTS] Firmware version = 0x%x\n", uc_reg_value);
+	err = ft5x0x_i2c_Read(client, &uc_reg_addr, 1, &uc_reg_value, 1);
+	if (err < 0) {
+		dev_err(&client->dev, "failed to read firmware version\n");
+		goto exit_input_register_device_failed;
+	}
+	dev_info(&client->dev, "Firmware version = 0x%x\n", uc_reg_value);
 
 	uc_reg_addr = FT5x0x_REG_POINT_RATE;
-	ft5x0x_i2c_Read(client, &uc_reg_addr, 1, &uc_reg_value, 1);
-	pr_info("[FTS] report rate is %dHz.\n", uc_reg_value * 10);
+	err = ft5x0x_i2c_Read(client, &uc_reg_addr, 1, &uc_reg_value, 1);
+	if (err < 0) {
+		dev_err(&client->dev, "failed to read point rate\n");
+		goto exit_input_register_device_failed;
+	}
+	dev_info(&client->dev, "Report rate is %dHz.\n", uc_reg_value * 10);
 
 	uc_reg_addr = FT5X0X_REG_THGROUP;
-	ft5x0x_i2c_Read(client, &uc_reg_addr, 1, &uc_reg_value, 1);
-	pr_info("[FTS] touch threshold is %d.\n", uc_reg_value * 4);
+	err = ft5x0x_i2c_Read(client, &uc_reg_addr, 1, &uc_reg_value, 1);
+	if (err < 0) {
+		dev_err(&client->dev, "failed to read threshold\n");
+		goto exit_input_register_device_failed;
+	}
+	dev_info(&client->dev, "Touch threshold is %d.\n", uc_reg_value * 4);
 
 #ifdef FTS_GESTRUE
 	init_para(720, 1280, 100, 0, 0);
@@ -485,14 +517,15 @@ static int ft5x0x_ts_probe(struct i2c_client *client,
 	}
 	INIT_WORK(&ft5x0x_ts->work, ft5x0x_ts_work);
 
-	enable_irq(client->irq);
+	enable_irq(ft5x0x_ts->irq);
+
 	return 0;
 
 exit_input_register_device_failed:
 	input_free_device(input_dev);
 
 exit_input_dev_alloc_failed:
-	devm_free_irq(&client->dev, client->irq, ft5x0x_ts);
+	devm_free_irq(&client->dev, ft5x0x_ts->irq, ft5x0x_ts);
 
 	fts_un_init_gpio_hw(ft5x0x_ts);
 
@@ -511,7 +544,7 @@ static int ft5x0x_ts_suspend(struct device *dev)
 	struct ft5x0x_ts_data *ts = dev_get_drvdata(dev);
 
 	dev_dbg(&ts->client->dev, "[FTS]ft5x0x suspend\n");
-	disable_irq(ts->client->irq);
+	disable_irq(ts->irq);
 	pinctrl_pm_select_sleep_state(dev);
 
 	return 0;
@@ -526,7 +559,7 @@ static int ft5x0x_ts_resume(struct device *dev)
 	ft5x0x_reset_tp(ts->client, 0);
 	msleep(20);
 	ft5x0x_reset_tp(ts->client, 1);
-	enable_irq(ts->client->irq);
+	enable_irq(ts->irq);
 
 	return 0;
 }
@@ -548,7 +581,7 @@ static int ft5x0x_ts_remove(struct i2c_client *client)
 	ft_rw_iic_drv_exit();
 #endif
 
-	devm_free_irq(&client->dev, client->irq, ft5x0x_ts);
+	devm_free_irq(&client->dev, ft5x0x_ts->irq, ft5x0x_ts);
 
 	fts_un_init_gpio_hw(ft5x0x_ts);
 
