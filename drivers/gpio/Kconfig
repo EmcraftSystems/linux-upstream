@@ -402,6 +402,12 @@ config GPIO_VF610
 	help
 	  Say yes here to support Vybrid vf610 GPIOs.
 
+config GPIO_KINETIS
+	def_bool y
+	depends on ARCH_KINETIS
+	help
+	  Say yes here to support Kinetis GPIOs.
+
 config GPIO_VR41XX
 	tristate "NEC VR4100 series General-purpose I/O Uint support"
 	depends on CPU_VR41XX

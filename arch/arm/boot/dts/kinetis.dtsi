@@ -4,6 +4,8 @@
  */
 #include "armv7-m.dtsi"
 #include "dt-bindings/clock/kinetis-mcg.h"
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/gpio/gpio.h>
 
 / {
 	aliases {
@@ -23,6 +25,23 @@
 		serial3 = &uart3;
 		serial4 = &uart4;
 		serial5 = &uart5;
+		gpio0 = &gpioA;
+		gpio1 = &gpioB;
+		gpio2 = &gpioC;
+		gpio3 = &gpioD;
+		gpio4 = &gpioE;
+		gpio5 = &gpioF;
+		spi0 = &dspi0;
+		spi1 = &dspi1;
+		spi2 = &dspi2;
+		i2c0 = &i2c0;
+		i2c1 = &i2c1;
+	};
+
+	osc0erclk: osc0erclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <50000000>;
 	};
 
 	soc {
@@ -174,6 +193,60 @@
 			status = "disabled";
 		};
 
+		gpioA: gpio@400ff000 {
+			compatible = "fsl,kinetis-gpio";
+			reg = <0x400ff000 0x40>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			gpio-ranges = <&portA 0 0 32>;
+			status = "okay";
+		};
+
+		gpioB: gpio@400ff040 {
+			compatible = "fsl,kinetis-gpio";
+			reg = <0x400ff040 0x40>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			gpio-ranges = <&portB 0 0 32>;
+			status = "okay";
+		};
+
+		gpioC: gpio@400ff080 {
+			compatible = "fsl,kinetis-gpio";
+			reg = <0x400ff080 0x40>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			gpio-ranges = <&portC 0 0 32>;
+			status = "okay";
+		};
+
+		gpioD: gpio@400ff0c0 {
+			compatible = "fsl,kinetis-gpio";
+			reg = <0x400ff0c0 0x40>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			gpio-ranges = <&portD 0 0 32>;
+			status = "okay";
+		};
+
+		gpioE: gpio@400ff100 {
+			compatible = "fsl,kinetis-gpio";
+			reg = <0x400ff100 0x40>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			gpio-ranges = <&portE 0 0 32>;
+			status = "okay";
+		};
+
+		gpioF: gpio@400ff140 {
+			compatible = "fsl,kinetis-gpio";
+			reg = <0x400ff140 0x40>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			gpio-ranges = <&portF 0 0 32>;
+			status = "okay";
+		};
+
 		pit0: timer@40037100 {
 			compatible = "fsl,kinetis-pit-timer";
 			reg = <0x40037100 0x10>;
@@ -210,6 +283,83 @@
 			compatible = "fsl,kinetis-cmu";
 			reg = <0x40064000 0x14>;
 			#clock-cells = <1>;
+		};
+
+		fec: ethernet@400c0000 {
+			compatible = "fsl,kinetis-fec";
+			reg = <0x400c0000 0x1000>;
+			interrupts = <76>, <77>, <78>;
+			clocks = <&osc0erclk>, <&osc0erclk>;
+			clock-names = "ipg", "ahb";
+			status = "disabled";
+		};
+
+		dspi0: dspi0@4002c000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "fsl,kinetis-dspi", "fsl,vf610-dspi";
+			reg = <0x4002c000 0x1000>;
+			interrupts = <26>;
+			clocks = <&mcg CLOCK_SPI0>;
+			clock-names = "dspi";
+			dmas = <&edma 0 14>, <&edma 0 15>;
+			dma-names = "rx","tx";
+			spi-num-chipselects = <6>;
+			status = "disabled";
+		};
+
+		dspi1: dspi1@4002d000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "fsl,kinetis-dspi", "fsl,vf610-dspi";
+			reg = <0x4002d000 0x1000>;
+			interrupts = <27>;
+			clocks = <&mcg CLOCK_SPI1>;
+			clock-names = "dspi";
+			dmas = <&edma 0 16>, <&edma 0 17>;
+			dma-names = "rx","tx";
+			spi-num-chipselects = <4>;
+			status = "disabled";
+		};
+
+		dspi2: dspi2@400ac000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "fsl,kinetis-dspi", "fsl,vf610-dspi";
+			reg = <0x400ac000 0x1000>;
+			interrupts = <28>;
+			clocks = <&mcg CLOCK_SPI2>;
+			clock-names = "dspi";
+			dmas = <&edma 0 18>, <&edma 0 19>;
+			dma-names = "rx","tx";
+			spi-num-chipselects = <4>;
+			status = "disabled";
+		};
+
+		i2c0: i2c@40066000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "fsl,kinetis-i2c", "fsl,vf610-i2c";
+			reg = <0x40066000 0x1000>;
+			interrupts = <24>;
+			clocks = <&mcg CLOCK_I2C0>;
+			clock-names = "ipg";
+			dmas = <&edma 0 20>, <&edma 0 21>;
+			dma-names = "rx","tx";
+			status = "disabled";
+		};
+
+		i2c1: i2c@40067000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "fsl,kinetis-i2c", "fsl,vf610-i2c";
+			reg = <0x40067000 0x1000>;
+			interrupts = <25>;
+			clocks = <&mcg CLOCK_I2C1>;
+			clock-names = "ipg";
+			dmas = <&edma 0 22>, <&edma 0 23>;
+			dma-names = "rx","tx";
+			status = "disabled";
 		};
 	};
 };

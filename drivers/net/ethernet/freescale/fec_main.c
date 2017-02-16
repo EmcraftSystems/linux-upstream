@@ -113,6 +113,9 @@ static struct platform_device_id fec_devtype[] = {
 				FEC_QUIRK_ERR007885 | FEC_QUIRK_BUG_CAPTURE |
 				FEC_QUIRK_HAS_RACC,
 	}, {
+		.name = "kinetis-fec",
+		.driver_data = FEC_QUIRK_ENET_MAC | FEC_QUIRK_HAS_RACC,
+	}, {
 		/* sentinel */
 	}
 };
@@ -125,6 +128,7 @@ enum imx_fec_type {
 	IMX6Q_FEC,
 	MVF600_FEC,
 	IMX6SX_FEC,
+	KINETIS_FEC,
 };
 
 static const struct of_device_id fec_dt_ids[] = {
@@ -134,6 +138,7 @@ static const struct of_device_id fec_dt_ids[] = {
 	{ .compatible = "fsl,imx6q-fec", .data = &fec_devtype[IMX6Q_FEC], },
 	{ .compatible = "fsl,mvf600-fec", .data = &fec_devtype[MVF600_FEC], },
 	{ .compatible = "fsl,imx6sx-fec", .data = &fec_devtype[IMX6SX_FEC], },
+	{ .compatible = "fsl,kinetis-fec", .data = &fec_devtype[KINETIS_FEC], },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, fec_dt_ids);

@@ -291,6 +291,29 @@ static void __init kinetis_mcg_init(struct device_node *np)
 			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_UART5)]),
 			KINETIS_CG_IDX(KINETIS_CG_UART5), 0, NULL);
 
+	/*
+	 * DSPIx are clocked from the bus clock.
+	 */
+	clk[CLOCK_SPI0] = clk_register_gate(NULL, "DSPI0", "PCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_SPI0)]),
+			KINETIS_CG_IDX(KINETIS_CG_SPI0), 0, NULL);
+	clk[CLOCK_SPI1] = clk_register_gate(NULL, "DSPI1", "PCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_SPI1)]),
+			KINETIS_CG_IDX(KINETIS_CG_SPI1), 0, NULL);
+	clk[CLOCK_SPI2] = clk_register_gate(NULL, "DSPI2", "PCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_SPI2)]),
+			KINETIS_CG_IDX(KINETIS_CG_SPI2), 0, NULL);
+
+	/*
+	 * I2Cx are clocked from the bus clock.
+	 */
+	clk[CLOCK_I2C0] = clk_register_gate(NULL, "I2C0", "PCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_I2C0)]),
+			KINETIS_CG_IDX(KINETIS_CG_I2C0), 0, NULL);
+	clk[CLOCK_I2C1] = clk_register_gate(NULL, "I2C1", "PCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_I2C1)]),
+			KINETIS_CG_IDX(KINETIS_CG_I2C1), 0, NULL);
+
 	of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data);
 }
 

@@ -20,6 +20,11 @@
 #define CLOCK_UART3		16
 #define CLOCK_UART4		17
 #define CLOCK_UART5		18
-#define CLOCK_END		19
+#define CLOCK_SPI0		19
+#define CLOCK_SPI1		20
+#define CLOCK_SPI2		21
+#define CLOCK_I2C0		22
+#define CLOCK_I2C1		23
+#define CLOCK_END		24
 
 #endif /* _DT_BINDINGS_CLOCK_KINETIS_MCG_H */
