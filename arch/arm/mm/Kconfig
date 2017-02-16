@@ -403,7 +403,7 @@ config CPU_V7M
 	bool
 	select CPU_32v7M
 	select CPU_ABRT_NOMMU
-	select CPU_CACHE_NOP if !CPU_CACHE_V7M
+	select CPU_CACHE_NOP if !CPU_CACHE_V7M && !CPU_CACHE_KINETIS
 	select CPU_CACHE_VIPT if CPU_CACHE_V7M
 	select CPU_PABRT_LEGACY
 	select CPU_THUMBONLY
@@ -521,6 +521,9 @@ config CPU_CACHE_VIPT
 	bool
 
 config CPU_CACHE_FA
+	bool
+
+config CPU_CACHE_KINETIS
 	bool
 
 if MMU

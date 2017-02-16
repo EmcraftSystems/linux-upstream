@@ -147,6 +147,9 @@ ENDPROC(__v7m_setup)
 #if defined(CONFIG_CPU_CACHE_V7M)
 	define_cache_functions v7m
 #endif
+#if defined(CONFIG_ARCH_KINETIS)
+	define_cache_functions kinetis
+#endif
 
 	.section ".rodata"
 	string cpu_arch_name, "armv7m"
@@ -174,6 +177,8 @@ __v7m_proc_info:
 	.long	0			@ proc_info_list.user
 #if defined(CONFIG_CPU_CACHE_V7M)
 	.long	v7m_cache_fns		@ proc_info_list.cache
+#elif defined(CONFIG_ARCH_KINETIS)
+	.long	kinetis_cache_fns		@ proc_info_list.cache
 #else
 	.long	nop_cache_fns		@ proc_info_list.cache
 #endif

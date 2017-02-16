@@ -884,11 +884,13 @@ config ARCH_KINETIS
 	bool "Freescale Kinetis MCU"
 	depends on ARM_SINGLE_ARMV7M
 	select CPU_V7M
+	select CPU_CACHE_KINETIS
 	select ARM_CPU_IDLE_QUIRKS
 	select ARMV7M_SYSTICK
 	select CLKSRC_KINETIS
 	select PINCTRL
 	select ZLIB_INFLATE_STACK_SAVING if ZLIB_INFLATE
+	select NEED_MACH_MEMORY_H
 	help
 	  This enables support for the Freescale Kinetis MCUs
 

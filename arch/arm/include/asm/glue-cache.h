@@ -124,7 +124,11 @@
 #  ifdef _CACHE
 #   define MULTI_CACHE 1
 #  else
-#   define _CACHE nop
+#   if defined(CONFIG_CPU_CACHE_KINETIS)
+#    define _CACHE kinetis
+#   else
+#    define _CACHE nop
+#   endif
 #  endif
 # endif
 #endif
