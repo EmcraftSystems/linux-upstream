@@ -15,6 +15,7 @@
 
 #include <linux/module.h>
 #include <linux/phy.h>
+#include <linux/of.h>
 
 #define DP83848_PHY_ID			0x20005c90
 
@@ -70,6 +71,25 @@ static struct mdio_device_id __maybe_unused dp83848_tbl[] = {
 };
 MODULE_DEVICE_TABLE(mdio, dp83848_tbl);
 
+static int dp83848_reset(struct phy_device *phydev)
+{
+	const struct device *dev = &phydev->dev;
+	const struct device_node *of_node = dev->of_node;
+	bool need_reset = true;
+
+	if (!of_node && dev->parent->of_node)
+		of_node = dev->parent->of_node;
+
+	if (of_node) {
+	    need_reset = !of_property_read_bool(of_node, "noreset");
+	}
+
+	if (need_reset)
+	    return genphy_soft_reset(phydev);
+
+	return 0;
+}
+
 static struct phy_driver dp83848_driver[] = {
 	{
 		.phy_id		= DP83848_PHY_ID,
@@ -78,7 +98,7 @@ static struct phy_driver dp83848_driver[] = {
 		.features	= PHY_BASIC_FEATURES,
 		.flags		= PHY_HAS_INTERRUPT,
 
-		.soft_reset	= genphy_soft_reset,
+		.soft_reset	= dp83848_reset,
 		.config_init	= genphy_config_init,
 		.suspend	= genphy_suspend,
 		.resume		= genphy_resume,
