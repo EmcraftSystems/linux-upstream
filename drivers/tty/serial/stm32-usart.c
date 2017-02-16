@@ -986,6 +986,9 @@ static int stm32_of_dma_tx_probe(struct stm32_port *stm32port,
 		goto config_err;
 	}
 
+	/* DMA buffer acts as a FIFO for UART, so inform serial core about it */
+	port->fifosize = TX_BUF_L;
+
 	return 0;
 
 config_err:
