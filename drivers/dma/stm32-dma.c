@@ -36,6 +36,7 @@
 #define STM32_DMA_TEI			BIT(3) /* Transfer Error Interrupt */
 #define STM32_DMA_DMEI			BIT(2) /* Direct Mode Error Interrupt */
 #define STM32_DMA_FEI			BIT(0) /* FIFO Error Interrupt */
+#define STM32_DMA_IRQ_MASK		0x3D   /* xISR chan interrupts mask */
 
 /* DMA Stream x Configuration Register */
 #define STM32_DMA_SCR(x)		(0x0010 + 0x18 * (x)) /* x = 0..7 */
@@ -297,13 +298,15 @@ static u32 stm32_dma_irq_status(struct stm32_dma_chan *chan)
 
 	flags = dma_isr >> (((chan->id & 2) << 3) | ((chan->id & 1) * 6));
 
-	return flags;
+	return flags & STM32_DMA_IRQ_MASK;
 }
 
 static void stm32_dma_irq_clear(struct stm32_dma_chan *chan, u32 flags)
 {
 	struct stm32_dma_device *dmadev = stm32_dma_get_dev(chan);
 	u32 dma_ifcr;
+
+	BUG_ON(flags & ~STM32_DMA_IRQ_MASK);
 
 	/*
 	 * Write "flags" to the DMA_xIFCR register corresponding to the selected
@@ -537,9 +540,9 @@ static irqreturn_t stm32_dma_chan_irq(int irq, void *devid)
 		stm32_dma_irq_clear(chan, STM32_DMA_TCI);
 		stm32_dma_handle_chan_done(chan);
 
-	} else if (status) {
-		stm32_dma_irq_clear(chan, status);
+	} else {
 		dev_err(chan2dev(chan), "DMA error: status=0x%08x\n", status);
+		stm32_dma_irq_clear(chan, status);
 	}
 
 	spin_unlock(&chan->vchan.lock);
