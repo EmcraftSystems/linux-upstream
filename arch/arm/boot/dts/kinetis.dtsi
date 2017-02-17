@@ -13,12 +13,7 @@
 		pit1 = &pit1;
 		pit2 = &pit2;
 		pit3 = &pit3;
-		pmx0 = &portA;
-		pmx1 = &portB;
-		pmx2 = &portC;
-		pmx3 = &portD;
-		pmx4 = &portE;
-		pmx5 = &portF;
+		pmx0 = &iomux;
 		serial0 = &uart0;
 		serial1 = &uart1;
 		serial2 = &uart2;
@@ -151,45 +146,12 @@
 			clock-names = "edma", "dmamux0", "dmamux1";
 		};
 
-		portA: pinmux@40049000 {
+		iomux: pinmux@40049000 {
 			compatible = "fsl,kinetis-padconf";
-			reg = <0x40049000 0x1000>;
-			clocks = <&mcg CLOCK_PORTA>;
-			status = "disabled";
-		};
-
-		portB: pinmux@4004a000 {
-			compatible = "fsl,kinetis-padconf";
-			reg = <0x4004a000 0x1000>;
-			clocks = <&mcg CLOCK_PORTB>;
-			status = "disabled";
-		};
-
-		portC: pinmux@4004b000 {
-			compatible = "fsl,kinetis-padconf";
-			reg = <0x4004b000 0x1000>;
-			clocks = <&mcg CLOCK_PORTC>;
-			status = "disabled";
-		};
-
-		portD: pinmux@4004c000 {
-			compatible = "fsl,kinetis-padconf";
-			reg = <0x4004c000 0x1000>;
-			clocks = <&mcg CLOCK_PORTD>;
-			status = "disabled";
-		};
-
-		portE: pinmux@4004d000 {
-			compatible = "fsl,kinetis-padconf";
-			reg = <0x4004d000 0x1000>;
-			clocks = <&mcg CLOCK_PORTE>;
-			status = "disabled";
-		};
-
-		portF: pinmux@4004e000 {
-			compatible = "fsl,kinetis-padconf";
-			reg = <0x4004e000 0x1000>;
-			clocks = <&mcg CLOCK_PORTF>;
+			reg = <0x40049000 0x6000>;
+			clocks = <&mcg CLOCK_PORTA>, <&mcg CLOCK_PORTB>,
+				<&mcg CLOCK_PORTC>, <&mcg CLOCK_PORTD>,
+				<&mcg CLOCK_PORTE>, <&mcg CLOCK_PORTF>;
 			status = "disabled";
 		};
 
@@ -198,7 +160,7 @@
 			reg = <0x400ff000 0x40>;
 			gpio-controller;
 			#gpio-cells = <2>;
-			gpio-ranges = <&portA 0 0 32>;
+			gpio-ranges = <&iomux 0 0 32>;
 			status = "okay";
 		};
 
@@ -207,7 +169,7 @@
 			reg = <0x400ff040 0x40>;
 			gpio-controller;
 			#gpio-cells = <2>;
-			gpio-ranges = <&portB 0 0 32>;
+			gpio-ranges = <&iomux 0 32 64>;
 			status = "okay";
 		};
 
@@ -216,7 +178,7 @@
 			reg = <0x400ff080 0x40>;
 			gpio-controller;
 			#gpio-cells = <2>;
-			gpio-ranges = <&portC 0 0 32>;
+			gpio-ranges = <&iomux 0 64 96>;
 			status = "okay";
 		};
 
@@ -225,7 +187,7 @@
 			reg = <0x400ff0c0 0x40>;
 			gpio-controller;
 			#gpio-cells = <2>;
-			gpio-ranges = <&portD 0 0 32>;
+			gpio-ranges = <&iomux 0 96 128>;
 			status = "okay";
 		};
 
@@ -234,7 +196,7 @@
 			reg = <0x400ff100 0x40>;
 			gpio-controller;
 			#gpio-cells = <2>;
-			gpio-ranges = <&portE 0 0 32>;
+			gpio-ranges = <&iomux 0 128 160>;
 			status = "okay";
 		};
 
@@ -243,7 +205,7 @@
 			reg = <0x400ff140 0x40>;
 			gpio-controller;
 			#gpio-cells = <2>;
-			gpio-ranges = <&portF 0 0 32>;
+			gpio-ranges = <&iomux 0 160 192>;
 			status = "okay";
 		};
 

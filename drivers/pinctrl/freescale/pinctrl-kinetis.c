@@ -23,6 +23,8 @@
 #include <linux/pinctrl/pinmux.h>
 #include <linux/slab.h>
 
+#define MAX_PORT_NUM	6
+
 /**
  * struct kinetis_pin_group - describes a single pin
  * @mux_reg: the mux register for this pin.
@@ -67,11 +69,10 @@ struct kinetis_pinctrl_soc_info {
 };
 
 struct kinetis_pinctrl {
-	int				port_id;
 	struct device			*dev;
 	struct pinctrl_dev		*pctl;
 	void __iomem			*base;
-	struct clk			*clk;
+	struct clk			*clk[MAX_PORT_NUM];
 	struct kinetis_pinctrl_soc_info	info;
 };
 
@@ -237,7 +238,8 @@ static int kinetis_set_mux(struct pinctrl_dev *pctldev, unsigned selector,
 
 	for (i = 0; i < npins; i++) {
 		pin = &grp->pins[i];
-		KINETIS_PORT_WR(kpctl->base, pcr[pin->mux_reg], pin->mux_mode);
+		KINETIS_PORT_WR(kpctl->base + 0x1000 * (pin->mux_reg / 32),
+			pcr[pin->mux_reg % 32], pin->mux_mode);
 	}
 
 	return 0;
@@ -427,44 +429,40 @@ static int kinetis_pinctrl_probe(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 	struct kinetis_pinctrl *kpctl;
 	struct resource *res;
-	int ret;
+	int ret, cur_clk;
 
 	kpctl = devm_kzalloc(&pdev->dev, sizeof(struct kinetis_pinctrl),
 					GFP_KERNEL);
 	if (!kpctl)
 		return -ENOMEM;
 
-	ret = of_alias_get_id(np, "pmx");
-	if (ret < 0) {
-		dev_err(&pdev->dev, "failed to get alias id, errno %d\n", ret);
-		return ret;
-	}
-	kpctl->port_id = ret;
-
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	kpctl->base = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(kpctl->base))
 		return PTR_ERR(kpctl->base);
 
-	kpctl->clk = of_clk_get(np, 0);
-	if (IS_ERR(kpctl->clk)) {
-		dev_err(&pdev->dev, "failed to get clock for PORT_%c\n",
-					'A' + kpctl->port_id);
-		return PTR_ERR(kpctl->clk);
-	}
+	for (cur_clk = 0; cur_clk < MAX_PORT_NUM; cur_clk++) {
+		kpctl->clk[cur_clk] = of_clk_get(np, cur_clk);
+		if (IS_ERR(kpctl->clk[cur_clk])) {
+			dev_err(&pdev->dev, "failed to get clock for PORT_%c\n",
+					'A' + cur_clk);
+			goto err_clk_enable;
+		}
 
-	ret = clk_prepare_enable(kpctl->clk);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to enable clock for PORT_%c\n",
-					'A' + kpctl->port_id);
-		goto err_clk_enable;
+		ret = clk_prepare_enable(kpctl->clk[cur_clk]);
+		if (ret) {
+			dev_err(&pdev->dev, "failed to enable clock for PORT_%c\n",
+					'A' + cur_clk);
+			clk_put(kpctl->clk[cur_clk]);
+			goto err_clk_enable;
+		}
 	}
 
 	kpctl->info.dev = &pdev->dev;
 	ret = kinetis_pinctrl_probe_dt(pdev, &kpctl->info);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to probe dt properties\n");
-		return ret;
+		goto err_pinctrl_register;
 	}
 
 	kpctl->dev = &pdev->dev;
@@ -474,14 +472,12 @@ static int kinetis_pinctrl_probe(struct platform_device *pdev)
 	kpctl->pctl = pinctrl_register(&kinetis_pinctrl_desc,
 					&pdev->dev, kpctl);
 	if (IS_ERR(kpctl->pctl)) {
-		dev_err(&pdev->dev, "could not register Kinetis I/O PORT_%c\n",
-					'A' + kpctl->port_id);
+		dev_err(&pdev->dev, "could not register Kinetis I/O mux\n");
 		ret = PTR_ERR(kpctl->pctl);
 		goto err_pinctrl_register;
 	}
 
-	dev_info(&pdev->dev, "initialized Kinetis I/O PORT_%c\n",
-					'A' + kpctl->port_id);
+	dev_info(&pdev->dev, "initialized Kinetis I/O mux\n");
 
 	return 0;
 
@@ -489,7 +485,10 @@ err_pinctrl_register:
 
 err_clk_enable:
 
-	clk_put(kpctl->clk);
+	while (--cur_clk) {
+		clk_disable_unprepare(kpctl->clk[cur_clk]);
+		clk_put(kpctl->clk[cur_clk]);
+	}
 
 	return ret;
 }
@@ -497,10 +496,15 @@ err_clk_enable:
 static int kinetis_pinctrl_remove(struct platform_device *pdev)
 {
 	struct kinetis_pinctrl *kpctl = platform_get_drvdata(pdev);
+	int cur_clk;
 
 	pinctrl_unregister(kpctl->pctl);
-	clk_disable_unprepare(kpctl->clk);
-	clk_put(kpctl->clk);
+
+	for (cur_clk = 0; cur_clk < MAX_PORT_NUM; cur_clk++) {
+		clk_disable_unprepare(kpctl->clk[cur_clk]);
+		clk_put(kpctl->clk[cur_clk]);
+	}
+
 	return 0;
 }
 
