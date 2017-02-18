@@ -30,6 +30,7 @@
 
 #define NVIC_ISER		0x000
 #define NVIC_ICER		0x080
+#define NVIC_ICPR		0x180
 #define NVIC_IPR		0x300
 
 #define NVIC_MAX_BANKS		16
@@ -116,8 +117,10 @@ static int __init nvic_of_init(struct device_node *node,
 
 		gc = irq_get_domain_generic_chip(nvic_irq_domain, 32 * i);
 		gc->reg_base = nvic_base + 4 * i;
+		gc->chip_types[0].regs.ack = NVIC_ICPR;
 		gc->chip_types[0].regs.enable = NVIC_ISER;
 		gc->chip_types[0].regs.disable = NVIC_ICER;
+		gc->chip_types[0].chip.irq_ack = irq_gc_ack_set_bit;
 		gc->chip_types[0].chip.irq_mask = irq_gc_mask_disable_reg;
 		gc->chip_types[0].chip.irq_unmask = irq_gc_unmask_enable_reg;
 		/* This is a no-op as end of interrupt is signaled by the

@@ -25,6 +25,7 @@
 #include <linux/reset.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/irq.h>
 
 #include "virt-dma.h"
 
@@ -164,6 +165,7 @@ struct stm32_dma_chan {
 	bool busy;
 	u32 id;
 	u32 irq;
+	struct irq_data *irq_data;
 	struct stm32_dma_desc *desc;
 	u32 next_sg;
 	struct dma_slave_config	dma_sconfig;
@@ -379,6 +381,8 @@ static void stm32_dma_stop(struct stm32_dma_chan *chan)
 		dev_dbg(chan2dev(chan), "%s(): clearing interrupt: 0x%08x\n",
 			__func__, status);
 		stm32_dma_irq_clear(chan, status);
+		if (chan->irq_data->chip->irq_ack)
+			chan->irq_data->chip->irq_ack(chan->irq_data);
 	}
 
 	chan->busy = false;
@@ -461,8 +465,11 @@ static int stm32_dma_start_transfer(struct stm32_dma_chan *chan)
 
 	/* Clear interrupt status if it is there */
 	status = stm32_dma_irq_status(chan);
-	if (status)
+	if (status) {
 		stm32_dma_irq_clear(chan, status);
+		if (chan->irq_data->chip->irq_ack)
+			chan->irq_data->chip->irq_ack(chan->irq_data);
+	}
 
 	stm32_dma_dump_reg(chan);
 
@@ -1125,6 +1132,14 @@ static int stm32_dma_probe(struct platform_device *pdev)
 		if (ret) {
 			dev_err(&pdev->dev,
 				"request_irq failed with err %d channel %d\n",
+				ret, i);
+			goto err_unregister;
+		}
+
+		chan->irq_data = irq_get_irq_data(chan->irq);
+		if (!chan->irq_data) {
+			dev_err(&pdev->dev,
+				"get_irq_data failed with err %d channel %d\n",
 				ret, i);
 			goto err_unregister;
 		}
