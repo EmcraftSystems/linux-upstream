@@ -73,6 +73,7 @@ static void avg_dma_buf_done(void *data)
 			goto out;
 		}
 
+		avg->ovr_msk = 0;
 		goto out;
 	}
 
@@ -306,6 +307,20 @@ out:
 }
 
 /**
+ * avg_ovf_task() - overflow processing tasklet
+ * @arg:       ADC common structure pointer
+ */
+static void avg_ovf_task(unsigned long arg)
+{
+	struct stm32_adc_common *com = (void *)arg;
+	unsigned long flags;
+
+	local_irq_save(flags);
+	avg_dma_buf_done(com);
+	local_irq_restore(flags);
+}
+
+/**
  * stm32_adc_avg_init() - init the averaging process
  * @com:	ADC common structure pointer
  */
@@ -367,6 +382,7 @@ int stm32_adc_avg_init(struct stm32_adc_common *com)
 
 	avg->chan_num = chan_num;
 	spin_lock_init(&avg->lock);
+	tasklet_init(&avg->task, avg_ovf_task, (unsigned long)com);
 
 	rv = avg_scan_seq_init(com);
 	if (rv) {
@@ -408,12 +424,19 @@ int stm32_adc_avg_overrun(struct stm32_adc *adc)
 {
 	struct stm32_avg *avg = &adc->common->avg;
 
-	if (!(avg->dma_cookie < 0)) {
-		pwm_disable(avg->pwm);
-		dmaengine_terminate_all(avg->dma);
-		avg->dma_cookie = -EINVAL;
-	}
+	avg->ovr_msk |= 1 << adc->id;
+	if (avg->ovr_msk != 0x7)
+		goto out;
 
+	if (avg->dma_cookie < 0)
+		goto out;
+
+	pwm_disable(avg->pwm);
+	dmaengine_terminate_all(avg->dma);
+	avg->dma_cookie = -EINVAL;
+	tasklet_schedule(&avg->task);
+
+out:
 	return 0;
 }
 

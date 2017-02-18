@@ -25,6 +25,7 @@
 #include <linux/platform_device.h>
 #include <linux/dmaengine.h>
 #include <linux/gpio/consumer.h>
+#include <linux/interrupt.h>
 #include <linux/irq_work.h>
 #include <linux/pwm.h>
 
@@ -385,6 +386,8 @@ struct stm32_adc {
  * @raw_length:		Raw buffer length
  * @raw_period:		Raw buffer period
  * @lock:		Filtered data buffer lock
+ * @task:		Overrun processing tasklet
+ * @ovr_msk:		Overrun channels mask
  * @raw_buf:		Raw data buffer pointers (seq indexed [*][s])
  * @flt_buf:		Filtered data buffer (chan indexed [*][c])
  */
@@ -402,6 +405,8 @@ struct stm32_avg {
 	u32			raw_length;
 	u32			raw_period;
 	spinlock_t		lock;
+	struct tasklet_struct	task;
+	u8			ovr_msk;
 	u32			*raw_buf[STM32_ADC_ID_MAX][STM32_ADC_MAX_SQ];
 	u32			flt_buf[STM32_ADC_ID_MAX][STM32_ADC_MAX_SQ];
 };
