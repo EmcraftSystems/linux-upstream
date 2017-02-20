@@ -737,7 +737,8 @@ static irqreturn_t stm32_spi_irq(int irq, void *dev_id)
 		 * If DMA xfers are used, then we can got SPI IRQs in case
 		 * of errors only; just notify
 		 */
-		dev_err(c->dev, "SPI Error IRQ, SR=%x\n", c->regs->sr);
+		if (!(c->regs->sr & SPI_SR_OVR))
+			dev_err(c->dev, "SPI Error IRQ, SR=%x\n", c->regs->sr);
 		goto out;
 	}
 
@@ -773,6 +774,12 @@ static irqreturn_t stm32_spi_irq(int irq, void *dev_id)
 
 	d_printk(4, "ok: sr=%x\n", sr);
 out:
+	if (c->regs->sr & SPI_SR_OVR) {
+		u32 tmp;
+		stm32_spi_hw_rxfifo_get(c, c->wb, &tmp, 0);
+		tmp = c->regs->sr;
+	}
+
 	return IRQ_HANDLED;
 }
 
@@ -857,7 +864,6 @@ static void stm32_spi_dma_rx_done(void *arg)
 
 	d_printk(1, "%s %d of %d\n", __func__, c->ri, c->len);
 
-	async_tx_ack(dma->dsc);
 	dma->cookie = -EINVAL;
 	dma->dsc = NULL;
 
@@ -901,7 +907,7 @@ static int stm32_spi_dma_rx_next(struct spi_stm32 *c)
 							 STM32_DMA_NDT_MAX;
 
 	dma->dsc = dmaengine_prep_slave_single(dma->chan, (dma_addr_t)buf, len,
-			DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+			DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT);
 	if (!dma->dsc) {
 		dev_err(dev, "%s: failed to send with DMA\n", __func__);
 		rv = -EIO;
@@ -951,7 +957,6 @@ static void stm32_spi_dma_tx_done(void *arg)
 
 	d_printk(1, "%s %d of %d\n", __func__, c->ti, c->len);
 
-	async_tx_ack(dma->dsc);
 	dma->cookie = -EINVAL;
 	dma->dsc = NULL;
 
@@ -997,7 +1002,7 @@ static int stm32_spi_dma_tx_next(struct spi_stm32 *c)
 							 STM32_DMA_NDT_MAX;
 
 	dma->dsc = dmaengine_prep_slave_single(dma->chan, (dma_addr_t)buf, len,
-			DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
+			DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT);
 	if (!dma->dsc) {
 		dev_err(dev, "%s: failed to send with DMA\n", __func__);
 		rv = -EIO;
@@ -1087,6 +1092,16 @@ static int stm32_spi_dma_xfer(struct spi_stm32 *c, int *rlen)
 		*rlen = c->ri;
 
 out:
+	if (rv) {
+		dmaengine_terminate_all(c->dma_rx.chan);
+		c->dma_rx.cookie = -EINVAL;
+		c->dma_rx.dsc = NULL;
+
+		dmaengine_terminate_all(c->dma_tx.chan);
+		c->dma_tx.cookie = -EINVAL;
+		c->dma_tx.dsc = NULL;
+	}
+
 	c->xfer_status = 0;
 	d_printk(3, "msg=%p,len=%d,rlen=%d,rv=%d\n", c->msg, c->len, *rlen, rv);
 
@@ -1200,11 +1215,9 @@ static int stm32_spi_transfer_message(struct spi_master *master,
 	stm32_spi_transfer_init(c);
 	ret = c->dma_use ? stm32_spi_dma_xfer(c, &rlen) :
 			   stm32_spi_int_xfer(c, &rlen);
-	if (ret)
-		goto Done;
 
-	msg->actual_length = rlen;
-	msg->status = 0;
+	msg->actual_length = ret ? 0 : rlen;
+	msg->status = ret;
 	spi_finalize_current_message(master);
 Done:
 	/*
