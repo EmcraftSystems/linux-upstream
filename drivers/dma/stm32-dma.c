@@ -41,7 +41,7 @@
 
 /* DMA Stream x Configuration Register */
 #define STM32_DMA_SCR(x)		(0x0010 + 0x18 * (x)) /* x = 0..7 */
-#define STM32_DMA_SCR_REQ(n)		((n & 0x7) << 25)
+#define STM32_DMA_SCR_REQ(n)		((n & 0xf) << 25)
 #define STM32_DMA_SCR_MBURST_MASK	GENMASK(24, 23)
 #define STM32_DMA_SCR_MBURST(n)	        ((n & 0x3) << 23)
 #define STM32_DMA_SCR_PBURST_MASK	GENMASK(22, 21)
