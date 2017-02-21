@@ -462,7 +462,7 @@ config MTD_NAND_MPC5121_NFC
 
 config MTD_NAND_VF610_NFC
 	tristate "Support for Freescale NFC for VF610/MPC5125"
-	depends on (SOC_VF610 || COMPILE_TEST)
+	depends on (SOC_VF610 || ARCH_KINETIS || COMPILE_TEST)
 	help
 	  Enables support for NAND Flash Controller on some Freescale
 	  processors like the VF610, MPC5125, MCF54418 or Kinetis K70.

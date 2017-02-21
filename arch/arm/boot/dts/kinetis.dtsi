@@ -39,6 +39,13 @@
 		clock-frequency = <50000000>;
 	};
 
+	// this clock is configured by U-Boot
+	nfc_clk: nfc_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <50000000>;
+	};
+
 	soc {
 		uart0: serial@4006a000 {
 			compatible = "fsl,kinetis-lpuart";
@@ -321,6 +328,17 @@
 			clock-names = "ipg";
 			dmas = <&edma 0 22>, <&edma 0 23>;
 			dma-names = "rx","tx";
+			status = "disabled";
+		};
+
+		nfc: nand@400a8000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "fsl,vf610-nfc";
+			reg = <0x400a8000 0x4000>;
+			interrupts = <95>;
+			clocks = <&nfc_clk>;
+			clock-names = "nfc";
 			status = "disabled";
 		};
 	};
