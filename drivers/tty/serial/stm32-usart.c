@@ -445,14 +445,36 @@ static void stm32_stop_tx(struct uart_port *port)
 
 	if (stm32_port->tx_busy) {
 		if (port->rs485.flags & SER_RS485_ENABLED) {
+			u32 tot_us = 100000;
+			u32 slp_us = 10;
 			unsigned int isr;
 			int v;
 
-			v = readl_relaxed_poll_timeout_atomic(
-				port->membase + ofs->isr, isr,
-				(isr & USART_SR_TC), 10, 100000);
+			if (stm32_port->tx_ch) {
+				ktime_t timeout = ktime_add_us(ktime_get(),
+							       tot_us);
+				might_sleep_if(slp_us);
+				v = 0;
+				while (1) {
+					if (!stm32_port->tx_dma_busy)
+						break;
+
+					if (ktime_compare(ktime_get(),
+							  timeout) > 0) {
+						v = -ETIMEDOUT;
+						break;
+					}
+
+					usleep_range((slp_us >> 2) + 1, slp_us);
+				}
+			} else {
+				v = readl_relaxed_poll_timeout_atomic(
+					port->membase + ofs->isr, isr,
+					(isr & USART_SR_TC), slp_us, tot_us);
+			}
 			if (v)
-				dev_err(port->dev, "rs485 tx timout\n");
+				dev_err(port->dev, "rs485 tx timeout (%x)\n",
+				       readl_relaxed(port->membase + ofs->isr));
 
 			if (port->rs485.delay_rts_after_send > 0)
 				mdelay(port->rs485.delay_rts_after_send);
