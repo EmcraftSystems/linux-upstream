@@ -120,15 +120,17 @@ static void stm32_receive_chars(struct uart_port *port, bool threaded)
 		pm_wakeup_event(tport->tty->dev, 0);
 
 	while (1) {
-		/* To avoid rxing too long process one period maximum */
-		if (cnt_done >= RX_BUF_P)
-			break;
-
 		/* Get number of bytes received so far */
 		if (!cnt_recv--) {
 			cnt_recv = stm32_pending_rx(port, &sr, threaded);
 			if (!cnt_recv--)
 				break;
+		}
+
+		/* To avoid rxing too long process one period maximum */
+		if (cnt_done >= RX_BUF_P) {
+			schedule_work(&stm32_port->rx_work);
+			break;
 		}
 
 		sr |= USART_SR_DUMMY_RX;
@@ -175,14 +177,23 @@ static void stm32_receive_chars(struct uart_port *port, bool threaded)
 	spin_lock(&port->lock);
 }
 
+static void stm32_rx_dma_work(struct work_struct *work)
+{
+	struct stm32_port *stm32_port = container_of(work,
+					struct stm32_port, rx_work);
+	struct uart_port *port = &stm32_port->port;
+
+	spin_lock(&port->lock);
+	stm32_receive_chars(port, true);
+	spin_unlock(&port->lock);
+}
+
 static void stm32_rx_dma_complete(void *arg)
 {
 	struct uart_port *port = arg;
-	unsigned long flags;
+	struct stm32_port *stm32_port = to_stm32_port(port);
 
-	spin_lock_irqsave(&port->lock, flags);
-	stm32_receive_chars(port, true);
-	spin_unlock_irqrestore(&port->lock, flags);
+	schedule_work(&stm32_port->rx_work);
 }
 
 static void stm32_tx_dma_complete(void *arg)
@@ -349,17 +360,19 @@ static irqreturn_t stm32_interrupt(int irq, void *ptr)
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
 	u32 sr;
 
-	spin_lock(&port->lock);
-
 	sr = readl_relaxed(port->membase + ofs->isr);
 
-	if ((sr & USART_SR_RXNE) && !(stm32_port->rx_ch))
+	if ((sr & USART_SR_RXNE) && !(stm32_port->rx_ch)) {
+		spin_lock(&port->lock);
 		stm32_receive_chars(port, false);
+		spin_unlock(&port->lock);
+	}
 
-	if ((sr & USART_SR_TXE) && !(stm32_port->tx_ch))
+	if ((sr & USART_SR_TXE) && !(stm32_port->tx_ch)) {
+		spin_lock(&port->lock);
 		stm32_transmit_chars(port);
-
-	spin_unlock(&port->lock);
+		spin_unlock(&port->lock);
+	}
 
 	if (stm32_port->rx_ch) {
 		/* Clear IDLE interrupt */
@@ -369,22 +382,9 @@ static irqreturn_t stm32_interrupt(int irq, void *ptr)
 		} else {
 			readl_relaxed(port->membase + ofs->rdr);
 		}
-		return IRQ_WAKE_THREAD;
-	} else
-		return IRQ_HANDLED;
-}
 
-static irqreturn_t stm32_threaded_interrupt(int irq, void *ptr)
-{
-	struct uart_port *port = ptr;
-	struct stm32_port *stm32_port = to_stm32_port(port);
-
-	spin_lock(&port->lock);
-
-	if (stm32_port->rx_ch)
-		stm32_receive_chars(port, true);
-
-	spin_unlock(&port->lock);
+		schedule_work(&stm32_port->rx_work);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -919,6 +919,7 @@ static int stm32_of_dma_rx_probe(struct stm32_port *stm32port,
 		goto config_err;
 	}
 
+	INIT_WORK(&stm32port->rx_work, stm32_rx_dma_work);
 	desc->callback = stm32_rx_dma_complete;
 	desc->callback_param = port;
 
@@ -1029,9 +1030,8 @@ static int stm32_serial_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	ret = request_threaded_irq(port->irq, stm32_interrupt,
-				   stm32_threaded_interrupt,
-				   IRQF_NO_SUSPEND, pdev->name, port);
+	ret = request_irq(port->irq, stm32_interrupt, 0,
+			  pdev->name, port);
 	if (ret)
 		return ret;
 

@@ -207,8 +207,8 @@ struct stm32_usart_info stm32f7_info = {
 #define STM32_SERIAL_NAME "ttyS"
 #define STM32_MAX_PORTS 8
 
-#define RX_BUF_L 1024		 /* dma rx buffer length     */
-#define RX_BUF_P 256		 /* dma rx buffer period     */
+#define RX_BUF_L 16384		 /* dma rx buffer length     */
+#define RX_BUF_P 512		 /* dma rx buffer period     */
 #define TX_BUF_L 200		 /* dma tx buffer length     */
 
 struct stm32_port {
@@ -220,6 +220,7 @@ struct stm32_port {
 	struct dma_chan *rx_ch;  /* dma rx channel            */
 	dma_addr_t rx_dma_buf;   /* dma rx buffer bus address */
 	unsigned char *rx_buf;   /* dma rx buffer cpu address */
+	struct work_struct rx_work; /* dma rx workqueue       */
 	struct dma_chan *tx_ch;  /* dma tx channel            */
 	dma_addr_t tx_dma_buf;   /* dma tx buffer bus address */
 	unsigned char *tx_buf;   /* dma tx buffer cpu address */
