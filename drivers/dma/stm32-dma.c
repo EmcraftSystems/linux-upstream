@@ -881,6 +881,17 @@ static size_t stm32_dma_desc_residue(struct stm32_dma_chan *chan,
 	count = stm32_dma_read(dmadev, STM32_DMA_SNDTR(chan->id));
 
 	if (chan->chan_reg.dma_scr & STM32_DMA_SCR_DBM) {
+		/*
+		 * If there is a TCI interrupt pending, then probably we have an
+		 * outdated SNDTR value. Repeat SNDTR read, and update next_sg,
+		 * so that both these values would be coherent to each other
+		 */
+		if (stm32_dma_irq_status(chan) & STM32_DMA_TCI) {
+			count = stm32_dma_read(dmadev,
+					       STM32_DMA_SNDTR(chan->id));
+			next_sg++;
+		}
+		next_sg %= desc->num_sgs;
 		residue = count << width;
 
 		for (i = (next_sg == 0) ? desc->num_sgs - 1 :
