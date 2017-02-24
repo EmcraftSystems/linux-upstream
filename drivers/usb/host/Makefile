@@ -31,6 +31,8 @@ ifneq ($(CONFIG_USB), )
 	obj-$(CONFIG_PCI)	+= pci-quirks.o
 endif
 
+khci-y := khci-hcd.o khci-hub.o khci-sched.o khci-mem.o khci-dbg.o
+
 obj-$(CONFIG_USB_EHCI_HCD)	+= ehci-hcd.o
 obj-$(CONFIG_USB_EHCI_PCI)	+= ehci-pci.o
 obj-$(CONFIG_USB_EHCI_HCD_PLATFORM)	+= ehci-platform.o
@@ -80,3 +82,4 @@ obj-$(CONFIG_USB_HCD_BCMA)	+= bcma-hcd.o
 obj-$(CONFIG_USB_HCD_SSB)	+= ssb-hcd.o
 obj-$(CONFIG_USB_FOTG210_HCD)	+= fotg210-hcd.o
 obj-$(CONFIG_USB_MAX3421_HCD)	+= max3421-hcd.o
+obj-$(CONFIG_USB_KHCI_HCD)	+= khci.o

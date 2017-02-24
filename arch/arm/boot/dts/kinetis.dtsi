@@ -341,5 +341,14 @@
 			clock-names = "nfc";
 			status = "disabled";
 		};
+
+		usbfs: usbfs@40072000 {
+			compatible = "fsl,kinetis-khci";
+			reg = <0x40072000 0x200>;
+			interrupts = <73>;
+			clocks = <&mcg CLOCK_USBFS>;
+			clock-names = "khci";
+			status = "disabled";
+		};
 	};
 };

@@ -314,6 +314,13 @@ static void __init kinetis_mcg_init(struct device_node *np)
 			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_I2C1)]),
 			KINETIS_CG_IDX(KINETIS_CG_I2C1), 0, NULL);
 
+	/*
+	 * USBFS clock
+	 */
+	clk[CLOCK_USBFS] = clk_register_gate(NULL, "USBFS", "MCGOUTCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_USBFS)]),
+			KINETIS_CG_IDX(KINETIS_CG_USBFS), 0, NULL);
+
 	of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data);
 }
 
