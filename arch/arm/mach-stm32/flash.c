@@ -442,8 +442,11 @@ static int stm_mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 		iface->reg->cr &= ~STM_FLH_CR_SNB(iface->geo->snbm);
 		iface->reg->cr |= STM_FLH_CR_SNB(snb) | STM_FLH_CR_STRT;
 		rv = stm_op_wait(iface, STM_FLH_TOUT);
-		if (rv)
+		if (rv) {
+			iface->reg->cr &= ~STM_FLH_CR_STRT;
+			instr->state = MTD_ERASE_FAILED;
 			goto out;
+		}
 
 		adr += blk->size;
 		len -= blk->size;
