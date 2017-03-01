@@ -127,14 +127,13 @@ struct flash_info {
 	size_t				device_size;
 	size_t				write_size;
 	size_t				erase_size;
-	u32				program_cmd;
 	struct dummy_cycles_table	dummy_cycles_table[STM32_DUMMY_TABLE_MAX_SIZE];
 };
 
 static const struct flash_info stm32_qspiflash_info[] = {
 	{
 		/* 2^26 = 64MiB */
-		"mt25ql512abb", 1 << 26, 256, 64 * 1024, SPINOR_OP_FAST_PROGRAM,
+		"mt25ql512abb", 1 << 26, 256, 64 * 1024,
 		{
 			{44000000,	2},
 			{61000000,	3},
@@ -149,7 +148,7 @@ static const struct flash_info stm32_qspiflash_info[] = {
 	},
 	{
 		/* 2^24 = 16MiB */
-		"n25q128a", 1 << 24, 256, 64 * 1024, SPINOR_OP_PP_4B,
+		"n25q128a", 1 << 24, 256, 64 * 1024,
 		{
 			{30000000,	3},
 			{40000000,	4},
@@ -164,7 +163,7 @@ static const struct flash_info stm32_qspiflash_info[] = {
 	},
 	{
 		/* 2^25 = 32MiB */
-		"mt25q256a", 1 << 25, 256, 64 * 1024, SPINOR_OP_PP_4B,
+		"mt25q256a", 1 << 25, 256, 64 * 1024,
 		{
 			{30000000,	3},
 			{40000000,	4},
@@ -506,10 +505,10 @@ static int stm32_qspi_switch_to_memory_mapped(struct stm32_qspi_priv *priv)
 		goto fail;
 
 	writel(QSPI_CCR_FMODE_MEMORY_MAP
-	       | SPINOR_OP_FAST_READ
+	       | SPINOR_OP_FAST_READ_4B
 	       | QSPI_CCR_IMODE_SINGLE_LINE
 	       | QSPI_CCR_ADMODE_FOUR_LINES
-	       | QSPI_CCR_ADSIZE_THREE_BYTES
+	       | QSPI_CCR_ADSIZE_FOUR_BYTES
 	       | QSPI_CCR_DMODE_FOUR_LINES
 	       | QSPI_CCR_DCYC(priv->fast_read_dummy),
 	       &priv->regs->ccr);
@@ -542,7 +541,7 @@ static int stm32_qspi_erase_block(struct stm32_qspi_priv *priv, u32 address)
 	       | SPINOR_OP_SE
 	       | QSPI_CCR_IMODE_SINGLE_LINE
 	       | QSPI_CCR_ADMODE_SINGLE_LINE
-	       | QSPI_CCR_ADSIZE_THREE_BYTES
+	       | QSPI_CCR_ADSIZE_FOUR_BYTES
 	       | QSPI_CCR_DMODE_NONE
 	       | QSPI_CCR_DCYC(0),
 	       &priv->regs->ccr);
@@ -635,10 +634,10 @@ static int stm32_qspi_write_page(struct stm32_qspi_priv *priv, u32 address, cons
 	writel(size - 1, &priv->regs->dlr);
 
 	writel(QSPI_CCR_FMODE_INDIRECT_WRITE
-	       | priv->flash->program_cmd
+	       | SPINOR_OP_PP_4B
 	       | QSPI_CCR_IMODE_SINGLE_LINE
 	       | QSPI_CCR_ADMODE_FOUR_LINES
-	       | QSPI_CCR_ADSIZE_THREE_BYTES
+	       | QSPI_CCR_ADSIZE_FOUR_BYTES
 	       | QSPI_CCR_DMODE_FOUR_LINES
 	       | QSPI_CCR_DCYC(0),
 	       &priv->regs->ccr);
@@ -859,6 +858,40 @@ static irqreturn_t stm32_qspi_irq_thread(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static int stm32_qspi_enter_4_bytes_mode(struct stm32_qspi_priv *priv)
+{
+	int err;
+
+	err = stm32_qspi_wait_while_busy(priv);
+	if (err)
+		goto fail;
+
+	err = stm32_qspi_write_enable(priv);
+	if (err)
+		goto fail;
+
+	err = stm32_qspi_wait_while_busy(priv);
+	if (err)
+		goto fail;
+
+	writel(QSPI_CCR_FMODE_INDIRECT_WRITE
+	       | SPINOR_OP_EN4B
+	       | QSPI_CCR_IMODE_SINGLE_LINE
+	       | QSPI_CCR_ADMODE_NONE
+	       | QSPI_CCR_DMODE_NONE
+	       | QSPI_CCR_DCYC(0),
+		&priv->regs->ccr);
+
+	err = stm32_qspi_wait_until_complete(priv);
+	if (err)
+		goto fail;
+
+	return 0;
+fail:
+	dev_err(priv->dev, "%s: failed: %d\n", __func__, err);
+	return err;
+}
+
 static int stm32_qspi_probe(struct platform_device *pdev)
 {
 	const struct dummy_cycles_table *dummy_table = NULL;
@@ -1015,9 +1048,14 @@ static int stm32_qspi_probe(struct platform_device *pdev)
 	priv->regs->cr |= QSPI_CR_TOIE
 		| QSPI_CR_TEIE;
 
+	err = stm32_qspi_enter_4_bytes_mode(priv);
+	if (err) {
+		dev_err(dev, "%s: Failed to switch to 4 byte mode addressing: %d\n", __func__, err);
+		return err;
+	}
+
 	dev_info(dev, "QSPI:  %d MB mapped at %p\n",
 		 1 << (flash_size_off - 20), priv->mapped_area);
-
 
 	err = mtd_device_parse_register(mtd, NULL,
 					&(struct mtd_part_parser_data){
