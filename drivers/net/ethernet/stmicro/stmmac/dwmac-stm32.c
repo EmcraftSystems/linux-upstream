@@ -19,13 +19,9 @@
 #include <linux/regmap.h>
 #include <linux/stmmac.h>
 
-#include "stmmac_platform.h"
+#include <mach/syscfg.h>
 
-/* Register definitions for SYSCFG */
-#define STM32_SYSCFG_PMC			0x4
-# define STM32_SYSCFG_PMC_ETHMODE_MASK		(0x3 << 23)
-# define STM32_SYSCFG_PMC_ETHMODE_MII		(0x0 << 23)
-# define STM32_SYSCFG_PMC_ETHMODE_RMII		(0x1 << 23)
+#include "stmmac_platform.h"
 
 struct stm32_dwmac_priv_data {
 	int interface;

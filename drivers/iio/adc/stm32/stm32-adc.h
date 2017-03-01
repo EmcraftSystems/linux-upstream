@@ -282,6 +282,7 @@ struct stm32_adc_common;
  * @ext_info:		Extended channel info
  * @highres:		Max resolution
  * @max_clock_rate:	Max input clock rate
+ * @parse_dts_params:	Parse specific dts params
  * @clk_sel:		routine to select common clock and prescaler
  * @prepare_conv:	routine to prepare conversions
  * @start_conv:		routine to start conversions
@@ -303,6 +304,7 @@ struct stm32_adc_ops {
 	const struct iio_chan_spec_ext_info *ext_info;
 	int highres;
 	unsigned long max_clock_rate;
+	int (*parse_dts_params)(struct device *dev, struct device_node *np);
 	int (*clk_sel)(struct stm32_adc *adc);
 	void (*prepare_conv)(struct stm32_adc *adc,
 		const struct iio_chan_spec *chan);

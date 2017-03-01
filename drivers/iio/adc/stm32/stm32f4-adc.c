@@ -24,7 +24,19 @@
 #include <linux/iio/iio.h>
 #include <linux/iio/trigger.h>
 #include <linux/platform_device.h>
+#include <linux/of_address.h>
+#include <linux/mfd/syscon.h>
+
+#include <mach/pwr.h>
+#include <mach/syscfg.h>
+
 #include "stm32-adc.h"
+
+/*
+ * STM32F4 ADC accuracy options names
+ */
+#define STM32F4_OPT1			"stm32f4,adc-accuracy-option1"
+#define STM32F4_OPT2			"stm32f4,adc-accuracy-option2"
 
 /*
  * STM32F4 - ADC global register map
@@ -611,6 +623,77 @@ static void stm32f4_adc_recover(struct stm32_adc *adc)
 static int stm32f4_pclk_div[] = {2, 4, 6, 8};
 
 /**
+ * stm32f4_parse_dts_params() - Parse dts specific params
+ * @dev: device descriptor
+ * @np: device node
+ */
+static int stm32f4_parse_dts_params(struct device *dev, struct device_node *np)
+{
+	struct device_node *tmp;
+	const char *name;
+	void *regs;
+	u32 opt, val;
+	int rv;
+
+	if (of_get_property(np, STM32F4_OPT1, NULL) &&
+	    of_get_property(np, STM32F4_OPT2, NULL)) {
+		dev_err(dev, "only one (%s or %s) option is allowed\n",
+			STM32F4_OPT1, STM32F4_OPT2);
+		rv = -EINVAL;
+		goto out;
+	}
+
+	if (of_get_property(np, STM32F4_OPT1, NULL)) {
+		name = "st,stm32-pwr";
+		tmp = of_find_compatible_node(NULL, NULL, name);
+		if (!tmp) {
+			dev_err(dev, "%s: `%s` lookup failed\n",
+				STM32F4_OPT1, name);
+			rv = -EINVAL;
+			goto out;
+		}
+		regs = of_iomap(tmp, 0);
+		of_node_put(tmp);
+
+		writel(STM32_PWR_CR_ADCDC1 | readl(regs + STM32_PWR_CR),
+			regs + STM32_PWR_CR);
+
+		dev_info(dev, "%s is used", STM32F4_OPT1);
+	}
+
+	rv = of_property_read_u32(np, STM32F4_OPT2, &opt);
+	if (!rv && opt) {
+		if (STM32_SYSCFG_PMC_ADCxDC2(opt) &
+		    ~STM32_SYSCFG_PMC_ADCxDC2_MASK) {
+			dev_err(dev, "%s err: bad mask value %x\n",
+				STM32F4_OPT2, opt);
+			rv = -EINVAL;
+			goto out;
+		}
+
+		name = "st,stm32-syscfg";
+		regs = syscon_regmap_lookup_by_compatible(name);
+		if (IS_ERR(regs)) {
+			dev_err(dev, "%s: `%s` lookup failed\n",
+				STM32F4_OPT2, name);
+			rv = -EINVAL;
+			goto out;
+		}
+
+		val = readl(regs + STM32_SYSCFG_PMC);
+		val &= ~STM32_SYSCFG_PMC_ADCxDC2_MASK;
+		writel(STM32_SYSCFG_PMC_ADCxDC2(opt) | val,
+			regs + STM32_SYSCFG_PMC);
+
+		dev_info(dev, "%s=%x is used", STM32F4_OPT2, opt);
+	}
+
+	rv = 0;
+out:
+	return rv;
+}
+
+/**
  * stm32f4_adc_clk_sel() - Select ADC common clock prescaler
  * @adc: stm32 adc instance
  * Select clock prescaler used for analog conversions.
@@ -731,6 +814,7 @@ static const struct stm32_adc_ops stm32f4_adc_ops = {
 	.ext_info = stm32f4_adc_ext_info,
 	.highres = 12,
 	.max_clock_rate = 36000000,
+	.parse_dts_params = stm32f4_parse_dts_params,
 	.clk_sel = stm32f4_adc_clk_sel,
 	.prepare_conv = stm32f4_adc_prepare_conv,
 	.start_conv = stm32f4_adc_start_conv,

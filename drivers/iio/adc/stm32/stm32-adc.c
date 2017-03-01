@@ -1311,6 +1311,14 @@ int stm32_adc_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_clk_disable;
 
+	if (common->data->parse_dts_params) {
+		ret = common->data->parse_dts_params(&pdev->dev, np);
+		if (ret) {
+			dev_err(&pdev->dev, "parsing spec dts opts failed\n");
+			goto err_clk_disable;
+		}
+	}
+
 	/* Check if want to operate in the averaging mode */
 	avg = &common->avg;
 	ret = of_property_read_u32(np, "avg-num", &avg->num);
