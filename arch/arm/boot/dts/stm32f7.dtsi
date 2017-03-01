@@ -183,6 +183,8 @@
 			dma-names = "tx";
 			interrupts = <92>;
 			status = "disabled";
+			#address-cells = <1>;
+			#size-cells = <1>;
 		};
 
 		timer9: timer@0x40014000 {
