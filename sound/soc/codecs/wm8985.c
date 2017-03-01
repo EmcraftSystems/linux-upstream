@@ -23,6 +23,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/spi/spi.h>
 #include <linux/slab.h>
+#include <linux/clk.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -185,6 +186,7 @@ struct wm8985_priv {
 	unsigned int sysclk;
 	unsigned int lrclk;
 	unsigned int bclk;
+	struct clk *clk;
 };
 
 static const int srates[] = { 48000, 32000, 24000, 16000, 12000, 8000 };
@@ -1193,6 +1195,12 @@ static int wm8985_i2c_probe(struct i2c_client *i2c,
 		return ret;
 	}
 
+	wm8985->clk = clk_get(&i2c->dev, NULL);
+
+	if (!IS_ERR(wm8985->clk)) {
+		clk_prepare_enable(wm8985->clk);
+	}
+
 	ret = snd_soc_register_codec(&i2c->dev,
 				     &soc_codec_dev_wm8985, &wm8985_dai, 1);
 	return ret;
@@ -1200,6 +1208,15 @@ static int wm8985_i2c_probe(struct i2c_client *i2c,
 
 static int wm8985_i2c_remove(struct i2c_client *i2c)
 {
+	struct wm8985_priv *wm8985;
+
+	wm8985 = i2c_get_clientdata(i2c);
+
+	if (!IS_ERR(wm8985->clk)) {
+		clk_unprepare(wm8985->clk);
+		clk_put(wm8985->clk);
+	}
+
 	snd_soc_unregister_codec(&i2c->dev);
 	return 0;
 }
