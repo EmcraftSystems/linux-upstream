@@ -64,26 +64,96 @@ static void stm32_clr_bits(struct uart_port *port, u32 reg, u32 bits)
 	writel_relaxed(val, port->membase + reg);
 }
 
+/*
+ * Check if overflows happens. If not then return the number of
+ * bytes remained to receive, and zero otherwise.
+ */
+static int stm32_rx_dma_residue(struct uart_port *port)
+{
+	struct stm32_port *stm32_port = to_stm32_port(port);
+	struct dma_tx_state state;
+	enum dma_status status;
+	int pos, num;
+
+	/* Get current writer (DMA) position in the circular buffer */
+	status = dmaengine_tx_status(stm32_port->rx_ch,
+				     stm32_port->rx_ch->cookie, &state);
+	if (status != DMA_IN_PROGRESS) {
+		num = 0;
+		goto out;
+	}
+
+	/* Update reader absolute position */
+	if (stm32_port->rx_rd_prv < stm32_port->rx_rd_cur) {
+		stm32_port->rx_rd_abs += RX_BUF_L - stm32_port->rx_rd_cur +
+					 stm32_port->rx_rd_prv;
+	} else {
+		stm32_port->rx_rd_abs += stm32_port->rx_rd_prv -
+					 stm32_port->rx_rd_cur;
+	}
+	stm32_port->rx_rd_prv = stm32_port->rx_rd_cur;
+
+	/* Update writer absolute position */
+	if (stm32_port->rx_wr_prv < state.residue) {
+		stm32_port->rx_wr_abs += RX_BUF_L - state.residue +
+					 stm32_port->rx_wr_prv;
+	} else {
+		stm32_port->rx_wr_abs += stm32_port->rx_wr_prv -
+					 state.residue;
+	}
+	stm32_port->rx_wr_prv = state.residue;
+
+	/* Check if writer overflows the circular rx buffer */
+	pos = stm32_port->rx_wr_ovf ? stm32_port->rx_wr_ovf:
+				      stm32_port->rx_rd_abs;
+	if (stm32_port->rx_wr_abs - pos > RX_BUF_L) {
+		dev_warn(port->dev, "rx buffer overflow, %d bytes lost\n",
+			 stm32_port->rx_wr_abs - pos);
+		stm32_port->rx_wr_ovf = stm32_port->rx_wr_abs;
+	}
+
+	if (stm32_port->rx_wr_ovf) {
+		num = 0;
+		goto out;
+	}
+
+	/* No overflow */
+	num = stm32_port->rx_wr_abs - stm32_port->rx_rd_abs;
+
+	/* Reset absolute pointers if equal */
+	if (!num && (stm32_port->rx_wr_abs > RX_BUF_L)) {
+		stm32_port->rx_wr_abs = stm32_port->rx_wr_abs % RX_BUF_L;
+		stm32_port->rx_rd_abs = stm32_port->rx_wr_abs;
+	}
+out:
+	return num;
+}
+
 static int stm32_pending_rx(struct uart_port *port, u32 *sr, bool threaded)
 {
 	struct stm32_port *stm32_port = to_stm32_port(port);
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
-	enum dma_status status;
-	struct dma_tx_state state;
+	unsigned long flags;
+	int num;
 
 	*sr = readl_relaxed(port->membase + ofs->isr);
 
 	if (threaded && stm32_port->rx_ch) {
-		status = dmaengine_tx_status(stm32_port->rx_ch,
-					     stm32_port->rx_ch->cookie,
-					     &state);
-		if ((status == DMA_IN_PROGRESS) &&
-		    (stm32_port->rx_remain != state.residue))
-			return stm32_port->rx_remain > state.residue ?
-			       stm32_port->rx_remain - state.residue :
-			       RX_BUF_L + stm32_port->rx_remain - state.residue;
-		else
-			return 0;
+		local_irq_save(flags);
+		num = stm32_rx_dma_residue(port);
+		if (stm32_port->rx_wr_ovf) {
+			/* Shift reader */
+			stm32_port->rx_rd_abs = stm32_port->rx_wr_ovf;
+			stm32_port->rx_wr_ovf = 0;
+
+			stm32_port->rx_rd_cur = stm32_port->rx_rd_prv =
+				RX_BUF_L - (stm32_port->rx_rd_abs % RX_BUF_L);
+
+			/* Clear overflow */
+			num = stm32_rx_dma_residue(port);
+		}
+		local_irq_restore(flags);
+		return num;
 	} else if (*sr & USART_SR_RXNE) {
 		return 1;
 	}
@@ -97,9 +167,9 @@ static unsigned long stm32_get_char(struct uart_port *port)
 	unsigned long c;
 
 	if (stm32_port->rx_ch) {
-		c = stm32_port->rx_buf[RX_BUF_L - stm32_port->rx_remain--];
-		if (stm32_port->rx_remain == 0)
-			stm32_port->rx_remain = RX_BUF_L;
+		c = stm32_port->rx_buf[RX_BUF_L - stm32_port->rx_rd_cur--];
+		if (stm32_port->rx_rd_cur == 0)
+			stm32_port->rx_rd_cur = RX_BUF_L;
 		return c;
 	} else {
 		return readl_relaxed(port->membase + ofs->rdr);
@@ -120,6 +190,10 @@ static void stm32_receive_chars(struct uart_port *port, bool threaded)
 		pm_wakeup_event(tport->tty->dev, 0);
 
 	while (1) {
+		/* Update pending count if we've overflowed */
+		if (stm32_port->rx_wr_ovf)
+			cnt_recv = 0;
+
 		/* Get number of bytes received so far */
 		if (!cnt_recv--) {
 			cnt_recv = stm32_pending_rx(port, &sr, threaded);
@@ -192,6 +266,8 @@ static void stm32_rx_dma_complete(void *arg)
 {
 	struct uart_port *port = arg;
 	struct stm32_port *stm32_port = to_stm32_port(port);
+
+	stm32_rx_dma_residue(port);
 
 	schedule_work(&stm32_port->rx_work);
 }
@@ -896,7 +972,13 @@ static int stm32_of_dma_rx_probe(struct stm32_port *stm32port,
 	dma_cookie_t cookie;
 	int ret;
 
-	stm32port->rx_remain = RX_BUF_L;
+	stm32port->rx_rd_cur = RX_BUF_L;
+	stm32port->rx_rd_prv = RX_BUF_L;
+	stm32port->rx_wr_prv = RX_BUF_L;
+
+	stm32port->rx_rd_abs = 0;
+	stm32port->rx_wr_abs = 0;
+	stm32port->rx_wr_ovf = 0;
 
 	/* Check if requested to use DMA */
 	if (!of_get_property(np, "st,use-dma-rx", NULL)) {

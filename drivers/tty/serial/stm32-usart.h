@@ -224,7 +224,15 @@ struct stm32_port {
 	struct dma_chan *tx_ch;  /* dma tx channel            */
 	dma_addr_t tx_dma_buf;   /* dma tx buffer bus address */
 	unsigned char *tx_buf;   /* dma tx buffer cpu address */
-	int rx_remain;		 /* dma rx buf remain position*/
+
+	int rx_rd_cur;		 /* reader pos in circ buf    */
+	int rx_rd_prv;		 /* last reader circ position */
+	int rx_wr_prv;		 /* last writer circ position */
+
+	int rx_rd_abs;		 /* reader abs position       */
+	int rx_wr_abs;		 /* writer abs position       */
+	int rx_wr_ovf;		 /* overflow abs position     */
+
 	u8 rx_ie;		 /* rx event int enable       */
 	bool tx_dma_busy;	 /* dma tx busy               */
 	bool tx_busy;		 /* tx busy                   */
