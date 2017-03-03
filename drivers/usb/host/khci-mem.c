@@ -21,6 +21,7 @@
 
 #include <linux/kernel.h>
 #include <linux/list.h>
+#include <linux/time.h>
 #include <linux/slab.h>
 
 #include "khci.h"
@@ -70,18 +71,6 @@ struct khci_ep *khci_ep_alloc(struct khci_hcd *khci, struct urb *urb)
 	}
 
 	kep->plen = usb_maxpacket(urb->dev, urb->pipe, usb_pipeout(urb->pipe));
-
-	/*
-	 * Enable SOF IRQs if there are INT EPs
-	 */
-	if (!list_empty(&khci->intr_lst)) {
-		unsigned long	flags;
-
-		spin_lock_irqsave(&khci->lock, flags);
-		khci->reg->inten |= KHCI_INT_SOFTOK;
-		spin_unlock_irqrestore(&khci->lock, flags);
-	}
-
 	kep->hep->hcpriv = kep;
 out:
 	return kep;
@@ -111,7 +100,21 @@ struct khci_urb *khci_urb_alloc(struct khci_hcd *khci, struct urb *urb)
 
 	kurb->urb = urb;
 	kurb->kep = kep;
-	kurb->sof_nxt = 0;
+	if (usb_pipeint(urb->pipe)) {
+		struct timeval tv;
+
+		/*
+		 * This actually isn't fully correct - we should schedule INT
+		 * on 'urb->start_frame + urb->interval'. But since we do not
+		 * count SOFs, then just use current system time in ms here,
+		 * and in xfer_process_int() function
+		 */
+		do_gettimeofday(&tv);
+		kurb->nxt_msec = (tv.tv_sec * 1000000 + tv.tv_usec) / 1000;
+		kurb->nxt_msec += urb->interval;
+	} else {
+		kurb->nxt_msec = 0;
+	}
 
 	kurb->dev_addr = usb_pipedevice(urb->pipe);
 	kurb->ep_cfg = KHCI_EP_RETRYDIS | KHCI_EP_EPRXEN | KHCI_EP_EPTXEN |
@@ -178,7 +181,6 @@ out:
 int khci_ep_free(struct khci_ep *kep)
 {
 	struct khci_urb	*kurb, *tmp;
-	struct khci_hcd	*khci = kep->khci;
 	int		busy = 0;
 
 	/*
@@ -201,16 +203,6 @@ int khci_ep_free(struct khci_ep *kep)
 	list_del(&kep->node);
 	kfree(kep);
 
-	/*
-	 * If there's no more INT EPs, then stop SOF IRQs generation
-	 */
-	if (list_empty(&khci->intr_lst)) {
-		unsigned long	flags;
-
-		spin_lock_irqsave(&khci->lock, flags);
-		khci->reg->inten &= ~KHCI_INT_SOFTOK;
-		spin_unlock_irqrestore(&khci->lock, flags);
-	}
 out:
 	return busy;
 }
