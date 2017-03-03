@@ -560,7 +560,7 @@ static int stm32_qspi_erase_block(struct stm32_qspi_priv *priv, u32 address)
 	return 0;
 
 fail:
-	dev_err(priv->dev, "%s: failed: %d\n", __func__, err);
+	dev_err(priv->dev, "%s: failed (addr 0x%x): %d\n", __func__, address, err);
 	return err;
 }
 
@@ -662,7 +662,7 @@ static int stm32_qspi_write_page(struct stm32_qspi_priv *priv, u32 address, cons
 
 	return 0;
 fail:
-	dev_err(priv->dev, "%s: failed: %d\n", __func__, err);
+	dev_err(priv->dev, "%s: failed (addr 0x%x, len 0x%x): %d\n", __func__, address, (u32)size, err);
 	return err;
 }
 
@@ -701,7 +701,7 @@ static int stm32_qspi_mtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 	while (len) {
 		int err = stm32_qspi_write_page(priv, to, buf, current_size);
 		if (err) {
-			dev_err(priv->dev, "%s: write failed: %d\n", __func__, err);
+			dev_err(priv->dev, "%s: write failed (addr 0x%x, len 0x%x): %d\n", __func__, (u32)to, (u32)len, err);
 			mutex_unlock(&priv->lock);
 			return err;
 		}
@@ -775,7 +775,7 @@ static int stm32_qspi_mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 	return 0;
 
 fail:
-	dev_err(priv->dev, "%s: failed: %d\n", __func__, err);
+	dev_err(priv->dev, "%s: failed (addr 0x%x, len 0x%x): %d\n", __func__, (u32)address, (u32)len, err);
 	mutex_unlock(&priv->lock);
 	return err;
 }
@@ -803,7 +803,7 @@ static int stm32_qspi_mtd_read(struct mtd_info *mtd, loff_t from, size_t len,
 	return 0;
 
 fail:
-	dev_err(priv->dev, "%s: failed: %d\n", __func__, err);
+	dev_err(priv->dev, "%s: failed (addr 0x%x, len 0x%x): %d\n", __func__, (u32)addr, len, err);
 	mutex_unlock(&priv->lock);
 	return err;
 }
