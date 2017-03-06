@@ -221,6 +221,11 @@ static int khci_probe(struct platform_device *pdev)
 	 */
 	hcd->rsrc_start = mres->start;
 
+	/*
+	 * Driver doesn't support WAKE-UP detection for now
+	 */
+	hcd->cant_recv_wakeups = 1;
+
 	dev = hcd_to_khci(hcd);
 	memset(dev, 0, sizeof(struct khci_hcd));
 	dev_set_drvdata(&pdev->dev, dev);
