@@ -214,7 +214,7 @@ static struct variant_data variant_ux500v2 = {
 
 static struct variant_data variant_stm32f4 = {
 	.fifosize		= 32 * 4,
-	.fifohalfsize		= 8 * 4,
+	.fifohalfsize		= 4 * 4,
 	.clkreg			= MCI_CLK_ENABLE,
 	.clkreg_8bit_bus_enable = MCI_ST_8BIT_BUS,
 	.clkreg_neg_edge_enable	= MCI_ST_UX500_NEG_EDGE,

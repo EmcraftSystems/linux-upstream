@@ -471,7 +471,7 @@
 			bus-width = <4>;
 			voltage-ranges = <3200 3300 3300 3400>;
 			/* Use the same DMA both for rx and tx */
-			dmas = <&dma2 3 4 0x400 0>, <&dma2 3 4 0x400 0>;
+			dmas = <&dma2 3 4 0x400 3>, <&dma2 3 4 0x400 3>;
 			dma-names = "rx", "tx";
 			clocks = <&rcc 0 171>;
 			clock-names = "apb_pclk";
