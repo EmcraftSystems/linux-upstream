@@ -198,6 +198,7 @@ struct stm32_qspi_priv {
 	atomic_t		wait_mask;
 	bool			last_op_was_read;
 	struct mutex		lock;
+	bool			support_4bytes;
 };
 
 static int stm32_qspi_set_speed(struct stm32_qspi_priv *priv, unsigned long speed)
@@ -506,10 +507,14 @@ static int stm32_qspi_switch_to_memory_mapped(struct stm32_qspi_priv *priv)
 		goto fail;
 
 	writel(QSPI_CCR_FMODE_MEMORY_MAP
-	       | SPINOR_OP_FAST_READ_4B
+	       | (priv->support_4bytes
+		  ? SPINOR_OP_FAST_READ_4B
+		  : SPINOR_OP_FAST_READ)
 	       | QSPI_CCR_IMODE_SINGLE_LINE
 	       | QSPI_CCR_ADMODE_FOUR_LINES
-	       | QSPI_CCR_ADSIZE_FOUR_BYTES
+	       | (priv->support_4bytes
+		  ? QSPI_CCR_ADSIZE_FOUR_BYTES
+		  : QSPI_CCR_ADSIZE_THREE_BYTES)
 	       | QSPI_CCR_DMODE_FOUR_LINES
 	       | QSPI_CCR_DCYC(priv->fast_read_dummy),
 	       &priv->regs->ccr);
@@ -542,7 +547,9 @@ static int stm32_qspi_erase_block(struct stm32_qspi_priv *priv, u32 address)
 	       | SPINOR_OP_SE
 	       | QSPI_CCR_IMODE_SINGLE_LINE
 	       | QSPI_CCR_ADMODE_SINGLE_LINE
-	       | QSPI_CCR_ADSIZE_FOUR_BYTES
+	       | (priv->support_4bytes
+		  ? QSPI_CCR_ADSIZE_FOUR_BYTES
+		  : QSPI_CCR_ADSIZE_THREE_BYTES)
 	       | QSPI_CCR_DMODE_NONE
 	       | QSPI_CCR_DCYC(0),
 	       &priv->regs->ccr);
@@ -638,7 +645,9 @@ static int stm32_qspi_write_page(struct stm32_qspi_priv *priv, u32 address, cons
 	       | priv->flash->program_cmd
 	       | QSPI_CCR_IMODE_SINGLE_LINE
 	       | QSPI_CCR_ADMODE_FOUR_LINES
-	       | QSPI_CCR_ADSIZE_FOUR_BYTES
+	       | (priv->support_4bytes
+		  ? QSPI_CCR_ADSIZE_FOUR_BYTES
+		  : QSPI_CCR_ADSIZE_THREE_BYTES)
 	       | QSPI_CCR_DMODE_FOUR_LINES
 	       | QSPI_CCR_DCYC(0),
 	       &priv->regs->ccr);
@@ -1049,10 +1058,15 @@ static int stm32_qspi_probe(struct platform_device *pdev)
 	priv->regs->cr |= QSPI_CR_TOIE
 		| QSPI_CR_TEIE;
 
-	err = stm32_qspi_enter_4_bytes_mode(priv);
-	if (err) {
-		dev_err(dev, "%s: Failed to switch to 4 byte mode addressing: %d\n", __func__, err);
-		return err;
+	/* 4 bytes addressing is only supported for flashes bigger than 16MiB */
+	priv->support_4bytes = !!(mtd->size > (1 << 24));
+
+	if (priv->support_4bytes) {
+		err = stm32_qspi_enter_4_bytes_mode(priv);
+		if (err) {
+			dev_err(dev, "%s: Failed to switch to 4 byte mode addressing: %d\n", __func__, err);
+			return err;
+		}
 	}
 
 	dev_info(dev, "QSPI:  %d MB mapped at %p\n",
