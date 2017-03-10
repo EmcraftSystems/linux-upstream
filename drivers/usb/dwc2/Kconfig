@@ -89,4 +89,12 @@ config USB_DWC2_DEBUG_PERIODIC
 	  non-periodic transfers, but of course the debug logs will be
 	  incomplete. Note that this also disables some debug messages
 	  for which the transfer type cannot be deduced.
+
+config USB_DWC2_WAKEUP_ON_PLUGIN
+	bool "Wakeup when a device is plugged into a USB port"
+	default n
+	help
+	  Say Y here to enable wakeup from the low power mode whenever a USB
+	  device is plugged into HS of FS port.
+
 endif

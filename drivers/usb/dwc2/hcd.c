@@ -51,6 +51,8 @@
 #include <linux/usb/hcd.h>
 #include <linux/usb/ch11.h>
 
+#include <linux/of_gpio.h>
+
 #include "core.h"
 #include "hcd.h"
 
@@ -2329,9 +2331,172 @@ static void _dwc2_hcd_stop(struct usb_hcd *hcd)
 	usleep_range(1000, 3000);
 }
 
+#ifdef CONFIG_USB_DWC2_WAKEUP_ON_PLUGIN
+irqreturn_t _dwc2_hdc_wake_handler(int irq, void *dev_id)
+{
+	return IRQ_HANDLED;
+}
+
+/*
+ * The list of ULPI PHYs we support (for low-powering)
+ */
+static unsigned long ulpi_phy_ids[] = {
+	/* VID hi, VID lo, PID hi, PID lo */
+	0x24040400,	/* Microchip USB3300 PHY */
+};
+
+/*
+ * Read ULPI PHY register 'reg'.
+ * Implementation is based on a non-documented PHYCR (+0x34) register, see the
+ * STM32746G-Discovery/PWR_CurrentConsumption example in STM32Cube_FW_F7_V1.3.0
+ */
+static unsigned int _dwc2_ulpi_reg_read(struct usb_hcd *hcd, unsigned int reg)
+{
+	struct dwc2_hsotg *hsotg = dwc2_hcd_to_hsotg(hcd);
+	unsigned long val = 0, timeout = 100;
+
+	writel(GPVNDCTL_NEW | (reg << 16), hsotg->regs + GPVNDCTL);
+	val = readl(hsotg->regs + GPVNDCTL);
+	while (!(val & GPVNDCTL_S_DONE) && timeout--)
+		val = readl(hsotg->regs + GPVNDCTL);
+	val = readl(hsotg->regs + GPVNDCTL);
+
+	return val & GPVNDCTL_D07;
+}
+
+/*
+ * Write UPLI PHY register 'reg'
+ * Implementation is based on a non-documented PHYCR (+0x34) register, see the
+ * STM32746G-Discovery/PWR_CurrentConsumption example in STM32Cube_FW_F7_V1.3.0
+ */
+static unsigned int _dwc2_ulpi_reg_write(struct usb_hcd *hcd, unsigned int reg,
+					 unsigned int data)
+{
+	struct dwc2_hsotg *hsotg = dwc2_hcd_to_hsotg(hcd);
+	unsigned long val, timeout = 10;
+
+	writel(GPVNDCTL_NEW | GPVNDCTL_RW | (reg << 16) | (data & GPVNDCTL_D07),
+	       hsotg->regs + GPVNDCTL);
+
+	val = readl(hsotg->regs + GPVNDCTL);
+	while (!(val & GPVNDCTL_S_DONE) && timeout--)
+		val = readl(hsotg->regs + GPVNDCTL);
+	val = readl(hsotg->regs + GPVNDCTL);
+
+	return 0;
+}
+
+/*
+ * Put ULPI PHY into low-power
+ */
+static int _dwc2_ulpi_suspend(struct usb_hcd *hcd)
+{
+	unsigned long i, val;
+	struct dwc2_hsotg *hsotg = dwc2_hcd_to_hsotg(hcd);
+
+	/*
+	 * Check if ULPI link is OK, and this is one of the PHYs supported
+	 */
+	for (i = 0, val = 0; i < 4; i++)
+		val |= _dwc2_ulpi_reg_read(hcd, i) << ((3 - i) << 3);
+
+	for (i = 0; i < ARRAY_SIZE(ulpi_phy_ids); i++) {
+		if (val == ulpi_phy_ids[i])
+			break;
+	}
+
+	if (i == ARRAY_SIZE(ulpi_phy_ids)) {
+		dev_err(hsotg->dev, "%s: bad VID/PID %08lx\n", __func__, val);
+		return -EINVAL;
+	}
+
+	/*
+	 * Disable PullUp on STP in InterfaceControl reg to avoid
+	 * PHY wake-up when MCU goes stop/standby
+	 */
+	val = _dwc2_ulpi_reg_read(hcd, 0x07);
+	_dwc2_ulpi_reg_write(hcd, 0x07, val | 0x80);
+
+	/*
+	 * Set FunctionControl reg to enter LowPower mode
+	 */
+	val = _dwc2_ulpi_reg_read(hcd, 0x04);
+	_dwc2_ulpi_reg_write(hcd, 0x04, val & ~0x40);
+
+	return 0;
+}
+
+static int _dwc2_ulpi_resume(struct usb_hcd *hcd)
+{
+	unsigned long i, val;
+	struct dwc2_hsotg *hsotg = dwc2_hcd_to_hsotg(hcd);
+
+	/*
+	 * Check if ULPI link is OK, and this is one of the PHYs supported
+	 */
+	for (i = 0, val = 0; i < 4; i++)
+		val |= _dwc2_ulpi_reg_read(hcd, i) << ((3 - i) << 3);
+
+	for (i = 0; i < ARRAY_SIZE(ulpi_phy_ids); i++) {
+		if (val == ulpi_phy_ids[i])
+			break;
+	}
+
+	if (i == ARRAY_SIZE(ulpi_phy_ids)) {
+		dev_err(hsotg->dev, "%s: bad VID/PID %08lx\n", __func__, val);
+		return -EINVAL;
+	}
+
+	/*
+	 * Reset VBUS power via OTGControl[DrvVbus|DrvVbusExternal]. This is for
+	 * reliable detection of the devices, which might be connected while we
+	 * slept. With smaller VBUS-off interval some devices are missed (e.g.
+	 * with 10..15ms delay a USB WiFi Dongle is detected reliably, but USB
+	 * Flash Memory stick is not).
+	 */
+	val = _dwc2_ulpi_reg_read(hcd, 0x0A);
+	_dwc2_ulpi_reg_write(hcd, 0x0A, val & ~0x60);
+	usleep_range(100000, 125000);
+	_dwc2_ulpi_reg_write(hcd, 0x0A, val);
+
+	return 0;
+}
+#endif
+
 static int _dwc2_hcd_suspend(struct usb_hcd *hcd)
 {
 	struct dwc2_hsotg *hsotg = dwc2_hcd_to_hsotg(hcd);
+#ifdef CONFIG_USB_DWC2_WAKEUP_ON_PLUGIN
+	int gcount = of_gpio_named_count(hsotg->dev->of_node, "wake-gpios");
+	int i;
+
+
+	if (hsotg->hw_params.hs_phy_type == DWC2_PHY_TYPE_PARAM_ULPI)
+		_dwc2_ulpi_suspend(hcd);
+
+
+	pinctrl_pm_select_sleep_state(hsotg->dev);
+
+	for (i = 0; i < gcount; i++) {
+		int gpio =
+			of_get_named_gpio(hsotg->dev->of_node, "wake-gpios", i);
+		int irq = gpio_to_irq(gpio);
+		int ret = devm_request_irq(hsotg->dev,
+				irq, _dwc2_hdc_wake_handler,
+				IRQF_TRIGGER_RISING | IRQF_NO_SUSPEND,
+				dev_name(hsotg->dev), NULL);
+		if (ret)
+			dev_err(hsotg->dev, "Cannot allocate irq\n");
+	}
+
+	if (hsotg->hw_params.hs_phy_type == DWC2_PHY_TYPE_PARAM_ULPI) {
+		int stp;
+		stp = of_get_named_gpio(hsotg->dev->of_node, "ulpi-stp", 0);
+		if (stp >= 0)
+			/* Set ULPI STOP to zero to avoid accidental wake-up */
+			gpio_direction_output(stp, 0);
+	}
+#endif
 
 	hsotg->lx_state = DWC2_L2;
 	return 0;
@@ -2340,6 +2505,51 @@ static int _dwc2_hcd_suspend(struct usb_hcd *hcd)
 static int _dwc2_hcd_resume(struct usb_hcd *hcd)
 {
 	struct dwc2_hsotg *hsotg = dwc2_hcd_to_hsotg(hcd);
+#ifdef CONFIG_USB_DWC2_WAKEUP_ON_PLUGIN
+	int gcount = of_gpio_named_count(hsotg->dev->of_node, "wake-gpios");
+	int i;
+
+	for (i = 0; i < gcount ; i++) {
+		int gpio =
+			of_get_named_gpio(hsotg->dev->of_node, "wake-gpios", i);
+		if (gpio >= 0)
+			devm_free_irq(hsotg->dev, gpio_to_irq(gpio), NULL);
+	}
+
+	if (hsotg->hw_params.hs_phy_type == DWC2_PHY_TYPE_PARAM_ULPI) {
+		/* Bring USB HS ULPI PHY out of low-power:
+		 * - set STOP high
+		 * - wait for DIR low
+		 * - set STOP low
+		 * Maximum CLKOUT start-up time is several ms (e.g. 3.5ms
+		 * in USB3300 PHY).
+		 */
+		int stp, dir;
+
+		stp = of_get_named_gpio(hsotg->dev->of_node, "ulpi-stp", 0);
+		dir = of_get_named_gpio(hsotg->dev->of_node, "ulpi-dir", 0);
+
+		if (stp >= 0 && dir >= 0) {
+			gpio_direction_output(stp, 1);
+			gpio_direction_input(dir);
+			for (i = 2000; i > 0; i--) {
+				if (!gpio_get_value(dir))
+					break;
+				udelay(10);
+			}
+
+			if (!i)
+				dev_warn(hsotg->dev, "USB HS ULPI recovering timeout\n");
+
+			gpio_set_value(stp, 0);
+		}
+	}
+
+	pinctrl_pm_select_default_state(hsotg->dev);
+
+	if (hsotg->hw_params.hs_phy_type == DWC2_PHY_TYPE_PARAM_ULPI)
+		_dwc2_ulpi_resume(hcd);
+#endif
 
 	hsotg->lx_state = DWC2_L0;
 	return 0;
