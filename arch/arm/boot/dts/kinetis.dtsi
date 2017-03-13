@@ -9,10 +9,7 @@
 
 / {
 	aliases {
-		pit0 = &pit0;
-		pit1 = &pit1;
-		pit2 = &pit2;
-		pit3 = &pit3;
+		pit0 = &pit;
 		pmx0 = &iomux;
 		serial0 = &uart0;
 		serial1 = &uart1;
@@ -216,36 +213,12 @@
 			status = "okay";
 		};
 
-		pit0: timer@40037100 {
-			compatible = "fsl,kinetis-pit-timer";
-			reg = <0x40037100 0x10>;
-			interrupts = <68>;
-			clocks = <&mcg CLOCK_PIT>;
-			status = "disabled";
-		};
-
-		pit1: timer@40037110 {
-			compatible = "fsl,kinetis-pit-timer";
-			reg = <0x40037110 0x10>;
-			interrupts = <69>;
-			clocks = <&mcg CLOCK_PIT>;
-			status = "disabled";
-		};
-
-		pit2: timer@40037120 {
-			compatible = "fsl,kinetis-pit-timer";
-			reg = <0x40037120 0x10>;
-			interrupts = <70>;
-			clocks = <&mcg CLOCK_PIT>;
-			status = "disabled";
-		};
-
-		pit3: timer@40037130 {
-			compatible = "fsl,kinetis-pit-timer";
-			reg = <0x40037130 0x10>;
+		pit: pit@40037000 {
+			compatible = "fsl,vf610-pit";
+			reg = <0x40037000 0x1000>;
 			interrupts = <71>;
 			clocks = <&mcg CLOCK_PIT>;
-			status = "disabled";
+			clock-names = "pit";
 		};
 
 		mcg: cmu@40064000 {
