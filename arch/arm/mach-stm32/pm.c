@@ -93,6 +93,7 @@ static u8 *ltdc_regs;
 
 static struct platform_device *pinctrl_pdev;
 static struct gpio_desc *pwr_en;
+static int wake_gpio = - 1;
 
 /*
  * Device data structure
@@ -124,6 +125,11 @@ static int stm32_pm_valid(suspend_state_t state)
 	}
 
 	return ret;
+}
+
+static irqreturn_t stm32_pm_wake_handler(int irq, void *dev_id)
+{
+	return IRQ_HANDLED;
 }
 
 /*
@@ -246,6 +252,7 @@ static int __init stm32_pm_init(void)
 	struct device_node *np;
 	struct clk *clk;
 	int ret;
+	enum of_gpio_flags flags;
 
 	/*
 	 * Relocate code to SRAM
@@ -294,12 +301,36 @@ static int __init stm32_pm_init(void)
 		ret = -EINVAL;
 		goto out;
 	}
+
 	pinctrl_pdev = of_find_device_by_node(np);
+
 	of_node_put(np);
 	if (!pinctrl_pdev) {
 		printk(KERN_ERR "%s: of_find_device() fail\n", __func__);
 		ret = -EINVAL;
 		goto out;
+	}
+
+	/* Get wake-up gpio */
+	np = of_find_compatible_node(NULL, NULL, "st,stm32-wake");
+	if (np) {
+		wake_gpio = of_get_gpio_flags(np, 0, &flags);
+		of_node_put(np);
+	}
+
+	/* Register a wake-up handler, if correct gpio was found */
+	if (wake_gpio >= 0) {
+		int ret = request_irq(gpio_to_irq(wake_gpio),
+				stm32_pm_wake_handler,
+				((flags & OF_GPIO_ACTIVE_LOW) ?
+				 IRQF_TRIGGER_FALLING : IRQF_TRIGGER_RISING) |
+				IRQF_NO_SUSPEND,
+				"Wakeup GPIO", NULL);
+		if (ret) {
+			printk(KERN_ERR "%s: unable to request wake irq\n",
+					__func__);
+			wake_gpio = -1;
+		}
 	}
 
 	/*
@@ -336,6 +367,8 @@ out:
 static void __exit stm32_pm_cleanup(void)
 {
 	platform_driver_unregister(&stm32_pm_driver);
+	if (wake_gpio >= 0)
+		free_irq(gpio_to_irq(wake_gpio), NULL);
 }
 
 module_init(stm32_pm_init);
