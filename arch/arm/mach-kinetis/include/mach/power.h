@@ -82,5 +82,10 @@ typedef u32 kinetis_clock_gate_t;
 /* I2C */
 #define KINETIS_CG_I2C0		KINETIS_MKCG(3, 6)	/* SIM_SCGC4[6] */
 #define KINETIS_CG_I2C1		KINETIS_MKCG(3, 7)	/* SIM_SCGC4[7] */
+/* ADC */
+#define KINETIS_CG_ADC0		KINETIS_MKCG(5, 27)	/* SIM_SCGC6[27] */
+#define KINETIS_CG_ADC1		KINETIS_MKCG(2, 27)	/* SIM_SCGC3[27] */
+#define KINETIS_CG_ADC2		KINETIS_MKCG(5, 28)	/* SIM_SCGC6[28] */
+#define KINETIS_CG_ADC3		KINETIS_MKCG(2, 28)	/* SIM_SCGC3[28] */
 
 #endif /*_MACH_KINETIS_POWER_H */

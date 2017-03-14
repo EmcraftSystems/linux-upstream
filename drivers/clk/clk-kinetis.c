@@ -321,6 +321,22 @@ static void __init kinetis_mcg_init(struct device_node *np)
 			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_USBFS)]),
 			KINETIS_CG_IDX(KINETIS_CG_USBFS), 0, NULL);
 
+	/*
+	 * ADC clocks
+	 */
+	clk[CLOCK_ADC0] = clk_register_gate(NULL, "ADC0", "PCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_ADC0)]),
+			KINETIS_CG_IDX(KINETIS_CG_ADC0), 0, NULL);
+	clk[CLOCK_ADC1] = clk_register_gate(NULL, "ADC1", "PCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_ADC1)]),
+			KINETIS_CG_IDX(KINETIS_CG_ADC1), 0, NULL);
+	clk[CLOCK_ADC2] = clk_register_gate(NULL, "ADC2", "PCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_ADC2)]),
+			KINETIS_CG_IDX(KINETIS_CG_ADC2), 0, NULL);
+	clk[CLOCK_ADC3] = clk_register_gate(NULL, "ADC3", "PCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_ADC3)]),
+			KINETIS_CG_IDX(KINETIS_CG_ADC3), 0, NULL);
+
 	of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data);
 }
 

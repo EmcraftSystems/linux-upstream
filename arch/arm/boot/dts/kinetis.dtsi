@@ -323,5 +323,14 @@
 			clock-names = "khci";
 			status = "disabled";
 		};
+
+		adc: adc {
+			compatible = "fsl,kinetis-adc";
+			reg = <0x4003b000 0x100>, <0x400bb000 0x100>,
+				<0x4003c000 0x100>, <0x400bc000 0x100>;
+			clocks = <&mcg CLOCK_ADC0>, <&mcg CLOCK_ADC1>,
+				<&mcg CLOCK_ADC2>, <&mcg CLOCK_ADC3>;
+			clock-names = "adc0", "adc1", "adc2", "adc3";
+		};
 	};
 };
