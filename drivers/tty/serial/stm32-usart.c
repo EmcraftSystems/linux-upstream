@@ -262,6 +262,98 @@ static void stm32_rx_dma_work(struct work_struct *work)
 	spin_unlock(&port->lock);
 }
 
+static void stm32_tx_work(struct work_struct *work)
+{
+	struct stm32_port *stm32_port = container_of(work,
+					struct stm32_port, tx_work);
+	struct uart_port *port = &stm32_port->port;
+	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
+
+	if (stm32_port->de)
+		mutex_lock(&stm32_port->rs_de_mutex);
+
+	if (!stm32_port->tx_busy) {
+		if (port->rs485.flags & SER_RS485_ENABLED) {
+			if (stm32_port->de) {
+				int v;
+				v = (port->rs485.flags &
+				     SER_RS485_RTS_ON_SEND) ? 1 : 0;
+				gpiod_set_value(stm32_port->de, v);
+			}
+
+			if (!(port->rs485.flags & SER_RS485_RX_DURING_TX))
+				stm32_clr_bits(port, ofs->cr1, USART_CR1_RE);
+
+			if (port->rs485.delay_rts_before_send > 0)
+				mdelay(port->rs485.delay_rts_before_send);
+		}
+		stm32_port->tx_busy = true;
+	}
+
+	stm32_transmit_chars(port);
+
+	if (stm32_port->de)
+		mutex_unlock(&stm32_port->rs_de_mutex);
+}
+
+static void stm32_rs_de_work(struct work_struct *work)
+{
+	struct stm32_port *stm32_port = container_of(work,
+					struct stm32_port, rs_de_work);
+	struct uart_port *port = &stm32_port->port;
+	u32 tot_us = 1000000;
+	u32 slp_us = 10;
+	unsigned int isr;
+	int v;
+	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
+
+	if (stm32_port->de)
+		mutex_lock(&stm32_port->rs_de_mutex);
+
+	if (stm32_port->tx_ch) {
+		ktime_t timeout = ktime_add_us(ktime_get(),
+					       tot_us);
+		might_sleep_if(slp_us);
+		v = 0;
+		while (1) {
+			if (!stm32_port->tx_dma_busy)
+				break;
+
+			if (ktime_compare(ktime_get(),
+					  timeout) > 0) {
+				v = -ETIMEDOUT;
+				break;
+			}
+
+			usleep_range((slp_us >> 2) + 1, slp_us);
+		}
+	} else {
+		v = readl_relaxed_poll_timeout_atomic(
+			port->membase + ofs->isr, isr,
+			(isr & USART_SR_TC), slp_us, tot_us);
+	}
+	if (v)
+		dev_err(port->dev, "rs485 tx timeout (%x)\n",
+			readl_relaxed(port->membase + ofs->isr));
+
+	if (port->rs485.delay_rts_after_send > 0)
+		mdelay(port->rs485.delay_rts_after_send);
+
+	if (!(port->rs485.flags & SER_RS485_RX_DURING_TX))
+		stm32_set_bits(port, ofs->cr1, USART_CR1_RE);
+
+	if (stm32_port->de) {
+		v = (port->rs485.flags &
+		     SER_RS485_RTS_AFTER_SEND) ? 1 : 0;
+		gpiod_set_value(stm32_port->de, v);
+	}
+
+	stm32_port->tx_busy = false;
+
+	if (stm32_port->de)
+		mutex_unlock(&stm32_port->rs_de_mutex);
+}
+
 static void stm32_rx_dma_complete(void *arg)
 {
 	struct uart_port *port = arg;
@@ -284,7 +376,6 @@ static void stm32_tx_dma_complete(void *arg)
 						isr,
 						(isr & USART_SR_TC),
 						10, 100000);
-
 	if (ret)
 		dev_err(port->dev, "terminal count not set\n");
 
@@ -297,7 +388,7 @@ static void stm32_tx_dma_complete(void *arg)
 	stm32port->tx_dma_busy = false;
 
 	/* Let's see if we have pending data to send */
-	stm32_transmit_chars(port);
+	schedule_work(&stm32port->tx_work);
 }
 
 static void stm32_transmit_chars_pio(struct uart_port *port)
@@ -313,15 +404,13 @@ static void stm32_transmit_chars_pio(struct uart_port *port)
 		stm32_port->tx_dma_busy = false;
 	}
 
-	ret = readl_relaxed_poll_timeout_atomic(port->membase + ofs->isr,
-						isr,
-						(isr & USART_SR_TXE),
-						10, 100);
+	ret = readl_relaxed_poll_timeout(port->membase + ofs->isr,
+					 isr,
+					 (isr & USART_SR_TXE),
+					 1, 10);
 
 	if (ret)
 		dev_err(port->dev, "tx empty not set\n");
-
-	stm32_set_bits(port, ofs->cr1, USART_CR1_TXEIE);
 
 	writel_relaxed(xmit->buf[xmit->tail], port->membase + ofs->tdr);
 	xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
@@ -419,14 +508,21 @@ static void stm32_transmit_chars(struct uart_port *port)
 
 	if (stm32_port->tx_ch)
 		stm32_transmit_chars_dma(port);
-	else
-		stm32_transmit_chars_pio(port);
+	else {
+		int i;
+		int count = uart_circ_chars_pending(xmit);
+		for (i = 0; i < count; ++i)
+			stm32_transmit_chars_pio(port);
+
+		if (uart_circ_empty(xmit))
+			stm32_stop_tx(port);
+		else
+			schedule_work(&stm32_port->tx_work);
+	}
 
 	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
 		uart_write_wakeup(port);
 
-	if (uart_circ_empty(xmit))
-		stm32_stop_tx(port);
 }
 
 static irqreturn_t stm32_interrupt(int irq, void *ptr)
@@ -441,12 +537,6 @@ static irqreturn_t stm32_interrupt(int irq, void *ptr)
 	if ((sr & USART_SR_RXNE) && !(stm32_port->rx_ch)) {
 		spin_lock(&port->lock);
 		stm32_receive_chars(port, false);
-		spin_unlock(&port->lock);
-	}
-
-	if ((sr & USART_SR_TXE) && !(stm32_port->tx_ch)) {
-		spin_lock(&port->lock);
-		stm32_transmit_chars(port);
 		spin_unlock(&port->lock);
 	}
 
@@ -520,51 +610,10 @@ static void stm32_stop_tx(struct uart_port *port)
 	stm32_clr_bits(port, ofs->cr1, USART_CR1_TXEIE);
 
 	if (stm32_port->tx_busy) {
-		if (port->rs485.flags & SER_RS485_ENABLED) {
-			u32 tot_us = 100000;
-			u32 slp_us = 10;
-			unsigned int isr;
-			int v;
-
-			if (stm32_port->tx_ch) {
-				ktime_t timeout = ktime_add_us(ktime_get(),
-							       tot_us);
-				might_sleep_if(slp_us);
-				v = 0;
-				while (1) {
-					if (!stm32_port->tx_dma_busy)
-						break;
-
-					if (ktime_compare(ktime_get(),
-							  timeout) > 0) {
-						v = -ETIMEDOUT;
-						break;
-					}
-
-					usleep_range((slp_us >> 2) + 1, slp_us);
-				}
-			} else {
-				v = readl_relaxed_poll_timeout_atomic(
-					port->membase + ofs->isr, isr,
-					(isr & USART_SR_TC), slp_us, tot_us);
-			}
-			if (v)
-				dev_err(port->dev, "rs485 tx timeout (%x)\n",
-				       readl_relaxed(port->membase + ofs->isr));
-
-			if (port->rs485.delay_rts_after_send > 0)
-				mdelay(port->rs485.delay_rts_after_send);
-
-			if (!(port->rs485.flags & SER_RS485_RX_DURING_TX))
-				stm32_set_bits(port, ofs->cr1, USART_CR1_RE);
-
-			if (stm32_port->de) {
-				v = (port->rs485.flags &
-				     SER_RS485_RTS_AFTER_SEND) ? 1 : 0;
-				gpiod_set_value(stm32_port->de, v);
-			}
-		}
-		stm32_port->tx_busy = false;
+		if (port->rs485.flags & SER_RS485_ENABLED)
+			schedule_work(&stm32_port->rs_de_work);
+		else
+			stm32_port->tx_busy = false;
 	}
 }
 
@@ -572,31 +621,12 @@ static void stm32_stop_tx(struct uart_port *port)
 static void stm32_start_tx(struct uart_port *port)
 {
 	struct stm32_port *stm32_port = to_stm32_port(port);
-	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
 	struct circ_buf *xmit = &port->state->xmit;
 
 	if (uart_circ_empty(xmit))
 		return;
 
-	if (!stm32_port->tx_busy) {
-		if (port->rs485.flags & SER_RS485_ENABLED) {
-			if (stm32_port->de) {
-				int v;
-				v = (port->rs485.flags &
-				     SER_RS485_RTS_ON_SEND) ? 1 : 0;
-				gpiod_set_value(stm32_port->de, v);
-			}
-
-			if (!(port->rs485.flags & SER_RS485_RX_DURING_TX))
-				stm32_clr_bits(port, ofs->cr1, USART_CR1_RE);
-
-			if (port->rs485.delay_rts_before_send > 0)
-				mdelay(port->rs485.delay_rts_before_send);
-		}
-		stm32_port->tx_busy = true;
-	}
-
-	stm32_transmit_chars(port);
+	schedule_work(&stm32_port->tx_work);
 }
 
 /* Throttle the remote when input buffer is about to overflow. */
@@ -1024,6 +1054,9 @@ static int stm32_of_dma_rx_probe(struct stm32_port *stm32port,
 	}
 
 	INIT_WORK(&stm32port->rx_work, stm32_rx_dma_work);
+	INIT_WORK(&stm32port->tx_work, stm32_tx_work);
+	INIT_WORK(&stm32port->rs_de_work, stm32_rs_de_work);
+	mutex_init(&stm32port->rs_de_mutex);
 	desc->callback = stm32_rx_dma_complete;
 	desc->callback_param = port;
 
