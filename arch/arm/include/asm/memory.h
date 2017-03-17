@@ -326,7 +326,9 @@ static inline __deprecated void *bus_to_virt(unsigned long x)
  *  virt_to_page(k)	convert a _valid_ virtual address to struct page *
  *  virt_addr_valid(k)	indicates whether a virtual address is valid
  */
+#ifndef ARCH_PFN_OFFSET
 #define ARCH_PFN_OFFSET		PHYS_PFN_OFFSET
+#endif
 
 #define virt_to_page(kaddr)	pfn_to_page(virt_to_pfn(kaddr))
 #define virt_addr_valid(kaddr)	(((unsigned long)(kaddr) >= PAGE_OFFSET && (unsigned long)(kaddr) < (unsigned long)high_memory) \

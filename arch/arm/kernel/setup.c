@@ -853,10 +853,31 @@ static void __init request_standard_resources(const struct machine_desc *mdesc)
 	struct memblock_region *region;
 	struct resource *res;
 
+#if defined(PHYS_ALIAS_OFFSET)
+	/*
+	 * This is for a new memory model specific to Kinetis K70.
+	 * There are two separate caches on K70 each corresponding
+	 * to the two non-overlapping address regions. DDRAM is
+	 * aliased in both of those address regions. 
+	 *
+	 * To make sure that we use both caches we link the kernel
+	 * to run from the DDRAM alias cacheable in the I/D bus,
+	 * while the run-time kernel memory resides in the DDRAM region
+	 * cacheable in the System bus regions.
+	 *
+	 * This is the same physical memory of course. 
+	 * Hence, all that trickery specific to PHYS_ALIAS_OFFSET.
+	 */
+	kernel_code.start   = PHYS_ALIAS_ADDR(virt_to_phys(_text));
+	kernel_code.end     = PHYS_ALIAS_ADDR(virt_to_phys(_etext - 1));
+	kernel_data.start   = PHYS_ALIAS_ADDR(virt_to_phys(_data));
+	kernel_data.end     = PHYS_ALIAS_ADDR(virt_to_phys(_end - 1));
+#else
 	kernel_code.start   = virt_to_phys(_text);
 	kernel_code.end     = virt_to_phys(_etext - 1);
 	kernel_data.start   = virt_to_phys(_sdata);
 	kernel_data.end     = virt_to_phys(_end - 1);
+#endif
 
 	for_each_memblock(memory, region) {
 		res = memblock_virt_alloc(sizeof(*res), 0);
@@ -1029,10 +1050,17 @@ void __init setup_arch(char **cmdline_p)
 	if (mdesc->reboot_mode != REBOOT_HARD)
 		reboot_mode = mdesc->reboot_mode;
 
+#if defined(PHYS_ALIAS_OFFSET)
+	init_mm.start_code = PHYS_ALIAS_ADDR((unsigned long) _text);
+	init_mm.end_code   = PHYS_ALIAS_ADDR((unsigned long) _etext);
+	init_mm.end_data   = PHYS_ALIAS_ADDR((unsigned long) _edata);
+	init_mm.brk	   = PHYS_ALIAS_ADDR((unsigned long) _end);
+#else
 	init_mm.start_code = (unsigned long) _text;
 	init_mm.end_code   = (unsigned long) _etext;
 	init_mm.end_data   = (unsigned long) _edata;
 	init_mm.brk	   = (unsigned long) _end;
+#endif
 
 	/* populate cmd_line too for later use, preserving boot_command_line */
 	strlcpy(cmd_line, boot_command_line, COMMAND_LINE_SIZE);

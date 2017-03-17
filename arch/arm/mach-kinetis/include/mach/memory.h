@@ -21,7 +21,9 @@
  * Write-through cached DDRAM-alias region.
  * This is used to run kernel core from.
  */
-#define PHYS_ALIAS_OFFSET       UL(0x08000000)
+#define PHYS_ALIAS_OFFSET       UL(0x70000000)
+
+#define ARCH_PFN_OFFSET	((unsigned long)(PHYS_ALIAS_OFFSET >> PAGE_SHIFT))
 
 /*
  * On Kinetis K70, consistent DMA memory resides in a special

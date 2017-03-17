@@ -1782,8 +1782,15 @@ static inline unsigned long free_initmem_default(int poison)
 {
 	extern char __init_begin[], __init_end[];
 
+#if defined(PHYS_ALIAS_OFFSET)
+	return free_reserved_area(
+		(void *)__phys_to_virt(PHYS_ALIAS_ADDR(&__init_begin)),
+		(void *)__phys_to_virt(PHYS_ALIAS_ADDR(&__init_end)),
+		poison, "unused kernel");
+#else
 	return free_reserved_area(&__init_begin, &__init_end,
 				  poison, "unused kernel");
+#endif
 }
 
 static inline unsigned long get_num_physpages(void)
