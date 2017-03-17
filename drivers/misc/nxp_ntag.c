@@ -316,8 +316,6 @@ static int ntag_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	int err;
 	int i;
 
-	printk("%s %d %s\n", __FILE__, __LINE__, __func__);
-
 	ntag = devm_kzalloc(&client->dev, sizeof(struct ntag_data), GFP_KERNEL);
 	if (!ntag)
 		return -ENOMEM;
