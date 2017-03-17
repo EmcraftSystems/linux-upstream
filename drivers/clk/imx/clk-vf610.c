@@ -59,9 +59,11 @@
 #define PFD_PLL2_BASE		(anatop_base + 0x100)
 #define PFD_PLL3_BASE		(anatop_base + 0xf0)
 #define PLL1_CTRL		(anatop_base + 0x270)
+#define PLL1_SS			(anatop_base + 0x280)
 #define PLL1_NUM		(anatop_base + 0x290)
 #define PLL1_DENOM		(anatop_base + 0x2A0)
 #define PLL2_CTRL		(anatop_base + 0x30)
+#define PLL2_SS			(anatop_base + 0x40)
 #define PLL2_NUM		(anatop_base + 0x50)
 #define PLL2_DENOM		(anatop_base + 0x60)
 #define PLL3_CTRL		(anatop_base + 0x10)
@@ -140,6 +142,8 @@ static void __init vf610_clocks_init(struct device_node *ccm_node)
 {
 	struct device_node *np;
 	int i;
+	/* spread spectrum modulation for PLL1 and PLL2 */
+	u32 enable_ss = 0, ssc_range, ssc_mod;
 
 	clk[VF610_CLK_DUMMY] = imx_clk_fixed("dummy", 0);
 	clk[VF610_CLK_SIRC_128K] = imx_clk_fixed("sirc_128k", 128000);
@@ -155,6 +159,18 @@ static void __init vf610_clocks_init(struct device_node *ccm_node)
 	clk[VF610_CLK_ANACLK1] = vf610_get_fixed_clock(ccm_node, "anaclk1");
 
 	clk[VF610_CLK_FXOSC_HALF] = imx_clk_fixed_factor("fxosc_half", "fxosc", 1, 2);
+
+	if (of_find_property(ccm_node, "spread-spectrum", NULL)) {
+		enable_ss = 1;
+		if (of_property_read_u32(ccm_node, "spread-spectrum-range",
+					 &ssc_range) != 0) {
+			ssc_range = 2;
+		}
+		if (of_property_read_u32(ccm_node, "spread-spectrum-modulation",
+					 &ssc_mod) != 0) {
+			ssc_mod = 30;
+		}
+	}
 
 	np = of_find_compatible_node(NULL, NULL, "fsl,vf610-anatop");
 	anatop_base = of_iomap(np, 0);
@@ -175,8 +191,13 @@ static void __init vf610_clocks_init(struct device_node *ccm_node)
 	clk[VF610_CLK_PLL6_BYPASS_SRC] = imx_clk_mux("pll6_bypass_src", PLL6_CTRL, 14, 1, pll_bypass_src_sels, ARRAY_SIZE(pll_bypass_src_sels));
 	clk[VF610_CLK_PLL7_BYPASS_SRC] = imx_clk_mux("pll7_bypass_src", PLL7_CTRL, 14, 1, pll_bypass_src_sels, ARRAY_SIZE(pll_bypass_src_sels));
 
-	clk[VF610_CLK_PLL1] = vfxxx_clk_pllv3(VFXXX_PLL1_SYS_528, "pll1", "pll1_bypass_src", PLL1_CTRL, PLL1_NUM, PLL1_DENOM);
-	clk[VF610_CLK_PLL2] = vfxxx_clk_pllv3(VFXXX_PLL2_528, "pll2", "pll2_bypass_src", PLL2_CTRL, PLL2_NUM, PLL2_DENOM);
+	if (enable_ss) {
+		clk[VF610_CLK_PLL1] = vfxxx_clk_pllv3_ss(VFXXX_PLL1_SYS_528, "pll1", "pll1_bypass_src", PLL1_CTRL, PLL1_NUM, PLL1_DENOM, PLL1_SS, ssc_range, ssc_mod);
+		clk[VF610_CLK_PLL2] = vfxxx_clk_pllv3_ss(VFXXX_PLL2_528, "pll2", "pll2_bypass_src", PLL2_CTRL, PLL2_NUM, PLL2_DENOM, PLL2_SS, ssc_range, ssc_mod);
+	} else {
+		clk[VF610_CLK_PLL1] = vfxxx_clk_pllv3(VFXXX_PLL1_SYS_528, "pll1", "pll1_bypass_src", PLL1_CTRL, PLL1_NUM, PLL1_DENOM);
+		clk[VF610_CLK_PLL2] = vfxxx_clk_pllv3(VFXXX_PLL2_528, "pll2", "pll2_bypass_src", PLL2_CTRL, PLL2_NUM, PLL2_DENOM);
+	}
 	clk[VF610_CLK_PLL3] = vfxxx_clk_pllv3(VFXXX_PLL3_USB0_480,     "pll3", "pll3_bypass_src", PLL3_CTRL, NULL, NULL);
 	clk[VF610_CLK_PLL4] = imx_clk_pllv3(IMX_PLLV3_AV,      "pll4", "pll4_bypass_src", PLL4_CTRL, 0x7f);
 	clk[VF610_CLK_PLL5] = imx_clk_pllv3(IMX_PLLV3_ENET,    "pll5", "pll5_bypass_src", PLL5_CTRL, 0x3);

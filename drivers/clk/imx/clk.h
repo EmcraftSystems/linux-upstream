@@ -165,4 +165,9 @@ struct clk *vfxxx_clk_pllv3(enum vfxxx_pllv3_type type, const char *name,
 			    const char *parent_name, void __iomem *base,
 			    void __iomem *num, void __iomem *denom);
 
+struct clk *vfxxx_clk_pllv3_ss(enum vfxxx_pllv3_type type, const char *name,
+			       const char *parent_name, void __iomem *base,
+			       void __iomem *num, void __iomem *denom,
+			       void __iomem *ss, u32 range, u32 mod);
+
 #endif

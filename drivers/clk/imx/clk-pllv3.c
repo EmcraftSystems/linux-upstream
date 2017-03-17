@@ -48,10 +48,13 @@ struct clk_pllv3 {
 	void __iomem	*base;
 	void __iomem	*num;
 	void __iomem	*denom;
+	void __iomem	*ss;
 	bool		powerup_set;
 	u32		powerdown;
 	u32		div_mask;
 	u32		div_shift;
+	u32		ssc_range;
+	u32		ssc_mod;
 	enum div_select_code	div_select;
 };
 
@@ -74,10 +77,46 @@ static int clk_pllv3_wait_lock(struct clk_pllv3 *pll)
 	return (val & BM_PLL_LOCK) ? 0 : -ETIMEDOUT;
 }
 
+static void setup_ssc(struct clk_pllv3 *pll)
+{
+	u32 num, denom, mfi, div, pll_ss, step, stop;
+
+	num = readl_relaxed(pll->num);
+	denom = readl_relaxed(pll->denom);
+
+	if (denom < 10000) {
+		int m = 10000 / denom;
+		if (10000 % denom) {
+			m++;
+		}
+
+		denom *= m;
+		num *= m;
+
+		writel_relaxed(num, pll->num);
+		writel_relaxed(denom, pll->denom);
+	}
+
+	mfi = (readl_relaxed(pll->base) >> pll->div_shift) & pll->div_mask;
+
+	div = mfi ? 22 : 20;
+
+	stop = (denom * div + num) * pll->ssc_range / 100;
+	step = pll->ssc_mod * 2 * stop / 24000;
+
+	pll_ss = (stop << 16) | (step & 0x7f) | 0x8000;
+
+	writel_relaxed(pll_ss, pll->ss);
+}
+
 static int clk_pllv3_prepare(struct clk_hw *hw)
 {
 	struct clk_pllv3 *pll = to_clk_pllv3(hw);
 	u32 val;
+
+	if (pll->ss) {
+		setup_ssc(pll);
+	}
 
 	val = readl_relaxed(pll->base);
 	if (pll->powerup_set)
@@ -358,6 +397,7 @@ static long clk_pllv3_vfxxx_round_rate(struct clk_hw *hw, unsigned long rate,
 	return parent_rate * div + parent_rate / mfd * mfn;
 }
 
+
 static int clk_pllv3_vfxxx_set_rate(struct clk_hw *hw, unsigned long rate,
 		unsigned long parent_rate)
 {
@@ -475,9 +515,18 @@ struct clk *imx_clk_pllv3(enum imx_pllv3_type type, const char *name,
 	return imx_clk_pllv3_num(type, name, parent_name, base, NULL, NULL, div_mask);
 }
 
+
 struct clk *vfxxx_clk_pllv3(enum vfxxx_pllv3_type type, const char *name,
 			    const char *parent_name, void __iomem *base,
 			    void __iomem *num, void __iomem *denom)
+{
+	return vfxxx_clk_pllv3_ss(type, name, parent_name, base, num, denom, NULL, 0, 0);
+}
+
+struct clk *vfxxx_clk_pllv3_ss(enum vfxxx_pllv3_type type, const char *name,
+			       const char *parent_name, void __iomem *base,
+			       void __iomem *num, void __iomem *denom,
+			       void __iomem *ss, u32 ssc_range, u32 ssc_mod)
 {
 	struct clk_pllv3 *pll;
 	const struct clk_ops *ops;
@@ -496,6 +545,9 @@ struct clk *vfxxx_clk_pllv3(enum vfxxx_pllv3_type type, const char *name,
 		pll->div_mask = 1;
 		pll->div_shift = 0;
 		pll->div_select = DIV_22_20;
+		pll->ss = ss;
+		pll->ssc_range = ssc_range;
+		pll->ssc_mod = ssc_mod;
 		ops = &clk_pllv3_vfxxx_ops;
 		break;
 
