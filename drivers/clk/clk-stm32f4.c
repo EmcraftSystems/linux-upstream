@@ -25,21 +25,7 @@
 #include <linux/of_address.h>
 #include <linux/syscore_ops.h>
 
-#define STM32F4_RCC_CR			0x00
-#define STM32F4_RCC_PLLCFGR		0x04
-#define STM32F4_RCC_CFGR		0x08
-
-#define STM32F4_RCC_AHB1RSTR		0x10
-#define STM32F4_RCC_AHB2RSTR		0x14
-#define STM32F4_RCC_AHB3RSTR		0x18
-#define STM32F4_RCC_APB1RSTR		0x20
-#define STM32F4_RCC_APB2RSTR		0x24
-
-#define STM32F4_RCC_AHB1ENR		0x30
-#define STM32F4_RCC_AHB2ENR		0x34
-#define STM32F4_RCC_AHB3ENR		0x38
-#define STM32F4_RCC_APB1ENR		0x40
-#define STM32F4_RCC_APB2ENR		0x44
+#include <mach/rcc.h>
 
 /*
  * RCC registers bits and masks

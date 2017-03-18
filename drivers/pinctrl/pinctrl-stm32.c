@@ -26,18 +26,8 @@
 #include <linux/reset.h>
 #include <linux/clk.h>
 #include <dt-bindings/pinctrl/pinctrl-stm32.h>
+#include <mach/gpio.h>
 #include "core.h"
-
-#define STM32_GPIO_MODER	0x00
-#define STM32_GPIO_TYPER	0x04
-#define STM32_GPIO_SPEEDR	0x08
-#define STM32_GPIO_PUPDR	0x0c
-#define STM32_GPIO_IDR		0x10
-#define STM32_GPIO_ODR		0x14
-#define STM32_GPIO_BSRR		0x18
-#define STM32_GPIO_LCKR		0x1c
-#define STM32_GPIO_AFRL		0x20
-#define STM32_GPIO_AFRH		0x24
 
 #define STM32_GPIO_PINS_PER_BANK 16
 #define OF_GPIO_ARGS_MIN 4
@@ -134,6 +124,9 @@ struct stm32_pinctrl {
 	struct regmap		*regmap;
 	struct regmap_field	*irqmux[STM32_GPIO_PINS_PER_BANK];
 };
+
+/* Reconfiguration disabled mask, per port */
+static u32 stm32_reconf_dis[STM32_GPIO_PORTS];
 
 static inline int stm32_gpio_pin(int gpio)
 {
@@ -660,6 +653,8 @@ static int stm32_gpiolib_register_bank(struct stm32_pinctrl *info,
 	 */
 	val = readl_relaxed(bank->base + STM32_GPIO_MODER);
 	for (i = 0; i < STM32_GPIO_PINS_PER_BANK; i++) {
+		if (stm32_reconf_dis[bank_num] & BIT(i))
+			continue;
 		if (val & GENMASK(i * 2 + 1, i * 2))
 			continue;
 		val |= GENMASK(i * 2 + 1, i * 2);
@@ -726,6 +721,20 @@ int stm32_pctrl_alt_to_analog(struct platform_device *pdev, u32 *moder, u32 len)
 	return 0;
 }
 EXPORT_SYMBOL(stm32_pctrl_alt_to_analog);
+
+/*
+ * Disable reconfiguting the specified pins during pinctrl initialization
+ */
+int stm32_pctrl_reconf_disable(int bank, u32 mask)
+{
+	if (bank >= ARRAY_SIZE(stm32_reconf_dis))
+		return -EINVAL;
+
+	stm32_reconf_dis[bank] |= mask;
+
+	return 0;
+}
+EXPORT_SYMBOL(stm32_pctrl_reconf_disable);
 
 static int stm32_pctrl_dt_setup_irq(struct platform_device *pdev,
 			   struct stm32_pinctrl *pctl)
