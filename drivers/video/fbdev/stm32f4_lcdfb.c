@@ -400,9 +400,13 @@ static int map_video_memory(struct fb_info *info)
 
 static void unmap_video_memory(struct fb_info *info)
 {
+	dma_addr_t dmem = 0;
+
+	dmamem_fb_get(&dmem, 0);
+
 	mutex_lock(&info->mm_lock);
 
-	if (info->screen_base)
+	if (info->screen_base && dmem != info->screen_base)
 		kfree(info->screen_base);
 
 	info->screen_base = NULL;
