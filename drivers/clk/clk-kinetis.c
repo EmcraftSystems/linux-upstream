@@ -322,6 +322,13 @@ static void __init kinetis_mcg_init(struct device_node *np)
 			KINETIS_CG_IDX(KINETIS_CG_USBFS), 0, NULL);
 
 	/*
+	 * USBHS clock
+	 */
+	clk[CLOCK_USBHS] = clk_register_gate(NULL, "USBHS", "MCGOUTCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_USBHS)]),
+			KINETIS_CG_IDX(KINETIS_CG_USBHS), 0, NULL);
+
+	/*
 	 * ADC clocks
 	 */
 	clk[CLOCK_ADC0] = clk_register_gate(NULL, "ADC0", "PCLK", 0,

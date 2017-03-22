@@ -26,10 +26,11 @@
 #define CLOCK_I2C0		22
 #define CLOCK_I2C1		23
 #define CLOCK_USBFS		24
-#define CLOCK_ADC0		25
-#define CLOCK_ADC1		26
-#define CLOCK_ADC2		27
-#define CLOCK_ADC3		28
-#define CLOCK_END		29
+#define CLOCK_USBHS		25
+#define CLOCK_ADC0		26
+#define CLOCK_ADC1		27
+#define CLOCK_ADC2		28
+#define CLOCK_ADC3		29
+#define CLOCK_END		30
 
 #endif /* _DT_BINDINGS_CLOCK_KINETIS_MCG_H */

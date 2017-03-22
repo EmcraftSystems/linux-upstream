@@ -43,6 +43,13 @@
 		clock-frequency = <50000000>;
 	};
 
+	usbhs_clk: ulpi_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <60000000>;
+	};
+
+
 	soc {
 		uart0: serial@4006a000 {
 			compatible = "fsl,kinetis-lpuart";
@@ -321,6 +328,32 @@
 			interrupts = <73>;
 			clocks = <&mcg CLOCK_USBFS>;
 			clock-names = "khci";
+			status = "disabled";
+		};
+
+		usb_phy_hs: phy_hs {
+			compatible = "usb-nop-xceiv";
+			clocks = <&usbhs_clk>;
+			clock-names = "main_clk";
+			#phy-cells = <0>;
+		};
+
+		usbmisc0: usbm@40034800 {
+			#index-cells = <1>;
+			compatible = "fsl,vf610-usbmisc";
+			/* fake device, there are no such reg region */
+			reg = <0x40034800 0x200>;
+			status = "disabled";
+		};
+
+		usbhs: usbhs@40034000 {
+			compatible = "fsl,imx27-usb";
+			reg = <0x40034000 0x400>;
+			interrupts = <96>;
+			fsl,usbphy = <&usb_phy_hs>;
+			fsl,usbmisc = <&usbmisc0 0>;
+			clocks = <&mcg CLOCK_USBHS>;
+			clock-names = "hs_clk";
 			status = "disabled";
 		};
 
