@@ -11,6 +11,7 @@
 #define V7M_SCB_ICSR			0x04
 #define V7M_SCB_ICSR_PENDSVSET			(1 << 28)
 #define V7M_SCB_ICSR_PENDSVCLR			(1 << 27)
+#define V7M_SCB_ICSR_PENDSTCLR			(1 << 25)
 #define V7M_SCB_ICSR_RETTOBASE			(1 << 11)
 
 #define V7M_SCB_VTOR			0x08
@@ -52,5 +53,23 @@
 enum reboot_mode;
 
 void armv7m_restart(enum reboot_mode mode, const char *cmd);
+
+/*
+ * Run ARM V7M SysTick timer with `usec` timeout, and call `cb` (with `arg`)
+ * upon completion. SysTick will run periodically while `cb` returns 0
+ */
+int armv7m_systick_run(u32 usec, int (*func)(void *arg), void *arg);
+
+/*
+ * Stop ARM V7M SysTick timer
+ */
+int armv7m_systick_stop(void);
+
+/*
+ * ARM V7M SysTick Interrupt save/restore macros
+ */
+void _armv7m_systick_irq_upd(unsigned long *flags, int save);
+#define armv7m_systick_irq_save(f)	_armv7m_systick_irq_upd(&(f), 1)
+#define armv7m_systick_irq_restore(f)	_armv7m_systick_irq_upd(&(f), 0)
 
 #endif /* __ASSEMBLY__ */
