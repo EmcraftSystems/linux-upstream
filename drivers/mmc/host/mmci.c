@@ -1621,6 +1621,7 @@ static int mmci_probe(struct amba_device *dev,
 	struct variant_data *variant = id->data;
 	struct mmci_host *host;
 	struct mmc_host *mmc;
+	struct gpio_descs *pwr;
 	int ret;
 
 	/* Must have platform data or Device Tree. */
@@ -1853,6 +1854,18 @@ static int mmci_probe(struct amba_device *dev,
 		 dev->irq[0], dev->irq[1]);
 
 	mmci_dma_setup(host);
+
+	pwr = gpiod_get_array_optional(&dev->dev, "power", GPIOD_OUT_HIGH);
+	if (!IS_ERR_OR_NULL(pwr)) {
+		int i;
+		for (i = 0; i < pwr->ndescs; ++i)
+			gpiod_set_value(pwr->desc[i], 0);
+		msleep(100);
+		for (i = 0; i < pwr->ndescs; ++i)
+			gpiod_set_value(pwr->desc[i], 1);
+		msleep(100);
+	}
+	gpiod_put_array(pwr);
 
 	pm_runtime_set_autosuspend_delay(&dev->dev, 50);
 	pm_runtime_use_autosuspend(&dev->dev);
