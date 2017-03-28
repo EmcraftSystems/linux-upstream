@@ -27,6 +27,8 @@
 #include <linux/vmalloc.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
+#include <linux/kthread.h>
+#include <linux/freezer.h>
 
 #include "wlcore.h"
 #include "debug.h"
@@ -54,6 +56,7 @@ static void __wl1271_op_remove_interface(struct wl1271 *wl,
 					 bool reset_tx_queues);
 static void wlcore_op_stop_locked(struct wl1271 *wl);
 static void wl1271_free_ap_keys(struct wl1271 *wl, struct wl12xx_vif *wlvif);
+static int wlcore_poll_task(void *param);
 
 static int wl12xx_set_authorized(struct wl1271 *wl, struct wl12xx_vif *wlvif)
 {
@@ -983,8 +986,14 @@ static void wl1271_recovery_work(struct work_struct *work)
 {
 	struct wl1271 *wl =
 		container_of(work, struct wl1271, recovery_work);
+	struct wlcore_platdev_data *pdev_data = dev_get_platdata(&wl->pdev->dev);
 	struct wl12xx_vif *wlvif;
 	struct ieee80211_vif *vif;
+
+	if (pdev_data->poll && wl->poll_thread) {
+		kthread_stop(wl->poll_thread);
+		wl->poll_thread = NULL;
+	}
 
 	mutex_lock(&wl->mutex);
 
@@ -1933,7 +1942,17 @@ out:
 
 static int wl1271_op_start(struct ieee80211_hw *hw)
 {
+	struct wl1271 *wl = hw->priv;
+	struct wlcore_platdev_data *pdev_data = dev_get_platdata(&wl->pdev->dev);
 	wl1271_debug(DEBUG_MAC80211, "mac80211 start");
+
+	if (pdev_data->poll && !wl->poll_thread) {
+		wl->poll_thread = kthread_run(wlcore_poll_task, wl, "wlcore_poll_task");
+		if (IS_ERR_OR_NULL(wl->poll_thread)) {
+			wl1271_error("Unable to start polling thread %p: %ld", wl->poll_thread, PTR_ERR(wl->poll_thread));
+			wl->poll_thread = NULL;
+		}
+	}
 
 	/*
 	 * We have to delay the booting of the hardware because
@@ -2061,6 +2080,7 @@ static void wlcore_op_stop_locked(struct wl1271 *wl)
 static void wlcore_op_stop(struct ieee80211_hw *hw)
 {
 	struct wl1271 *wl = hw->priv;
+	struct wlcore_platdev_data *pdev_data = dev_get_platdata(&wl->pdev->dev);
 
 	wl1271_debug(DEBUG_MAC80211, "mac80211 stop");
 
@@ -2069,6 +2089,11 @@ static void wlcore_op_stop(struct ieee80211_hw *hw)
 	wlcore_op_stop_locked(wl);
 
 	mutex_unlock(&wl->mutex);
+
+	if (pdev_data->poll && wl->poll_thread) {
+		kthread_stop(wl->poll_thread);
+		wl->poll_thread = NULL;
+	}
 }
 
 static void wlcore_channel_switch_work(struct work_struct *work)
@@ -6248,6 +6273,7 @@ struct ieee80211_hw *wlcore_alloc_hw(size_t priv_size, u32 aggr_buf_size,
 	wl->active_sta_count = 0;
 	wl->active_link_count = 0;
 	wl->fwlog_size = 0;
+	wl->poll_thread = NULL;
 	init_waitqueue_head(&wl->fwlog_waitq);
 
 	/* The system link is always allocated */
@@ -6377,6 +6403,23 @@ static const struct wiphy_wowlan_support wlcore_wowlan_support = {
 static irqreturn_t wlcore_hardirq(int irq, void *cookie)
 {
 	return IRQ_WAKE_THREAD;
+}
+
+static int wlcore_poll_task(void *param)
+{
+	struct wl1271 *wl = param;
+
+	set_freezable();
+
+	while (!kthread_should_stop()) {
+		schedule_timeout_interruptible(msecs_to_jiffies(10));
+
+		wlcore_irq(0, wl);
+
+		try_to_freeze();
+	}
+
+	return 0;
 }
 
 static void wlcore_nvs_cb(const struct firmware *fw, void *context)
