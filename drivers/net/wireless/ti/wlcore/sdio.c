@@ -250,6 +250,7 @@ static int wlcore_probe_of(struct device *dev, int *irq,
 			     &pdev_data->ref_clock_freq);
 	of_property_read_u32(np, "tcxo-clock-frequency",
 			     &pdev_data->tcxo_clock_freq);
+	pdev_data->no_elp = !!of_get_property(np, "no_elp", NULL);
 
 	return 0;
 }

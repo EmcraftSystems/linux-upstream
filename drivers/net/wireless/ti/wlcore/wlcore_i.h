@@ -207,6 +207,7 @@ struct wlcore_platdev_data {
 	u32 ref_clock_freq;	/* in Hertz */
 	u32 tcxo_clock_freq;	/* in Hertz, tcxo is always XTAL */
 	bool pwr_in_suspend;
+	bool no_elp;
 };
 
 #define MAX_NUM_KEYS 14

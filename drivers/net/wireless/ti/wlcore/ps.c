@@ -77,6 +77,7 @@ out:
 /* Routines to toggle sleep mode while in ELP */
 void wl1271_ps_elp_sleep(struct wl1271 *wl)
 {
+	struct wlcore_platdev_data *pdev_data = dev_get_platdata(&wl->pdev->dev);
 	struct wl12xx_vif *wlvif;
 	u32 timeout;
 
@@ -85,6 +86,9 @@ void wl1271_ps_elp_sleep(struct wl1271 *wl)
 		return;
 
 	if (wl->sleep_auth != WL1271_PSM_ELP)
+		return;
+
+	if (pdev_data->no_elp)
 		return;
 
 	/* we shouldn't get consecutive sleep requests */
