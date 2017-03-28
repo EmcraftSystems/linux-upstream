@@ -1560,6 +1560,16 @@ static int mmci_sig_volt_switch(struct mmc_host *mmc, struct mmc_ios *ios)
 	return ret;
 }
 
+static void mmci_init_card(struct mmc_host *mmc, struct mmc_card *card)
+{
+	struct mmci_host *host = mmc_priv(mmc);
+
+	if (mmc_card_sdio(host->mmc->card) && host->mmc->card->cccr.multi_block) {
+		dev_info(mmc_dev(host->mmc), "Disabling multiblock support\n");
+		host->mmc->card->cccr.multi_block = 0;
+	}
+}
+
 static struct mmc_host_ops mmci_ops = {
 	.request	= mmci_request,
 	.pre_req	= mmci_pre_request,
@@ -1568,6 +1578,7 @@ static struct mmc_host_ops mmci_ops = {
 	.get_ro		= mmc_gpio_get_ro,
 	.get_cd		= mmci_get_cd,
 	.start_signal_voltage_switch = mmci_sig_volt_switch,
+	.init_card	= mmci_init_card,
 };
 
 static int mmci_of_parse(struct device_node *np, struct mmc_host *mmc)
