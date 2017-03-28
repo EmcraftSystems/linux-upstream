@@ -44,7 +44,7 @@ struct wl1271_static_data {
 };
 
 /* number of times we try to read the INIT interrupt */
-#define INIT_LOOP 20000
+#define INIT_LOOP 500
 
 /* delay between retries */
 #define INIT_LOOP_DELAY 50
