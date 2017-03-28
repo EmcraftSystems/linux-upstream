@@ -234,15 +234,22 @@ static int wlcore_probe_of(struct device *dev, int *irq,
 			   struct wlcore_platdev_data *pdev_data)
 {
 	struct device_node *np = dev->of_node;
+	struct gpio_desc *irq_gpio;
 
 	if (!np || !of_match_node(wlcore_sdio_of_match_table, np))
 		return -ENODATA;
 
-	*irq = irq_of_parse_and_map(np, 0);
-	if (!*irq) {
-		dev_err(dev, "No irq in platform data\n");
-		kfree(pdev_data);
-		return -EINVAL;
+	irq_gpio = devm_gpiod_get_optional(dev, "irq", GPIOD_IN);
+	if (irq_gpio)
+		*irq = gpiod_to_irq(irq_gpio);
+
+	if (*irq <= 0) {
+		*irq = irq_of_parse_and_map(np, 0);
+		if (!*irq) {
+			dev_err(dev, "No irq in platform data\n");
+			kfree(pdev_data);
+			return -EINVAL;
+		}
 	}
 
 	/* optional clock frequency params */
@@ -333,8 +340,11 @@ static int wl1271_probe(struct sdio_func *func,
 	memset(res, 0x00, sizeof(res));
 
 	res[0].start = irq;
-	res[0].flags = IORESOURCE_IRQ |
-		       irqd_get_trigger_type(irq_get_irq_data(irq));
+	res[0].flags = IORESOURCE_IRQ;
+	if (irqd_get_trigger_type(irq_get_irq_data(irq)))
+		res[0].flags |= irqd_get_trigger_type(irq_get_irq_data(irq));
+	else
+		res[0].flags |= IRQ_TYPE_EDGE_FALLING;
 	res[0].name = "irq";
 
 	ret = platform_device_add_resources(glue->core, res, ARRAY_SIZE(res));
