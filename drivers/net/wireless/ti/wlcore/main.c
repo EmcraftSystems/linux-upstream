@@ -2577,6 +2577,7 @@ static int wl1271_op_add_interface(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif)
 {
 	struct wl1271 *wl = hw->priv;
+	struct wlcore_platdev_data *pdev_data = dev_get_platdata(&wl->pdev->dev);
 	struct wl12xx_vif *wlvif = wl12xx_vif_to_data(vif);
 	struct vif_counter_data vif_count;
 	int ret = 0;
@@ -2648,8 +2649,17 @@ static int wl1271_op_add_interface(struct ieee80211_hw *hw,
 		memcpy(wl->addresses[0].addr, vif->addr, ETH_ALEN);
 
 		ret = wl12xx_init_fw(wl);
-		if (ret < 0)
-			goto out;
+		if (ret < 0) {
+			if (pdev_data->wlan_en_gpio) {
+				mutex_unlock(&wl->mutex);
+				set_bit(WL1271_FLAG_INTENDED_FW_RECOVERY, &wl->flags);
+				wl->state = WLCORE_STATE_RESTARTING;
+				wl1271_recovery_work(&wl->recovery_work);
+				return 0;
+			} else {
+				goto out;
+			}
+		}
 	}
 
 	ret = wl12xx_cmd_role_enable(wl, vif->addr,
