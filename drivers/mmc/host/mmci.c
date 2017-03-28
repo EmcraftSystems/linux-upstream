@@ -1585,6 +1585,7 @@ static int mmci_of_parse(struct device_node *np, struct mmc_host *mmc)
 {
 	struct mmci_host *host = mmc_priv(mmc);
 	int ret = mmc_of_parse(mmc);
+	u32 req_end_udelay;
 
 	if (ret)
 		return ret;
@@ -1606,6 +1607,8 @@ static int mmci_of_parse(struct device_node *np, struct mmc_host *mmc)
 		mmc->caps |= MMC_CAP_MMC_HIGHSPEED;
 	if (of_get_property(np, "mmc-cap-sd-highspeed", NULL))
 		mmc->caps |= MMC_CAP_SD_HIGHSPEED;
+	if (!of_property_read_u32(np, "req-end-udelay", &req_end_udelay))
+		host->variant->req_end_udelay = req_end_udelay;
 
 	return 0;
 }
