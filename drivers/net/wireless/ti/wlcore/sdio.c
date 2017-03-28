@@ -259,6 +259,9 @@ static int wlcore_probe_of(struct device *dev, int *irq,
 			     &pdev_data->tcxo_clock_freq);
 	pdev_data->no_elp = !!of_get_property(np, "no_elp", NULL);
 	pdev_data->poll = !!of_get_property(np, "poll", NULL);
+	pdev_data->wlan_en_gpio = devm_gpiod_get_optional(dev, "wlan-en", GPIOD_OUT_HIGH);
+	if (IS_ERR_OR_NULL(pdev_data->wlan_en_gpio))
+		pdev_data->wlan_en_gpio = NULL;
 
 	return 0;
 }

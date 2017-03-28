@@ -29,6 +29,7 @@
 #include <linux/irq.h>
 #include <linux/kthread.h>
 #include <linux/freezer.h>
+#include <linux/gpio.h>
 
 #include "wlcore.h"
 #include "debug.h"
@@ -1033,6 +1034,14 @@ static void wl1271_recovery_work(struct work_struct *work)
 	}
 
 	wlcore_op_stop_locked(wl);
+
+	if (pdev_data->wlan_en_gpio)
+	{
+		gpiod_set_value(pdev_data->wlan_en_gpio, 0);
+		msleep(100);
+		gpiod_set_value(pdev_data->wlan_en_gpio, 1);
+		msleep(100);
+	}
 
 	ieee80211_restart_hw(wl->hw);
 

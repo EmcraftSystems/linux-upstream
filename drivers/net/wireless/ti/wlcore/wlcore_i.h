@@ -209,6 +209,7 @@ struct wlcore_platdev_data {
 	bool pwr_in_suspend;
 	bool no_elp;
 	bool poll;
+	struct gpio_desc *wlan_en_gpio;
 };
 
 #define MAX_NUM_KEYS 14
