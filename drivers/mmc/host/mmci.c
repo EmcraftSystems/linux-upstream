@@ -234,7 +234,7 @@ static struct variant_data variant_stm32f4 = {
 	.clkreg_neg_edge_enable	= MCI_ST_UX500_NEG_EDGE,
 	.datalength_bits	= 24,
 	.dma_max_req		= 262144, /* ((1 << 16) - 1) * 4 */
-	.datactrl_mask_sdio	= MCI_ST_DPSM_SDIOEN,
+	.datactrl_mask_sdio	= MCI_DPSM_ST_SDIOEN | MCI_DPSM_MODE,
 	.req_end_udelay		= 1,
 	.st_sdio		= true,
 	.st_clkdiv		= true,
@@ -291,7 +291,7 @@ static int mmci_validate_data(struct mmci_host *host,
 	if (!data)
 		return 0;
 
-	if (!is_power_of_2(data->blksz)) {
+	if (!(host->mmc->card && mmc_card_sdio(host->mmc->card)) && !is_power_of_2(data->blksz)) {
 		dev_err(mmc_dev(host->mmc),
 			"unsupported block size (%d bytes)\n", data->blksz);
 		return -EINVAL;
@@ -859,12 +859,7 @@ static void mmci_start_data(struct mmci_host *host, struct mmc_data *data)
 	blksz_bits = ffs(data->blksz) - 1;
 	BUG_ON(1 << blksz_bits != data->blksz);
 
-	if (variant->blksz_datactrl16)
-		datactrl = MCI_DPSM_ENABLE | (data->blksz << 16);
-	else if (variant->blksz_datactrl4)
-		datactrl = MCI_DPSM_ENABLE | (data->blksz << 4);
-	else
-		datactrl = MCI_DPSM_ENABLE | blksz_bits << 4;
+	datactrl = MCI_DPSM_ENABLE;
 
 	if (data->flags & MMC_DATA_READ)
 		datactrl |= MCI_DPSM_DIRECTION;
@@ -888,6 +883,13 @@ static void mmci_start_data(struct mmci_host *host, struct mmc_data *data)
 			clk = host->clk_reg | variant->clkreg_enable;
 
 		mmci_write_clkreg(host, clk);
+	} else {
+		if (variant->blksz_datactrl16)
+			datactrl |= data->blksz << 16;
+		else if (variant->blksz_datactrl4)
+			datactrl |= data->blksz << 4;
+		else
+			datactrl |= blksz_bits << 4;
 	}
 
 	if (host->mmc->ios.timing == MMC_TIMING_UHS_DDR50 ||
