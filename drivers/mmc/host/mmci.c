@@ -242,7 +242,6 @@ static struct variant_data variant_stm32f4 = {
 	.f_max			= 100000000,
 	.signal_direction	= true,
 	.pwrreg_clkgate		= true,
-	.busy_detect		= true,
 	.pwrreg_nopower		= true,
 	.flow_controller	= true,
 	.no_sgio		= true,
@@ -907,15 +906,7 @@ static void mmci_start_data(struct mmci_host *host, struct mmc_data *data)
 	mmci_init_sg(host, data);
 
 	if (data->flags & MMC_DATA_READ) {
-		irqmask = MCI_RXFIFOHALFFULLMASK;
-
-		/*
-		 * If we have less than the fifo 'half-full' threshold to
-		 * transfer, trigger a PIO interrupt as soon as any data
-		 * is available.
-		 */
-		if (host->size < variant->fifohalfsize)
-			irqmask |= MCI_RXDATAAVLBLMASK;
+		irqmask = MCI_RXFIFOHALFFULLMASK | MCI_RXDATAAVLBLMASK;
 	} else {
 		/*
 		 * We don't actually need to include "FIFO empty" here
