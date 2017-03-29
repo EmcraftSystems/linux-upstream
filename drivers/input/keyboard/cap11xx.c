@@ -519,7 +519,7 @@ static int cap11xx_i2c_probe(struct i2c_client *i2c_client,
 	}
 
 	error = devm_request_threaded_irq(dev, priv->irq, NULL, cap11xx_thread_func,
-					  IRQF_ONESHOT, dev_name(dev), priv);
+					  IRQF_ONESHOT | IRQF_SHARED, dev_name(dev), priv);
 	if (error)
 		return error;
 
