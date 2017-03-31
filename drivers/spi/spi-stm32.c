@@ -53,6 +53,8 @@
 /*
  * Some bits in various CSRs
  */
+#define SPI_CR1_BIDIMODE		(1 << 15)
+#define SPI_CR1_BIDIOE			(1 << 14)
 #define SPI_CR1_DFF			(1 << 11)
 #define SPI_CR1_SSM			(1 << 9)
 #define SPI_CR1_SSI			(1 << 8)
@@ -247,6 +249,13 @@ static int stm32_spi_hw_init(struct spi_stm32 *c)
 	c->regs->cr1 |= SPI_CR1_SSM | SPI_CR1_SSI;
 
 	/*
+	 * Select 1-line bidirectional transmit-only mode is DMA is set
+	 * for TX-only.
+	 */
+	if (c->dma_use && !c->dma_rx.chan)
+		c->regs->cr1 |= SPI_CR1_BIDIMODE | SPI_CR1_BIDIOE;
+
+	/*
 	 * Set the transfer protocol. We are using the Motorola
 	 * SPI mode, with no API to configure it to
 	 * some other mode. The Motorola mode is default, so
@@ -256,8 +265,10 @@ static int stm32_spi_hw_init(struct spi_stm32 *c)
 	/*
 	 * Enable DMA if necessary
 	 */
-	if (c->dma_use)
+	if (c->dma_use && c->dma_rx.chan)
 		c->regs->cr2 |= SPI_CR2_TXDMAEN | SPI_CR2_RXDMAEN;
+	else if (c->dma_use)
+		c->regs->cr2 |= SPI_CR2_TXDMAEN;
 	else
 		c->regs->cr2 |= SPI_CR2_RXNEIE;
 
@@ -838,13 +849,13 @@ static void stm32_spi_dma_xf_done(struct spi_stm32 *c)
 	/*
 	 * If rx or tx is still running - do nothing
 	 */
-	if (c->dma_rx.dsc || c->dma_tx.dsc)
+	if ((c->dma_rx.chan && c->dma_rx.dsc) || c->dma_tx.dsc)
 		goto out;
 
 	/*
 	 * If the entire transfer has been received, that's it.
 	 */
-	if (c->ri == c->len) {
+	if (c->ti == c->len) {
 		c->xfer_status = 0;
 		wake_up(&c->wait);
 		goto out;
@@ -882,6 +893,9 @@ static int stm32_spi_dma_rx_next(struct spi_stm32 *c)
 	dma_addr_t buf_dma;
 	char *buf;
 	int rv, len;
+
+	if (!dma->chan)
+		return 0;
 
 	/*
 	 * Check if Rx DMA is idle
@@ -949,6 +963,9 @@ static int stm32_spi_dma_rx_init(struct spi_stm32 *c)
 	struct device *dev = c->dev;
 	struct dma_slave_config cfg;
 	int rv;
+
+	if (!dma->chan)
+		return 0;
 
 	/* Configure the slave DMA */
 	memset(&cfg, 0, sizeof(cfg));
@@ -1119,9 +1136,11 @@ static int stm32_spi_dma_xfer(struct spi_stm32 *c, int *rlen)
 
 out:
 	if (rv) {
-		dmaengine_terminate_all(c->dma_rx.chan);
-		c->dma_rx.cookie = -EINVAL;
-		c->dma_rx.dsc = NULL;
+		if (c->dma_rx.chan) {
+			dmaengine_terminate_all(c->dma_rx.chan);
+			c->dma_rx.cookie = -EINVAL;
+			c->dma_rx.dsc = NULL;
+		}
 
 		dmaengine_terminate_all(c->dma_tx.chan);
 		c->dma_tx.cookie = -EINVAL;
@@ -1423,20 +1442,19 @@ static int stm32_spi_probe(struct platform_device *pdev)
 	c->dma_use = false;
 	if (of_get_property(np, "dmas", NULL) &&
 	    of_get_property(np, "st,use-dma", NULL)) {
-		dma = &c->dma_rx;
-		memset(dma, 0, sizeof(struct stm32_dma_data));
-		dma->chan = dma_request_slave_channel(dev, "rx");
-		if (!dma->chan) {
-			dev_err(dev, "%s: no dma-rx found\n", __func__);
-			goto Error_release_dma;
-		}
-
 		dma = &c->dma_tx;
 		memset(dma, 0, sizeof(struct stm32_dma_data));
 		dma->chan = dma_request_slave_channel(dev, "tx");
 		if (!dma->chan) {
 			dev_err(dev, "%s: no dma-tx found\n", __func__);
 			goto Error_release_dma;
+		}
+
+		dma = &c->dma_rx;
+		memset(dma, 0, sizeof(struct stm32_dma_data));
+		dma->chan = dma_request_slave_channel(dev, "rx");
+		if (!dma->chan) {
+			dev_warn(dev, "%s: no dma-rx found; switching to tx-only\n", __func__);
 		}
 
 		c->dma_use = true;
