@@ -344,6 +344,16 @@ static void __init kinetis_mcg_init(struct device_node *np)
 			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_ADC3)]),
 			KINETIS_CG_IDX(KINETIS_CG_ADC3), 0, NULL);
 
+	/*
+	 * FlexCAN clock
+	 */
+	clk[CLOCK_CAN0] = clk_register_gate(NULL, "CAN0", "MCGOUTCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_CAN0)]),
+			KINETIS_CG_IDX(KINETIS_CG_CAN0), 0, NULL);
+	clk[CLOCK_CAN1] = clk_register_gate(NULL, "CAN1", "MCGOUTCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_CAN1)]),
+			KINETIS_CG_IDX(KINETIS_CG_CAN1), 0, NULL);
+
 	of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data);
 }
 

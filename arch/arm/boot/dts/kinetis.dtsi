@@ -365,5 +365,25 @@
 				<&mcg CLOCK_ADC2>, <&mcg CLOCK_ADC3>;
 			clock-names = "adc0", "adc1", "adc2", "adc3";
 		};
+
+		can0: flexcan@40024000 {
+			compatible = "fsl,kinetis-flexcan";
+			reg = <0x40024000 0x4000>;
+			interrupts = <29>, <30>, <31>, <32>, <33>, <34>;
+			clocks = <&mcg CLOCK_CAN0>,
+				<&mcg CLOCK_PCLK>;
+			clock-names = "ipg", "per";
+			status = "disabled";
+		};
+
+		can1: flexcan@400a4000 {
+			compatible = "fsl,kinetis-flexcan";
+			reg = <0x400a4000 0x4000>;
+			interrupts = <37>, <38>, <39>, <40>, <41>, <42>;
+			clocks = <&mcg CLOCK_CAN1>,
+				<&mcg CLOCK_PCLK>;
+			clock-names = "ipg", "per";
+			status = "disabled";
+		};
 	};
 };

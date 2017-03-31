@@ -31,6 +31,8 @@
 #define CLOCK_ADC1		27
 #define CLOCK_ADC2		28
 #define CLOCK_ADC3		29
-#define CLOCK_END		30
+#define CLOCK_CAN0		30
+#define CLOCK_CAN1		31
+#define CLOCK_END		32
 
 #endif /* _DT_BINDINGS_CLOCK_KINETIS_MCG_H */
