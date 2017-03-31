@@ -89,6 +89,8 @@ struct stm32_dma_data {
 	struct dma_chan			*chan;
 	dma_cookie_t			cookie;
 	struct scatterlist		sg;
+	dma_addr_t			buf_dma;
+	int				len_dma;
 };
 
 /*
@@ -860,12 +862,15 @@ out:
 static void stm32_spi_dma_rx_done(void *arg)
 {
 	struct spi_stm32 *c = arg;
+	struct device *dev = c->dev;
 	struct stm32_dma_data *dma = &c->dma_rx;
 
 	d_printk(1, "%s %d of %d\n", __func__, c->ri, c->len);
 
 	dma->cookie = -EINVAL;
 	dma->dsc = NULL;
+	dma_sync_single_for_cpu(dev, dma->buf_dma, dma->len_dma, DMA_FROM_DEVICE);
+	dma_unmap_single(dev, dma->buf_dma, dma->len_dma, DMA_FROM_DEVICE);
 
 	stm32_spi_dma_xf_done(c);
 }
@@ -874,6 +879,7 @@ static int stm32_spi_dma_rx_next(struct spi_stm32 *c)
 {
 	struct stm32_dma_data *dma = &c->dma_rx;
 	struct device *dev = c->dev;
+	dma_addr_t buf_dma;
 	char *buf;
 	int rv, len;
 
@@ -905,8 +911,14 @@ static int stm32_spi_dma_rx_next(struct spi_stm32 *c)
 		buf = &buf[c->rx_i * c->wb];
 	len = (c->rx_l - c->rx_i) <= STM32_DMA_NDT_MAX ? c->rx_l - c->rx_i :
 							 STM32_DMA_NDT_MAX;
+	buf_dma = dma_map_single(dev, buf, len, DMA_FROM_DEVICE);
+	if (dma_mapping_error(dev, buf_dma)) {
+		dev_err(dev, "DMA mapping failed\n");
+		rv = -EIO;
+		goto out;
+	}
 
-	dma->dsc = dmaengine_prep_slave_single(dma->chan, (dma_addr_t)buf, len,
+	dma->dsc = dmaengine_prep_slave_single(dma->chan, buf_dma, len,
 			DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT);
 	if (!dma->dsc) {
 		dev_err(dev, "%s: failed to send with DMA\n", __func__);
@@ -922,6 +934,8 @@ static int stm32_spi_dma_rx_next(struct spi_stm32 *c)
 	dma->dsc->callback = stm32_spi_dma_rx_done;
 	dma->dsc->callback_param = c;
 	dma->dsc->cookie = dmaengine_submit(dma->dsc);
+	dma->buf_dma = buf_dma;
+	dma->len_dma = len;
 	dma_async_issue_pending(dma->chan);
 
 	rv = 0;
@@ -953,12 +967,14 @@ static int stm32_spi_dma_rx_init(struct spi_stm32 *c)
 static void stm32_spi_dma_tx_done(void *arg)
 {
 	struct spi_stm32 *c = arg;
+	struct device *dev = c->dev;
 	struct stm32_dma_data *dma = &c->dma_tx;
 
 	d_printk(1, "%s %d of %d\n", __func__, c->ti, c->len);
 
 	dma->cookie = -EINVAL;
 	dma->dsc = NULL;
+	dma_unmap_single(dev, dma->buf_dma, dma->len_dma, DMA_TO_DEVICE);
 
 	stm32_spi_dma_xf_done(c);
 }
@@ -967,6 +983,7 @@ static int stm32_spi_dma_tx_next(struct spi_stm32 *c)
 {
 	struct stm32_dma_data *dma = &c->dma_tx;
 	struct device *dev = c->dev;
+	dma_addr_t buf_dma;
 	const char *buf;
 	int rv, len;
 
@@ -1000,8 +1017,15 @@ static int stm32_spi_dma_tx_next(struct spi_stm32 *c)
 		buf = &buf[c->tx_i * c->wb];
 	len = (c->tx_l - c->tx_i) <= STM32_DMA_NDT_MAX ? c->tx_l - c->tx_i :
 							 STM32_DMA_NDT_MAX;
+	buf_dma = dma_map_single(dev, (void *)buf, len, DMA_TO_DEVICE);
+	if (dma_mapping_error(dev, buf_dma)) {
+		dev_err(dev, "DMA mapping failed\n");
+		rv = -EIO;
+		goto out;
+	}
+	dma_sync_single_for_device(dev, buf_dma, len, DMA_TO_DEVICE);
 
-	dma->dsc = dmaengine_prep_slave_single(dma->chan, (dma_addr_t)buf, len,
+	dma->dsc = dmaengine_prep_slave_single(dma->chan, buf_dma, len,
 			DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT);
 	if (!dma->dsc) {
 		dev_err(dev, "%s: failed to send with DMA\n", __func__);
@@ -1017,6 +1041,8 @@ static int stm32_spi_dma_tx_next(struct spi_stm32 *c)
 	dma->dsc->callback = stm32_spi_dma_tx_done;
 	dma->dsc->callback_param = c;
 	dma->dsc->cookie = dmaengine_submit(dma->dsc);
+	dma->buf_dma = buf_dma;
+	dma->len_dma = len;
 	dma_async_issue_pending(dma->chan);
 
 	rv = 0;
