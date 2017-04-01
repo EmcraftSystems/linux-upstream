@@ -57,7 +57,7 @@
 /*
  * Architecture-specific low-level DMA macros
  */
-#define __arch_dma_to_pfn(dev, addr) __phys_to_pfn(addr)
+#define __arch_dma_to_pfn(dev, addr) __phys_to_pfn(PHYS_ALIAS_ADDR(addr))
 
 #define __arch_pfn_to_dma(dev, pfn) \
 		((dma_addr_t)KINETIS_DMA_ALIAS_ADDR(__pfn_to_phys(pfn)))
