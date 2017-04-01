@@ -82,7 +82,7 @@ int khci_hc_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 
 	dbg(1, "%s(0x%x,%d,%d)\n", __func__, typeReq, wValue, wIndex);
 
-	spin_lock_irqsave(&khci->lock, flags);
+	local_irq_save(flags);
 
 	switch (typeReq) {
 	case GetHubDescriptor:
@@ -101,13 +101,13 @@ int khci_hc_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 	case SetPortFeature:
 		switch (wValue) {
 		case USB_PORT_FEAT_RESET:
-			spin_unlock_irqrestore(&khci->lock, flags);
+			local_irq_restore(flags);
 
 			khci->reg->ctl |= KHCI_CTL_RESET;
 			msleep(30);
 			khci->reg->ctl &= ~KHCI_CTL_RESET;
 
-			spin_lock_irqsave(&khci->lock, flags);
+			local_irq_save(flags);
 			break;
 		case USB_PORT_FEAT_POWER:
 			khci->vrh.port.wPortStatus |= USB_PORT_STAT_POWER;
@@ -131,7 +131,7 @@ int khci_hc_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 		break;
 	}
 
-	spin_unlock_irqrestore(&khci->lock, flags);
+	local_irq_restore(flags);
 
 	return rv;
 }

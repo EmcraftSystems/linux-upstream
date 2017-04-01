@@ -204,7 +204,6 @@ struct khci_bd {
  * KHCI device descriptor
  */
 struct khci_hcd {
-	spinlock_t		lock;
 	struct device		*dev;
 
 	volatile struct khci_reg *reg;	/* Register map */

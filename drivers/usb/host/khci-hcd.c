@@ -276,7 +276,6 @@ static int khci_probe(struct platform_device *pdev)
 	}
 	clk_prepare_enable(dev->clk);
 
-	spin_lock_init(&dev->lock);
 	dev->reg = reg;
 
 	INIT_LIST_HEAD(&dev->ctrl_lst);
@@ -425,19 +424,18 @@ static void khci_hc_stop(struct usb_hcd *hcd)
 static void khci_hc_endpoint_dis(struct usb_hcd *hcd,
 				 struct usb_host_endpoint *hep)
 {
-	struct khci_hcd	*khci = hcd_to_khci(hcd);
 	struct khci_ep	*kep;
 	unsigned long	flags;
 
 	dbg(1, "%s EP:%p.%p\n", __func__, hep, hep->hcpriv);
 
-	spin_lock_irqsave(&khci->lock, flags);
+	local_irq_save(flags);
 
 	kep = hep->hcpriv;
 	if (kep)
 		khci_ep_free(kep);
 
-	spin_unlock_irqrestore(&khci->lock, flags);
+	local_irq_restore(flags);
 }
 
 /*

@@ -84,7 +84,7 @@ struct khci_urb *khci_urb_alloc(struct khci_hcd *khci, struct urb *urb)
 	struct khci_ep	*kep = urb->ep->hcpriv;
 	struct khci_urb	*kurb;
 
-	kurb = kmalloc(sizeof(struct khci_urb), GFP_KERNEL);
+	kurb = kmalloc(sizeof(struct khci_urb), GFP_ATOMIC);
 	if (!kurb)
 		goto out;
 
@@ -145,7 +145,7 @@ struct khci_td *khci_td_alloc(struct khci_urb *kurb)
 {
 	struct khci_td	*td;
 
-	td = kmalloc(sizeof(struct khci_td), GFP_KERNEL);
+	td = kmalloc(sizeof(struct khci_td), GFP_ATOMIC);
 	if (!td)
 		goto out;
 
@@ -254,9 +254,7 @@ int khci_urb_free(struct khci_urb *kurb)
 		struct usb_hcd	*hcd = khci_to_hcd(khci);
 
 		usb_hcd_unlink_urb_from_ep(hcd, urb);
-		spin_unlock(&khci->lock);
 		usb_hcd_giveback_urb(hcd, urb, kurb->status);
-		spin_lock(&khci->lock);
 	}
 	kfree(kurb);
 out:
@@ -271,12 +269,12 @@ void khci_td_free(struct khci_td *td)
 	struct khci_hcd	*khci = td->khci;
 	unsigned long	flags;
 
-	spin_lock_irqsave(&khci->lock, flags);
+	local_irq_save(flags);
 	if (!list_empty(&td->node))
 		dbg(0, "%s remove linked td(%p)\n", __func__, td);
 	if (khci->td == td)
 		khci->td = NULL;
 	kfree(td);
 
-	spin_unlock_irqrestore(&khci->lock, flags);
+	local_irq_restore(flags);
 }

@@ -104,12 +104,10 @@ int khci_hc_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flags)
 		goto out;
 	}
 
-	spin_lock_irqsave(&khci->lock, flags);
-
 	rv = usb_hcd_link_urb_to_ep(hcd, urb);
 	if (rv) {
 		dbg(0, "link URB fail %d\n", rv);
-		goto out_spin;
+		goto out;
 	}
 
 	kep = urb->ep->hcpriv ? urb->ep->hcpriv : khci_ep_alloc(khci, urb);
@@ -142,16 +140,17 @@ int khci_hc_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flags)
 
 	if (rv) {
 		khci_urb_free(kurb);
-		goto out_spin;
+		goto out_unlink;
 	}
 
 	kurb->state = KHCI_URB_IDLE;
+
+	local_irq_save(flags);
 	khci_ep_process(khci);
+	local_irq_restore(flags);
 out_unlink:
 	if (rv)
 		usb_hcd_unlink_urb_from_ep(hcd, urb);
-out_spin:
-	spin_unlock_irqrestore(&khci->lock, flags);
 out:
 	return rv;
 }
@@ -161,7 +160,6 @@ out:
  */
 int khci_hc_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 {
-	struct khci_hcd	*khci = hcd_to_khci(hcd);
 	struct khci_urb	*kurb;
 	unsigned long	flags;
 	int		rv;
@@ -169,7 +167,7 @@ int khci_hc_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 	dbg(1, "%s URB:%p(%d),EP:%p,Type:%d\n", __func__, urb, status, urb->ep,
 	    usb_endpoint_type(&urb->ep->desc));
 
-	spin_lock_irqsave(&khci->lock, flags);
+	local_irq_save(flags);
 
 	rv = usb_hcd_check_unlink_urb(hcd, urb, status);
 	if (rv)
@@ -181,7 +179,7 @@ int khci_hc_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 		khci_urb_free(kurb);
 	}
 out:
-	spin_unlock_irqrestore(&khci->lock, flags);
+	local_irq_restore(flags);
 
 	return rv;
 }
@@ -202,7 +200,7 @@ void khci_worker(struct work_struct *wrk)
 	int		msec;
 	u8		tok, done = 0;
 
-	spin_lock_irqsave(&khci->lock, flags);
+	local_irq_save(flags);
 	td = khci->td;
 	if (!td) {
 		dbg(0, "%s: called with no td\n", __func__);
@@ -271,11 +269,11 @@ void khci_worker(struct work_struct *wrk)
 
 		/*
 		 * We keep khci->td set, so even if someone decide to do
-		 * new xfer while we out of spin-lock - it will fail
+		 * new xfer while we here - it will fail
 		 */
-		spin_unlock_irqrestore(&khci->lock, flags);
+		local_irq_restore(flags);
 		msleep(msec);
-		spin_lock_irqsave(&khci->lock, flags);
+		local_irq_save(flags);
 		goto retry;
 	default:
 		dbg(0, "%s: bad TD status %d\n", __func__, td->status);
@@ -297,7 +295,7 @@ retry:
 	khci->td_state = TD_NONE;
 	khci_ep_process(khci);
 
-	spin_unlock_irqrestore(&khci->lock, flags);
+	local_irq_restore(flags);
 }
 
 /*****************************************************************************
@@ -489,9 +487,7 @@ static int khci_xfer_process_int(struct khci_hcd *khci,
 	struct khci_urb *kurb;
 	struct timeval tv;
 	u64 msec, dmsec;
-	int rv, num = 0;
-
-//	pr_err("%s %u\n", __func__, jiffies);
+	int num = 0;
 
 	/*
 	 * Get current time
@@ -538,7 +534,6 @@ next:
 
 	hrtimer_start(&khci->tmr, ktime_set(0, dmsec * 1000000),
 			   HRTIMER_MODE_REL);
-//	pr_err("%s end %u\n", __func__, jiffies);
 
 out:
 	return num;
