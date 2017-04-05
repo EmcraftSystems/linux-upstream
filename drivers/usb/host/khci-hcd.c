@@ -54,6 +54,12 @@ static const char hcd_name[] = "khci-hcd";
  */
 static int khci_probe(struct platform_device *);
 static int __init_or_module khci_remove(struct platform_device *);
+#ifdef CONFIG_PM
+static int khci_bus_suspend(struct usb_hcd *hcd);
+static int khci_bus_resume(struct usb_hcd *hcd);
+static int khci_runtime_suspend(struct device *dev);
+static int khci_runtime_resume(struct device *dev);
+#endif
 
 /*
  * Standard Linux USB HCD API
@@ -72,6 +78,17 @@ MODULE_DEVICE_TABLE(of, khci_dt_ids);
 /*****************************************************************************
  * Variables local to this module:
  *****************************************************************************/
+
+/*
+ * PM ops
+ */
+#ifdef CONFIG_PM
+static const struct dev_pm_ops khci_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(khci_runtime_suspend, khci_runtime_resume)
+	SET_RUNTIME_PM_OPS(khci_runtime_suspend, khci_runtime_resume, NULL)
+};
+#endif
+
 /*
  * USB-FS platform driver instance
  */
@@ -79,9 +96,12 @@ static struct platform_driver khci_driver = {
 	.probe		= khci_probe,
 	.remove		= khci_remove,
 	.driver		= {
-		.name	= (char *)hcd_name,
-		.owner	= THIS_MODULE,
+		.name           = (char *)hcd_name,
+		.owner          = THIS_MODULE,
 		.of_match_table = khci_dt_ids,
+#ifdef CONFIG_PM
+		.pm             = &khci_pm_ops,
+#endif
 	},
 };
 
@@ -121,6 +141,11 @@ static struct hc_driver khci_hc_drv = {
 	 */
 	.hub_status_data	= khci_hc_hub_status_data,
 	.hub_control		= khci_hc_hub_control,
+
+#ifdef CONFIG_PM
+	.bus_suspend		= khci_bus_suspend,
+	.bus_resume		= khci_bus_resume,
+#endif
 };
 
 static struct dma_pool		*khci_bdt_pool;
@@ -447,3 +472,32 @@ static int khci_hc_get_frame(struct usb_hcd *hcd)
 
 	return 0;
 }
+
+#ifdef CONFIG_PM
+static int khci_bus_suspend(struct usb_hcd *hcd)
+{
+	/* TODO */
+	return 0;
+}
+
+static int khci_bus_resume(struct usb_hcd *hcd)
+{
+	/* TODO */
+	return 0;
+}
+
+static int khci_runtime_suspend(struct device *dev)
+{
+	struct khci_hcd * hcd = dev_get_drvdata(dev);
+	clk_disable_unprepare(hcd->clk);
+	return 0;
+}
+
+static int khci_runtime_resume(struct device *dev)
+{
+	struct khci_hcd * hcd = dev_get_drvdata(dev);
+	clk_prepare_enable(hcd->clk);
+	return 0;
+}
+#endif
+
