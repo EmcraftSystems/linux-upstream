@@ -239,5 +239,6 @@ struct stm32_port {
 	u8 rx_ie;		 /* rx event int enable       */
 	bool tx_dma_busy;	 /* dma tx busy               */
 	bool tx_busy;		 /* tx busy                   */
+	bool tx_started;
 	bool hw_flow_control;
 };

@@ -397,24 +397,24 @@ static void stm32_transmit_chars_pio(struct uart_port *port)
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
 	struct circ_buf *xmit = &port->state->xmit;
 	unsigned int isr;
-	int ret;
 
 	if (stm32_port->tx_dma_busy) {
 		stm32_clr_bits(port, ofs->cr3, USART_CR3_DMAT);
 		stm32_port->tx_dma_busy = false;
 	}
 
-	ret = readl_relaxed_poll_timeout(port->membase + ofs->isr,
-					 isr,
-					 (isr & USART_SR_TXE),
-					 1, 10);
+	if (in_interrupt()) {
+		isr = readl_relaxed(port->membase + ofs->isr);
 
-	if (ret)
-		dev_err(port->dev, "tx empty not set\n");
+		if (!(isr & USART_SR_TXE))
+			dev_err(port->dev, "tx empty not set\n");
+	}
 
 	writel_relaxed(xmit->buf[xmit->tail], port->membase + ofs->tdr);
 	xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
 	port->icount.tx++;
+
+	stm32_set_bits(port, ofs->cr1, USART_CR1_TXEIE);
 }
 
 static void stm32_transmit_chars_dma(struct uart_port *port)
@@ -424,7 +424,7 @@ static void stm32_transmit_chars_dma(struct uart_port *port)
 	struct circ_buf *xmit = &port->state->xmit;
 	struct dma_async_tx_descriptor *desc = NULL;
 	dma_cookie_t cookie;
-	unsigned int count, i;
+	unsigned int count;
 
 	if (stm32port->tx_dma_busy)
 		return;
@@ -458,8 +458,7 @@ static void stm32_transmit_chars_dma(struct uart_port *port)
 					   DMA_PREP_INTERRUPT);
 
 	if (!desc) {
-		for (i = count; i > 0; i--)
-			stm32_transmit_chars_pio(port);
+		dev_err(port->dev, "tx dma failed\n");
 		return;
 	}
 
@@ -508,21 +507,13 @@ static void stm32_transmit_chars(struct uart_port *port)
 
 	if (stm32_port->tx_ch)
 		stm32_transmit_chars_dma(port);
-	else {
-		int i;
-		int count = uart_circ_chars_pending(xmit);
-		for (i = 0; i < count; ++i)
-			stm32_transmit_chars_pio(port);
-
-		if (uart_circ_empty(xmit))
-			stm32_stop_tx(port);
-		else
-			schedule_work(&stm32_port->tx_work);
+	else if (!stm32_port->tx_started) {
+		stm32_transmit_chars_pio(port);
+		stm32_port->tx_started = true;
 	}
 
 	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
 		uart_write_wakeup(port);
-
 }
 
 static irqreturn_t stm32_interrupt(int irq, void *ptr)
@@ -538,6 +529,20 @@ static irqreturn_t stm32_interrupt(int irq, void *ptr)
 		spin_lock(&port->lock);
 		stm32_receive_chars(port, false);
 		spin_unlock(&port->lock);
+	}
+
+	if ((sr & USART_SR_TXE) && !(stm32_port->tx_ch)) {
+		struct circ_buf *xmit = &port->state->xmit;
+
+		if (!uart_circ_empty(xmit))
+			stm32_transmit_chars_pio(port);
+
+		if (uart_tx_stopped(port) || uart_circ_empty(xmit)) {
+			stm32_stop_tx(port);
+			uart_write_wakeup(port);
+		} else if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS) {
+			uart_write_wakeup(port);
+		}
 	}
 
 	if (stm32_port->rx_ch) {
@@ -615,6 +620,7 @@ static void stm32_stop_tx(struct uart_port *port)
 		else
 			stm32_port->tx_busy = false;
 	}
+	stm32_port->tx_started = false;
 }
 
 /* There are probably characters waiting to be transmitted. */
@@ -1179,6 +1185,7 @@ static int stm32_serial_probe(struct platform_device *pdev)
 					      USART_CR1_RXNEIE;
 
 	stm32port->tx_busy = false;
+	stm32port->tx_started = false;
 	ret = stm32_of_dma_tx_probe(stm32port, pdev);
 	if (ret)
 		dev_info(&pdev->dev, "interrupt mode used for tx (no dma)\n");
