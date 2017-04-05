@@ -40,6 +40,7 @@ static void __iomem *clkevt_base;
 static unsigned long cycle_per_jiffy;
 static void __iomem *timer_base;
 static long int pm_pit_state[7];
+static int pit_cnt = -1;
 
 static inline void pit_timer_enable(void)
 {
@@ -132,16 +133,16 @@ static int vf610_pit_notifier(struct notifier_block *self,
 
 	switch (cmd) {
 	case CPU_CLUSTER_PM_ENTER:
-		for (i = 0; i < 7; i++)
+		for (i = 0; i < pit_cnt; i++)
 			pm_pit_state[i] =
 				readl_relaxed(timer_base + PITn_CTRL(i));
-		for (i = 0; i < 7; i++)
+		for (i = 0; i < pit_cnt; i++)
 			if (i != 2 && i != 3) /* skip clksrc/clkevt */
 				writel_relaxed(0, timer_base + PITn_CTRL(i));
 		break;
 	case CPU_CLUSTER_PM_ENTER_FAILED:
 	case CPU_CLUSTER_PM_EXIT:
-		for (i = 0; i < 7; i++)
+		for (i = 0; i < pit_cnt; i++)
 			if (i != 2 && i != 3) /* skip clksrc/clkevt */
 				writel_relaxed(pm_pit_state[i],
 					timer_base + PITn_CTRL(i));
@@ -227,6 +228,10 @@ static void __init pit_timer_init(struct device_node *np)
 	BUG_ON(pit_clocksource_init(clk_rate));
 
 	pit_clockevent_init(clk_rate, irq);
+
+	of_property_read_u32(np, "pit_cnt", &pit_cnt);
+	if (pit_cnt < 0 || pit_cnt > 7)
+		pit_cnt = 7;
 
 	cpu_pm_register_notifier(&pit_notifier_block);
 }

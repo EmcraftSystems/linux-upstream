@@ -226,6 +226,7 @@
 			interrupts = <71>;
 			clocks = <&mcg CLOCK_PIT>;
 			clock-names = "pit";
+			pit_cnt = <4>;
 		};
 
 		mcg: cmu@40064000 {
