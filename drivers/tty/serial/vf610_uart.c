@@ -53,7 +53,7 @@
 #define DEV_NAME	"ttymxc"
 #define UART_NR		6
 
-#define TXTL 2 /* reset default */
+#define TXTL 0 /* reset default */
 #define RXTL 1 /* reset default */
 
 /* half the RX buffer size */
@@ -443,6 +443,8 @@ static void dma_rx_fetch(struct imx_port *sport)
 		sport->dma_rx_prev_residue = state.residue;
 	}
 
+	dma_sync_single_for_device(sport->port.dev, sport->dma_rx_buf_phys, sport->dma_rx_len, DMA_FROM_DEVICE);
+
 	spin_unlock(&sport->port.lock);
 
 	tty_flip_buffer_push(port);
@@ -458,6 +460,7 @@ static void imx_dma_rx_timeout(unsigned long data)
 static void dma_rx_callback(void *data)
 {
 	struct imx_port *sport = (struct imx_port *)data;
+	mod_timer(&sport->dma_rx_timer, jiffies + MXC_DMA_RX_TIMEOUT);
 	dma_rx_fetch(sport);
 }
 
@@ -910,7 +913,7 @@ static void imx_break_ctl(struct uart_port *port, int break_state)
 
 static int imx_setup_watermark(struct imx_port *sport, unsigned int mode)
 {
-	unsigned char val, old_cr2, cr2;
+	unsigned char val, old_cr2, cr2, depth;
 
 	/* set receiver / transmitter trigger level.
 	 */
@@ -926,12 +929,15 @@ static int imx_setup_watermark(struct imx_port *sport, unsigned int mode)
 
 	/* Enable Tx and Rx FIFO */
 	val = readb(sport->port.membase + MXC_UARTPFIFO);
-	sport->tx_fifo_size = 0x1 << (((val >> MXC_UARTPFIFO_TXFIFOSIZE_OFF) &
-				       MXC_UARTPFIFO_TXFIFOSIZE_MASK) + 1);
-	sport->rx_fifo_size = 0x1 << (((val >> MXC_UARTPFIFO_RXFIFOSIZE_OFF) &
-				       MXC_UARTPFIFO_RXFIFOSIZE_MASK) + 1);
+	depth = (val >> MXC_UARTPFIFO_TXFIFOSIZE_OFF) &
+		MXC_UARTPFIFO_TXFIFOSIZE_MASK;
+	sport->tx_fifo_size = 0x1 << (!depth ? 0 : depth + 1);
+	depth = (val >> MXC_UARTPFIFO_RXFIFOSIZE_OFF) &
+		MXC_UARTPFIFO_RXFIFOSIZE_MASK;
+	sport->rx_fifo_size = 0x1 << (!depth ? 0 : depth + 1);
 	writeb(val | MXC_UARTPFIFO_TXFE | MXC_UARTPFIFO_RXFE,
 	       sport->port.membase + MXC_UARTPFIFO);
+	sport->port.fifosize = sport->tx_fifo_size;
 
 	/* Flush the Tx and Rx FIFO to a known state */
 	writeb(MXC_UARTCFIFO_TXFLUSH | MXC_UARTCFIFO_RXFLUSH,
