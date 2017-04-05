@@ -52,74 +52,74 @@
 
 	soc {
 		uart0: serial@4006a000 {
-			compatible = "fsl,kinetis-lpuart";
+			compatible = "fsl,vf610-uart";
 			reg = <0x4006a000 0x1000>;
 			interrupts = <45>, <46>;
 			interrupt-names = "uart-stat", "uart-err";
 			clocks = <&mcg CLOCK_UART0>;
 			clock-names = "ipg";
-			dmas = <&edma 0 2>;
-			dma-names = "rx";
+			dmas = <&edma 0 2>, <&edma 0 3>;
+			dma-names = "rx", "tx";
 			status = "disabled";
 		};
 
 		uart1: serial@4006b000 {
-			compatible = "fsl,kinetis-lpuart";
+			compatible = "fsl,vf610-uart";
 			reg = <0x4006b000 0x1000>;
 			interrupts = <47>, <48>;
 			interrupt-names = "uart-stat", "uart-err";
 			clocks = <&mcg CLOCK_UART1>;
 			clock-names = "ipg";
-			dmas = <&edma 0 4>;
-			dma-names = "rx";
+			dmas = <&edma 0 4>, <&edma 0 5>;
+			dma-names = "rx", "tx";
 			status = "disabled";
 		};
 
 		uart2: serial@4006c000 {
-			compatible = "fsl,kinetis-lpuart";
+			compatible = "fsl,vf610-uart";
 			reg = <0x4006c000 0x1000>;
 			interrupts = <49>, <50>;
 			interrupt-names = "uart-stat", "uart-err";
 			clocks = <&mcg CLOCK_UART2>;
 			clock-names = "ipg";
-			dmas = <&edma 0 6>;
-			dma-names = "rx";
+			dmas = <&edma 0 6>, <&edma 0 7>;
+			dma-names = "rx", "tx";
 			status = "disabled";
 		};
 
 		uart3: serial@4006d000 {
-			compatible = "fsl,kinetis-lpuart";
+			compatible = "fsl,vf610-uart";
 			reg = <0x4006d000 0x1000>;
 			interrupts = <51>, <52>;
 			interrupt-names = "uart-stat", "uart-err";
 			clocks = <&mcg CLOCK_UART3>;
 			clock-names = "ipg";
-			dmas = <&edma 0 8>;
-			dma-names = "rx";
+			dmas = <&edma 0 8>, <&edma 0 9>;
+			dma-names = "rx", "tx";
 			status = "disabled";
 		};
 
 		uart4: serial@400ea000 {
-			compatible = "fsl,kinetis-lpuart";
+			compatible = "fsl,vf610-uart";
 			reg = <0x400ea000 0x1000>;
 			interrupts = <53>, <54>;
 			interrupt-names = "uart-stat", "uart-err";
 			clocks = <&mcg CLOCK_UART4>;
 			clock-names = "ipg";
-			dmas = <&edma 0 10>;
-			dma-names = "rx";
+			dmas = <&edma 0 10>, <&edma 0 11>;
+			dma-names = "rx", "tx";
 			status = "disabled";
 		};
 
 		uart5: serial@400eb000 {
-			compatible = "fsl,kinetis-lpuart";
+			compatible = "fsl,vf610-uart";
 			reg = <0x400eb000 0x1000>;
 			interrupts = <55>, <56>;
 			interrupt-names = "uart-stat", "uart-err";
 			clocks = <&mcg CLOCK_UART5>;
 			clock-names = "ipg";
-			dmas = <&edma 0 12>;
-			dma-names = "rx";
+			dmas = <&edma 0 12>, <&edma 0 13>;
+			dma-names = "rx", "tx";
 			status = "disabled";
 		};
 
