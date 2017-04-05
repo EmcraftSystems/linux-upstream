@@ -831,24 +831,30 @@ static irqreturn_t imx_overrun_int(int irq, void *dev_id)
 static irqreturn_t imx_int(int irq, void *dev_id)
 {
 	struct imx_port *sport = dev_id;
-	unsigned int sts;
+	unsigned int sts1, sts2;
 
-	sts = readb(sport->port.membase + MXC_UARTSR1);
+	sts1 = readb(sport->port.membase + MXC_UARTSR1);
+	sts2 = readb(sport->port.membase + MXC_UARTSR2);
 
-	if (sts & MXC_UARTSR1_FE) {
+	if (sts1 & MXC_UARTSR1_FE) {
 		readb(sport->port.membase + MXC_UARTDR);
 	}
 
-	if (sts & MXC_UARTSR1_OR)
+	if (sts1 & MXC_UARTSR1_OR)
 		imx_overrun_int(irq, dev_id);
 
-	if (sts & MXC_UARTSR1_RDRF)
+	if (sts1 & MXC_UARTSR1_RDRF)
 		imx_rxint(irq, dev_id);
 
-	if (sts & MXC_UARTSR1_TDRE &&
+	if (sts1 & MXC_UARTSR1_TDRE &&
 	    !(readb(sport->port.membase + MXC_UARTCR5) &
 	      MXC_UARTCR5_TDMAS))
 		imx_txint(irq, dev_id);
+
+	if (sts2 & MXC_UARTSR2_RXEDGIF) {
+		writeb(sts2, sport->port.membase + MXC_UARTSR2);
+	}
+
 
 	return IRQ_HANDLED;
 }
@@ -1454,6 +1460,11 @@ static int serial_imx_suspend(struct device *dev)
 			temp = readb(sport->port.membase + MXC_UARTCR5);
 			temp &= ~MXC_UARTCR5_RDMAS;
 			writeb(temp, sport->port.membase + MXC_UARTCR5);
+
+			/* Enable RX edge interrupt */
+			temp = readb(sport->port.membase + MXC_UARTBDH);
+			temp |= MXC_UARTBDH_RXEDGIE;
+			writeb(temp, sport->port.membase + MXC_UARTBDH);
 		} else {
 			if (console_suspend_enabled ||
 					!uart_console(&sport->port))
@@ -1478,6 +1489,11 @@ static int serial_imx_resume(struct device *dev)
 			temp = readb(sport->port.membase + MXC_UARTCR5);
 			temp |= MXC_UARTCR5_RDMAS;
 			writeb(temp, sport->port.membase + MXC_UARTCR5);
+
+			/* Disable RX edge interrupt */
+			temp = readb(sport->port.membase + MXC_UARTBDH);
+			temp &= ~MXC_UARTBDH_RXEDGIE;
+			writeb(temp, sport->port.membase + MXC_UARTBDH);
 		} else {
 			if (console_suspend_enabled ||
 					!uart_console(&sport->port))
