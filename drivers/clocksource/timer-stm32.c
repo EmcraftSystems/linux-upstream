@@ -21,6 +21,7 @@
 #define TIM_DIER	0x0c
 #define TIM_SR		0x10
 #define TIM_EGR		0x14
+#define TIM_CNT		0x24
 #define TIM_PSC		0x28
 #define TIM_ARR		0x2c
 
@@ -181,4 +182,58 @@ err_clk_get:
 	return;
 }
 
-CLOCKSOURCE_OF_DECLARE(stm32, "st,stm32-timer", stm32_clockevent_init);
+static void __init stm32_clocksource_init(struct device_node *np)
+{
+	void __iomem *regs;
+	struct clk *clk = NULL;
+	unsigned long frq;
+	int ret, bits;
+
+	regs = of_iomap(np, 0);
+	if (!regs) {
+		pr_warn("%s: invalid base address\n", np->full_name);
+		goto out;
+	}
+
+	clk = of_clk_get(np, 0);
+	if (IS_ERR(clk))
+		goto out_unmap;
+
+	ret = clk_prepare_enable(clk);
+	if (ret)
+		goto out_clk_put;
+
+	frq = clk_get_rate(clk);
+	if (!frq)
+		goto out_clk_disable;
+
+	/* Detect whether the timer is 16 or 32 bits */
+	writel_relaxed(~0U, regs + TIM_ARR);
+	if (readl_relaxed(regs + TIM_ARR) == ~0U)
+		bits = 32;
+	else
+		bits = 16;
+
+	writel_relaxed(0, regs + TIM_EGR);
+	writel_relaxed(0, regs + TIM_DIER);
+	writel_relaxed(0, regs + TIM_SR);
+	writel_relaxed(BIT(4) | TIM_CR1_ARPE | TIM_CR1_CEN, regs + TIM_CR1);
+
+	ret = clocksource_mmio_init(regs + TIM_CNT, "stm32_system_timer",
+			frq, 200, bits, clocksource_mmio_readl_down);
+	if (ret) {
+out_clk_disable:
+		clk_disable_unprepare(clk);
+out_clk_put:
+		clk_put(clk);
+out_unmap:
+		iounmap(regs);
+out:
+		pr_warn("%s registration failed\n", np->full_name);
+	} else {
+		pr_info("%s initialized as clocksource\n", np->full_name);
+	}
+}
+
+CLOCKSOURCE_OF_DECLARE(stm32_timer, "st,stm32-timer", stm32_clockevent_init);
+CLOCKSOURCE_OF_DECLARE(stm32_clock, "st,stm32-clock", stm32_clocksource_init);
