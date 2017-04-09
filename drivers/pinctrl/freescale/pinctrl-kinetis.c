@@ -25,6 +25,8 @@
 
 #define MAX_PORT_NUM	6
 
+static struct kinetis_pinctrl *kpdev = NULL;
+
 /**
  * struct kinetis_pin_group - describes a single pin
  * @mux_reg: the mux register for this pin.
@@ -90,10 +92,6 @@ struct kinetis_port_regs {
 	u32 gpchr;	/* Global Pin Control High Register */
 	u32 rsv0[6];
 	u32 isfr;	/* Interrupt Status Flag Register */
-	u32 rsv1[7];
-	u32 dfer;	/* Digital Filter Enable Register */
-	u32 dfcr;	/* Digital Filter Clock Register */
-	u32 dfwr;	/* Digital Filter Width Register */
 };
 
 /*
@@ -676,6 +674,8 @@ static int kinetis_pinctrl_probe(struct platform_device *pdev)
 
 	dev_info(&pdev->dev, "initialized Kinetis I/O mux\n");
 
+	kpdev = kpctl;
+
 	return 0;
 
 err_pinctrl_register:
@@ -701,6 +701,8 @@ static int kinetis_pinctrl_remove(struct platform_device *pdev)
 		clk_disable_unprepare(kpctl->clk[cur_clk]);
 		clk_put(kpctl->clk[cur_clk]);
 	}
+
+	kpdev = NULL;
 
 	return 0;
 }
@@ -728,3 +730,37 @@ module_exit(kinetis_pinctrl_exit);
 
 MODULE_DESCRIPTION("Freescale Kinetis pinctrl driver");
 MODULE_LICENSE("GPL v2");
+
+int kinetis_pinctrl_get_isfr(int port)
+{
+	if (!kpdev || (port < 0 || port > 5))
+		return 0;
+
+
+	return KINETIS_PORT_RD(kpdev->base + 0x1000 * port, isfr);
+}
+
+void kinetis_pinctrl_set_isfr(int port, int mask)
+{
+	if (!kpdev || (port < 0 || port > 5))
+		return;
+
+	KINETIS_PORT_WR(kpdev->base + 0x1000 * port, isfr, mask);
+}
+
+void kinetis_pinctrl_set_irqc(int port, int pin, int mask)
+{
+	int val;
+
+	if (!kpdev)
+		return;
+
+	if (port < 0 || port > 5)
+		return;
+
+	if (pin < 0 || pin > 5)
+		return;
+
+	val = KINETIS_PORT_RD(kpdev->base + 0x1000 * port, pcr[pin]);
+	KINETIS_PORT_WR(kpdev->base + 0x1000 * port, pcr[pin], val | mask);
+}

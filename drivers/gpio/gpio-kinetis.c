@@ -28,12 +28,15 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_irq.h>
+#include <mach/kinetis.h>
 
 #define KINETIS_GPIO_PER_PORT		32
 
 struct kinetis_gpio_port {
 	struct gpio_chip gc;
 	void __iomem *gpio_base;
+	u8 irqc[KINETIS_GPIO_PER_PORT];
+	int irq;
 };
 
 #define GPIO_PDOR		0x00
@@ -43,11 +46,25 @@ struct kinetis_gpio_port {
 #define GPIO_PDIR		0x10
 #define GPIO_PDDR		0x14
 
+#define PORT_INT_OFF		0x0
+#define PORT_INT_LOGIC_ZERO	0x8
+#define PORT_INT_RISING_EDGE	0x9
+#define PORT_INT_FALLING_EDGE	0xa
+#define PORT_INT_EITHER_EDGE	0xb
+#define PORT_INT_LOGIC_ONE	0xc
+#define PORT_INT_MASK		0xf
+
+#define PORT_PCR_IRQC_OFFSET	16
+
 static const struct of_device_id kinetis_gpio_dt_ids[] = {
 	{ .compatible = "fsl,k70-gpio" },
 	{ .compatible = "fsl,kinetis-gpio" },
 	{ /* sentinel */ }
 };
+
+extern int kinetis_pinctrl_get_isfr(int port);
+extern void kinetis_pinctrl_set_isfr(int port, int mask);
+extern void kinetis_pinctrl_set_irqc(int port, int pin, int mask);
 
 static inline void kinetis_gpio_writel(u32 val, void __iomem *reg)
 {
@@ -100,6 +117,117 @@ static int kinetis_gpio_direction_output(struct gpio_chip *gc, unsigned gpio,
 	return 0;
 }
 
+static void kinetis_gpio_irq_handler(struct irq_desc *desc)
+{
+	struct kinetis_gpio_port *port =
+		gpiochip_get_data(irq_desc_get_handler_data(desc));
+	struct irq_chip *chip = irq_desc_get_chip(desc);
+	int pin;
+	unsigned long irq_isfr;
+
+	chained_irq_enter(chip, desc);
+
+	irq_isfr =
+		kinetis_pinctrl_get_isfr(port->gc.base / KINETIS_GPIO_PER_PORT);
+
+	for_each_set_bit(pin, &irq_isfr, KINETIS_GPIO_PER_PORT) {
+		kinetis_pinctrl_set_isfr(port->gc.base / KINETIS_GPIO_PER_PORT,
+				BIT(pin));
+
+		generic_handle_irq(irq_find_mapping(port->gc.irqdomain,
+					pin));
+	}
+
+	chained_irq_exit(chip, desc);
+}
+
+static void kinetis_gpio_irq_ack(struct irq_data *d)
+{
+	struct kinetis_gpio_port *port =
+		gpiochip_get_data(irq_data_get_irq_chip_data(d));
+	int gpio = d->hwirq;
+
+	kinetis_pinctrl_set_isfr(port->gc.base / KINETIS_GPIO_PER_PORT,
+			BIT(gpio));
+}
+
+static int kinetis_gpio_irq_set_type(struct irq_data *d, u32 type)
+{
+	struct kinetis_gpio_port *port =
+		gpiochip_get_data(irq_data_get_irq_chip_data(d));
+	u8 irqc;
+
+	switch (type) {
+	case IRQ_TYPE_EDGE_RISING:
+		irqc = PORT_INT_RISING_EDGE;
+		break;
+	case IRQ_TYPE_EDGE_FALLING:
+		irqc = PORT_INT_FALLING_EDGE;
+		break;
+	case IRQ_TYPE_EDGE_BOTH:
+		irqc = PORT_INT_EITHER_EDGE;
+		break;
+	case IRQ_TYPE_LEVEL_LOW:
+		irqc = PORT_INT_LOGIC_ZERO;
+		break;
+	case IRQ_TYPE_LEVEL_HIGH:
+		irqc = PORT_INT_LOGIC_ONE;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	port->irqc[d->hwirq] = irqc;
+
+	if (type & IRQ_TYPE_LEVEL_MASK)
+		irq_set_handler_locked(d, handle_level_irq);
+	else
+		irq_set_handler_locked(d, handle_edge_irq);
+
+	return 0;
+}
+
+static void kinetis_gpio_irq_mask(struct irq_data *d)
+{
+	struct kinetis_gpio_port *port =
+		gpiochip_get_data(irq_data_get_irq_chip_data(d));
+
+	kinetis_pinctrl_set_irqc(port->gc.base / KINETIS_GPIO_PER_PORT,
+			d->hwirq, 0);
+}
+
+static void kinetis_gpio_irq_unmask(struct irq_data *d)
+{
+	struct kinetis_gpio_port *port =
+		gpiochip_get_data(irq_data_get_irq_chip_data(d));
+
+	kinetis_pinctrl_set_irqc(port->gc.base / KINETIS_GPIO_PER_PORT,
+			d->hwirq, port->irqc[d->hwirq] << 16);
+}
+
+static int kinetis_gpio_irq_set_wake(struct irq_data *d, u32 enable)
+{
+	struct kinetis_gpio_port *port =
+		gpiochip_get_data(irq_data_get_irq_chip_data(d));
+
+	if (enable) {
+		enable_irq_wake(port->irq);
+	} else {
+		disable_irq_wake(port->irq);
+	}
+
+	return 0;
+}
+
+static struct irq_chip kinetis_gpio_irq_chip = {
+	.name		= "gpio-kinetis",
+	.irq_ack	= kinetis_gpio_irq_ack,
+	.irq_mask	= kinetis_gpio_irq_mask,
+	.irq_unmask	= kinetis_gpio_irq_unmask,
+	.irq_set_type	= kinetis_gpio_irq_set_type,
+	.irq_set_wake	= kinetis_gpio_irq_set_wake,
+};
+
 static int kinetis_gpio_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -118,6 +246,10 @@ static int kinetis_gpio_probe(struct platform_device *pdev)
 	if (IS_ERR(port->gpio_base))
 		return PTR_ERR(port->gpio_base);
 
+	port->irq = platform_get_irq(pdev, 0);
+	if (port->irq < 0)
+		return port->irq;
+
 	gc = &port->gc;
 	gc->of_node = np;
 	gc->parent = dev;
@@ -135,6 +267,20 @@ static int kinetis_gpio_probe(struct platform_device *pdev)
 	ret = gpiochip_add_data(gc, port);
 	if (ret < 0)
 		return ret;
+
+	/* Clear the interrupt status register for all GPIO's */
+	kinetis_pinctrl_set_isfr(gc->base / KINETIS_GPIO_PER_PORT, ~0);
+
+	ret = gpiochip_irqchip_add(gc, &kinetis_gpio_irq_chip, 0,
+				   handle_edge_irq, IRQ_TYPE_NONE);
+	if (ret) {
+		dev_err(dev, "failed to add irqchip\n");
+		gpiochip_remove(gc);
+		return ret;
+	}
+
+	gpiochip_set_chained_irqchip(gc, &kinetis_gpio_irq_chip, port->irq,
+				     kinetis_gpio_irq_handler);
 
 	return 0;
 }

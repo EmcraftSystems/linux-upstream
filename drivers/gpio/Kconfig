@@ -405,6 +405,7 @@ config GPIO_VF610
 config GPIO_KINETIS
 	def_bool y
 	depends on ARCH_KINETIS
+	select GPIOLIB_IRQCHIP
 	help
 	  Say yes here to support Kinetis GPIOs.
 

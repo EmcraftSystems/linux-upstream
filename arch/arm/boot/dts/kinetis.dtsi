@@ -172,6 +172,7 @@
 			gpio-controller;
 			#gpio-cells = <2>;
 			gpio-ranges = <&iomux 0 0 32>;
+			interrupts = <87>;
 			status = "okay";
 		};
 
@@ -181,6 +182,7 @@
 			gpio-controller;
 			#gpio-cells = <2>;
 			gpio-ranges = <&iomux 0 32 64>;
+			interrupts = <88>;
 			status = "okay";
 		};
 
@@ -190,6 +192,7 @@
 			gpio-controller;
 			#gpio-cells = <2>;
 			gpio-ranges = <&iomux 0 64 96>;
+			interrupts = <89>;
 			status = "okay";
 		};
 
@@ -199,6 +202,7 @@
 			gpio-controller;
 			#gpio-cells = <2>;
 			gpio-ranges = <&iomux 0 96 128>;
+			interrupts = <90>;
 			status = "okay";
 		};
 
@@ -208,6 +212,7 @@
 			gpio-controller;
 			#gpio-cells = <2>;
 			gpio-ranges = <&iomux 0 128 160>;
+			interrupts = <91>;
 			status = "okay";
 		};
 
@@ -217,6 +222,7 @@
 			gpio-controller;
 			#gpio-cells = <2>;
 			gpio-ranges = <&iomux 0 160 192>;
+			interrupts = <92>;
 			status = "okay";
 		};
 

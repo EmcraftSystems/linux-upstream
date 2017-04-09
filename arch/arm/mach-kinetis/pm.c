@@ -207,12 +207,6 @@ static void kinetis_pm_prepare_to_suspend(void)
 	kinetis_periph_enable(KINETIS_CG_DMA, 0);
 	kinetis_periph_enable(KINETIS_CG_DMAMUX0, 0);
 	kinetis_periph_enable(KINETIS_CG_DMAMUX1, 0);
-	kinetis_periph_enable(KINETIS_CG_PORTA, 0);
-	kinetis_periph_enable(KINETIS_CG_PORTB, 0);
-	kinetis_periph_enable(KINETIS_CG_PORTC, 0);
-	kinetis_periph_enable(KINETIS_CG_PORTD, 0);
-	kinetis_periph_enable(KINETIS_CG_PORTE, 0);
-	kinetis_periph_enable(KINETIS_CG_PORTF, 0);
 
 	kinetis_periph_print_all();
 }
