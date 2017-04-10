@@ -28,6 +28,7 @@
 #include <linux/micrel_phy.h>
 #include <linux/of.h>
 #include <linux/clk.h>
+#include <linux/delay.h>
 
 /* Operation Mode Strap Override */
 #define MII_KSZPHY_OMSO				0x16
@@ -70,6 +71,10 @@
 #define MII_KSZPHY_CLK_CONTROL_PAD_SKEW         0x104
 #define MII_KSZPHY_RX_DATA_PAD_SKEW             0x105
 #define MII_KSZPHY_TX_DATA_PAD_SKEW             0x106
+
+/* AFE Control 1 register */
+#define MII_KSZPHY_AFE1_REG			0x11
+#define KSZPHY_SLOW_OSC				BIT(5)
 
 #define PS_TO_REG				200
 
@@ -657,14 +662,63 @@ static void kszphy_get_stats(struct phy_device *phydev,
 		data[i] = kszphy_get_stat(phydev, i);
 }
 
+static int kszphy_suspend(struct phy_device *phydev)
+{
+	int value;
+	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
+
+	/* If the device has WOL enabled, we cannot suspend the PHY */
+	phy_ethtool_get_wol(phydev, &wol);
+	if (wol.wolopts)
+		return -EBUSY;
+
+	mutex_lock(&phydev->lock);
+
+	if (phydev->dev_flags & MICREL_PHY_PM_SLOW_OSC) {
+		/* Slow oscillator mode */
+		value = KSZPHY_SLOW_OSC;
+		phy_write(phydev, MII_KSZPHY_AFE1_REG, value);
+	}
+
+	/* Power down */
+	value = phy_read(phydev, MII_BMCR);
+	phy_write(phydev, MII_BMCR, value | BMCR_PDOWN);
+
+	mutex_unlock(&phydev->lock);
+
+	return 0;
+}
+
 static int kszphy_resume(struct phy_device *phydev)
 {
 	int value;
 
 	mutex_lock(&phydev->lock);
 
+	if (phydev->dev_flags & MICREL_PHY_PM_SLOW_OSC) {
+		int cnt = 30;
+		/* Disable slow oscillator mode. */
+		do {
+			value = phy_read(phydev, MII_KSZPHY_AFE1_REG);
+			msleep(5);
+			phy_write(phydev, MII_KSZPHY_AFE1_REG,
+					value & ~KSZPHY_SLOW_OSC);
+			msleep(5);
+			value = phy_read(phydev, MII_KSZPHY_AFE1_REG);
+			cnt--;
+		} while ((value & KSZPHY_SLOW_OSC) && cnt);
+		if (!cnt)
+			printk(KERN_ERR "%s: can't wake phy\n", __func__);
+	}
+
 	value = phy_read(phydev, MII_BMCR);
 	phy_write(phydev, MII_BMCR, value & ~BMCR_PDOWN);
+
+	if (phydev->dev_flags & MICREL_PHY_PM_SLOW_OSC) {
+		/* Now reset */
+		genphy_soft_reset(phydev);
+		kszphy_config_init(phydev);
+	}
 
 	kszphy_config_intr(phydev);
 	mutex_unlock(&phydev->lock);
@@ -789,8 +843,8 @@ static struct phy_driver ksphy_driver[] = {
 	.get_sset_count = kszphy_get_sset_count,
 	.get_strings	= kszphy_get_strings,
 	.get_stats	= kszphy_get_stats,
-	.suspend	= genphy_suspend,
-	.resume		= genphy_resume,
+	.suspend	= kszphy_suspend,
+	.resume		= kszphy_resume,
 }, {
 	.phy_id		= PHY_ID_KSZ8041,
 	.phy_id_mask	= 0x00fffff0,
@@ -846,8 +900,8 @@ static struct phy_driver ksphy_driver[] = {
 	.get_sset_count = kszphy_get_sset_count,
 	.get_strings	= kszphy_get_strings,
 	.get_stats	= kszphy_get_stats,
-	.suspend	= genphy_suspend,
-	.resume		= genphy_resume,
+	.suspend	= kszphy_suspend,
+	.resume		= kszphy_resume,
 }, {
 	.phy_id		= PHY_ID_KSZ8001,
 	.name		= "Micrel KSZ8001 or KS8721",
@@ -882,7 +936,7 @@ static struct phy_driver ksphy_driver[] = {
 	.get_sset_count = kszphy_get_sset_count,
 	.get_strings	= kszphy_get_strings,
 	.get_stats	= kszphy_get_stats,
-	.suspend	= genphy_suspend,
+	.suspend	= kszphy_suspend,
 	.resume		= kszphy_resume,
 }, {
 	.phy_id		= PHY_ID_KSZ8061,

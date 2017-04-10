@@ -20,6 +20,8 @@
 #include <asm/v7m.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
+#include <linux/micrel_phy.h>
+#include <linux/phy.h>
 
 /*
  * Map required regions.
@@ -30,12 +32,33 @@ static void __init kinetis_map_io(void)
 {
 }
 
+static int ksz80xx_phy_fixup(struct phy_device *phydev)
+{
+	if (IS_BUILTIN(CONFIG_PHYLIB))
+		phydev->dev_flags |= MICREL_PHY_PM_SLOW_OSC;
+	return 0;
+}
+
+
+static void __init kinetis_phy_init(void)
+{
+	if (IS_BUILTIN(CONFIG_PHYLIB)) {
+		phy_register_fixup_for_uid(PHY_ID_KSZ8031, MICREL_PHY_ID_MASK,
+				ksz80xx_phy_fixup);
+		phy_register_fixup_for_uid(PHY_ID_KSZ8051, MICREL_PHY_ID_MASK,
+				ksz80xx_phy_fixup);
+		phy_register_fixup_for_uid(PHY_ID_KSZ8081, MICREL_PHY_ID_MASK,
+				ksz80xx_phy_fixup);
+	}
+}
+
 /*
  * Freescale Kinetis platform initialization
  */
 static void __init kinetis_init(void)
 {
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
+	kinetis_phy_init();
 }
 
 static const char *const kinetis_compat[] __initconst = {
