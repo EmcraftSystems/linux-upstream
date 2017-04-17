@@ -1855,8 +1855,8 @@ static int mmci_probe(struct amba_device *dev,
 		for (i = 0; i < pwr->ndescs; ++i)
 			gpiod_set_value(pwr->desc[i], 1);
 		msleep(100);
+		gpiod_put_array(pwr);
 	}
-	gpiod_put_array(pwr);
 
 	pm_runtime_set_autosuspend_delay(&dev->dev, 50);
 	pm_runtime_use_autosuspend(&dev->dev);
