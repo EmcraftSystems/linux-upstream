@@ -973,6 +973,17 @@ config ARCH_EFM32
 	  Support for Energy Micro's (now Silicon Labs) efm32 Giant Gecko
 	  processors.
 
+config ARCH_LPC17XX
+	bool "NXP LPC178x/7x"
+	select ARCH_HAS_RESET_CONTROLLER
+	select ARM_AMBA
+	select CLKSRC_LPC32XX
+	select PINCTRL
+	select ARMV7M_SYSTICK
+	help
+	  Support for NXP's LPC178x and LPC177x Cortex-M3
+	  high performance microcontrollers.
+
 config ARCH_LPC18XX
 	bool "NXP LPC18xx/LPC43xx"
 	select ARCH_HAS_RESET_CONTROLLER

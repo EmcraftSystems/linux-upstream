@@ -1,0 +1,162 @@
+/*
+ * Copyright (C) 2017 Emcraft Systems
+ * Sergei Miroshnichenko <sergeimir@emcraft.com>
+ *
+ * License terms:  GNU General Public License (GPL), version 2
+ */
+/dts-v1/;
+
+#include "armv7-m.dtsi"
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/clock/lpc17xx-clock.h>
+#include <dt-bindings/reset/lpc17xx-resets.h>
+#include <dt-bindings/pinctrl/lpc17xx.h>
+
+/* From linux/amba/pl08x.h: */
+#define PL08X_AHB1 (1 << 0)
+#define PL08X_AHB2 (1 << 1)
+
+/*
+ * AHB1: uart[0,1], ssp1, can[1,2], i2c[0,1], timer[0,1],
+ *       pwm[0,1], adc, pinctrl, gpio interrupts, rtc.
+ *
+ * AHB2: uart[2,3,4], ssp[0,2], i2s, i2c2, timer[2,3],
+ *       sdio, dac, pwm, quadrature, exti, sysctrl.
+ */
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	compatible = "nxp,lpc178x/7x";
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			compatible = "arm,cortex-m4";
+			device_type = "cpu";
+			reg = <0x0>;
+		};
+	};
+
+	clocks {
+		xtal: xtal {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <12000000>;
+		};
+	};
+
+	soc {
+		clks: clks@400fc000 {
+			compatible = "nxp,lpc17xx-clock";
+			reg = <0x400fc000 0x1000>;
+			clocks = <&xtal>;
+			clock-names = "xtal";
+			#clock-cells = <1>;
+		};
+
+		rst: reset@400fc1cc {
+			#reset-cells = <1>;
+			compatible = "nxp,lpc17xx-reset";
+			reg = <0x400fc1cc 0x8>;
+		};
+
+		pinctrl: pinctrl@4002c000 {
+			reg = <0x4002c000 0x1000>;
+			compatible = "nxp,lpc17xx-pinctrl";
+		};
+
+		timer0: timer@40004000 {
+			compatible = "nxp,lpc3220-timer";
+			reg = <0x40004000 0x74>;
+			interrupts = <1 0>;
+			clocks = <&clks CLOCK_TIM0>;
+			clock-names = "timerclk";
+			resets = <&rst RST_TIM0>;
+			status = "disabled";
+		};
+
+		timer1: timer@40008000 {
+			compatible = "nxp,lpc3220-timer";
+			reg = <0x40008000 0x74>;
+			interrupts = <2 0>;
+			clocks = <&clks CLOCK_TIM1>;
+			clock-names = "timerclk";
+			resets = <&rst RST_TIM1>;
+			status = "disabled";
+		};
+
+		timer2: timer@40090000 {
+			compatible = "nxp,lpc3220-timer";
+			reg = <0x40090000 0x74>;
+			interrupts = <3 0>;
+			clocks = <&clks CLOCK_TIM2>;
+			clock-names = "timerclk";
+			resets = <&rst RST_TIM2>;
+			status = "disabled";
+		};
+
+		timer3: timer@40094000 {
+			compatible = "nxp,lpc3220-timer";
+			reg = <0x40094000 0x74>;
+			interrupts = <4 0>;
+			clocks = <&clks CLOCK_TIM3>;
+			clock-names = "timerclk";
+			resets = <&rst RST_TIM3>;
+			status = "disabled";
+		};
+
+		dma: dma-controller@20080000 {
+			compatible = "arm,pl080", "arm,primecell";
+			reg = <0x20080000 0x1000>;
+			interrupts = <26 0>;
+			arm,primecell-periphid = <0x00041080>;
+			#dma-cells = <2>;
+			dma-channels = <8>;
+			dma-requests = <16>;
+			lli-bus-interface-ahb1;
+			mem-bus-interface-ahb1;
+			memcpy-burst-size = <256>;
+			memcpy-bus-width = <32>;
+			clocks = <&clks CLOCK_GPDMA>;
+			clock-names = "apb_pclk";
+			resets = <&rst RST_GPDMA>;
+			status = "okay";
+		};
+
+		uart0: serial@4000c000 {
+			compatible = "nxp,lpc1850-uart", "ns16550a";
+			reg = <0x4000c000 0x1000>;
+			reg-shift = <2>;
+			interrupts = <5 0>;
+			status = "disabled";
+			clocks = <&clks CLOCK_UART0>, <&clks CLOCK_UART0>;
+			clock-names = "uartclk", "reg";
+			resets = <&rst RST_UART0>;
+			dmas = <&dma 10 PL08X_AHB1>, <&dma 11 PL08X_AHB1>;
+			dma-names = "tx", "rx";
+		};
+
+		mac: ethernet@20084000 {
+			compatible = "nxp,lpc-eth";
+			reg = <0x20084000 0x1000>;
+			interrupts = <28 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clks CLOCK_ENET>;
+			resets = <&rst RST_ENET>;
+			status = "disabled";
+		};
+
+		rtc: rtc@40024000 {
+			compatible = "nxp,lpc1788-rtc";
+			reg = <0x40024000 0x1000>;
+			clocks = <&clks CLOCK_RTC>, <&clks CLOCK_RTC>;
+			clock-names = "rtc", "reg";
+			resets = <&rst RST_RTC>;
+			interrupts = <17 0>;
+			status = "disabled";
+		};
+	};
+};
