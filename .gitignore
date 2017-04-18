@@ -108,3 +108,5 @@ all.config
 *.kdev4
 
 rootfs.cpio
+initramfs-list-min
+arch/arm/boot/dts/*-SOM.dts
