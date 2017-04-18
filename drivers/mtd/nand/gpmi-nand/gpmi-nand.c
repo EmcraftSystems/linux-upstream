@@ -608,15 +608,6 @@ static int gpmi_get_clks(struct gpmi_nand_data *this)
 		r->clock[i] = clk;
 	}
 
-	if (GPMI_IS_MX6(this))
-		/*
-		 * Set the default value for the gpmi clock.
-		 *
-		 * If you want to use the ONFI nand which is in the
-		 * Synchronous Mode, you should change the clock as you need.
-		 */
-		clk_set_rate(r->clock[0], 22000000);
-
 	return 0;
 
 err_clock:
@@ -663,6 +654,7 @@ static void release_resources(struct gpmi_nand_data *this)
 static int init_hardware(struct gpmi_nand_data *this)
 {
 	int ret;
+	u32 val;
 
 	/*
 	 * This structure contains the "safe" GPMI timing that should succeed
@@ -685,6 +677,21 @@ static int init_hardware(struct gpmi_nand_data *this)
 		return ret;
 
 	this->timing = safe_timing;
+
+	if (!of_property_read_u32(this->dev->of_node, "gpmi-nand,data_setup_ns",
+					&val))
+		this->timing.data_setup_in_ns = val;
+	if (!of_property_read_u32(this->dev->of_node, "gpmi-nand,data_hold_ns",
+					&val))
+		this->timing.data_hold_in_ns = val;
+	if (!of_property_read_u32(this->dev->of_node, "gpmi-nand,address_setup_ns",
+					&val))
+		this->timing.address_setup_in_ns = val;
+	if (!of_property_read_u32(this->dev->of_node, "gpmi-nand,sample_delay_ns",
+					&val))
+		this->timing.gpmi_sample_delay_in_ns = val;
+
+
 	return 0;
 }
 
