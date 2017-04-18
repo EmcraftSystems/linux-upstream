@@ -13,7 +13,9 @@
 #include <linux/linkage.h>
 #include <asm/assembler.h>
 #include <asm/v7m.h>
+#ifdef CONFIG_NEED_MACH_MEMORY_H
 #include <mach/memory.h>
+#endif
 #include "proc-macros.S"
 
 ENTRY(cpu_v7m_proc_init)
@@ -84,7 +86,7 @@ ENDPROC(cpu_v7m_do_resume)
 __v7m_setup:
 	@ Configure the vector table base address
 	ldr	r0, =BASEADDR_V7M_SCB
-#if defined(CONFIG_ARCH_STM32F7)
+#if defined(SRAM_PHYS_OFFSET)
 	/*
 	 * Copy vector table into internal SRAM. If caches are enabled, then
 	 * updating table in external RAM we'll get IC/DC non-coherency because
