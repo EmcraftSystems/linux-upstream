@@ -64,15 +64,7 @@ static const struct stm32f4_gate_data stm32f4_gates[] __initconst = {
 	{ STM32F4_RCC(AHB1), 10,	"gpiok",	"ahb_div" },
 	{ STM32F4_RCC(AHB1), 12,	"crc",		"ahb_div" },
 	{ STM32F4_RCC(AHB1), 18,	"bkpsra",	"ahb_div" },
-/*
- * STM32F7 has DTCM control at this position. Don't register it to
- * avoid gating DTCM off during 'cleaning up unused clocks' phase,
- * thus corrupting our 'vector table', which we keep in this RAM.
- * Better approach here would be to register this clock in DTS somehow
- */
-#if !defined(CONFIG_ARCH_STM32F7)
 	{ STM32F4_RCC(AHB1), 20,	"ccmdatam",	"ahb_div" },
-#endif
 	{ STM32F4_RCC(AHB1), 21,	"dma1",		"ahb_div" },
 	{ STM32F4_RCC(AHB1), 22,	"dma2",		"ahb_div" },
 	{ STM32F4_RCC(AHB1), 23,	"dma2d",	"ahb_div" },

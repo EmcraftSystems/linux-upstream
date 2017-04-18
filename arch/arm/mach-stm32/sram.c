@@ -177,6 +177,7 @@ int stm32_sram_init(void)
 	struct device_node *np;
 	struct resource res;
 	unsigned long adr, flags;
+	struct clk *clk;
 	int rv;
 
 	local_irq_save(flags);
@@ -188,10 +189,14 @@ int stm32_sram_init(void)
 
 	np = of_find_compatible_node(NULL, NULL, "st,stm32-sram");
 	if (!np) {
-		pr_err("%s: no bkpsram info found\n", __func__);
+		pr_err("%s: no sram info found\n", __func__);
 		rv = -EINVAL;
 		goto out;
 	}
+
+	clk = of_clk_get(np, 0);
+	if (clk)
+		clk_prepare_enable(clk);
 
 	of_address_to_resource(np, 0, &res);
 
