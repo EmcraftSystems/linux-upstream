@@ -973,10 +973,11 @@ static int __lpc_handle_recv(struct net_device *ndev, int budget)
 			ndev->stats.rx_errors++;
 		} else {
 			/* Packet is good */
-			skb = dev_alloc_skb(len);
+			skb = dev_alloc_skb(len + NET_IP_ALIGN);
 			if (!skb) {
 				ndev->stats.rx_dropped++;
 			} else {
+				skb_reserve(skb, NET_IP_ALIGN);
 				prdbuf = skb_put(skb, len);
 
 				/* Copy packet from buffer */
