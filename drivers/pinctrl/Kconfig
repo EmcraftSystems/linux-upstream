@@ -97,6 +97,15 @@ config PINCTRL_LPC18XX
 	help
 	  Pinctrl driver for NXP LPC18xx/43xx System Control Unit (SCU).
 
+config PINCTRL_LPC17XX
+	bool "NXP LPC17XX SCU pinctrl driver"
+	depends on OF && (ARCH_LPC17XX || COMPILE_TEST)
+	default ARCH_LPC17XX
+	select PINMUX
+	select GENERIC_PINCONF
+	help
+	  Pinctrl driver for NXP LPC17xx.
+
 config PINCTRL_FALCON
 	bool
 	depends on SOC_FALCON
