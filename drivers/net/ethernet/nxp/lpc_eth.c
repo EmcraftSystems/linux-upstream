@@ -42,6 +42,7 @@
 #include <linux/of.h>
 #include <linux/of_net.h>
 #include <linux/types.h>
+#include <linux/reset.h>
 
 #include <linux/io.h>
 #if defined(CONFIG_ARCH_LPC32XX)
@@ -1306,6 +1307,7 @@ static int lpc_eth_drv_probe(struct platform_device *pdev)
 	struct phy_device *phydev;
 	dma_addr_t dma_handle;
 	int irq, ret;
+	struct reset_control *rst;
 
 #if defined(CONFIG_ARCH_LPC32XX)
 	u32 tmp;
@@ -1354,6 +1356,10 @@ static int lpc_eth_drv_probe(struct platform_device *pdev)
 		ret = PTR_ERR(pldat->clk);
 		goto err_out_free_dev;
 	}
+
+	rst = devm_reset_control_get(&pdev->dev, NULL);
+	if (!IS_ERR_OR_NULL(rst))
+		reset_control_reset(rst);
 
 	/* Enable network clock */
 	ret = clk_prepare_enable(pldat->clk);
