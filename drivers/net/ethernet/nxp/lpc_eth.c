@@ -44,9 +44,11 @@
 #include <linux/types.h>
 
 #include <linux/io.h>
+#if defined(CONFIG_ARCH_LPC32XX)
 #include <mach/board.h>
 #include <mach/platform.h>
 #include <mach/hardware.h>
+#endif /* CONFIG_ARCH_LPC32XX */
 
 #define MODNAME "lpc-eth"
 #define DRV_VERSION "1.00"
@@ -349,12 +351,14 @@ static phy_interface_t lpc_phy_interface_mode(struct device *dev)
 	return PHY_INTERFACE_MODE_RMII;
 }
 
+#if defined(CONFIG_ARCH_LPC32XX)
 static bool use_iram_for_net(struct device *dev)
 {
 	if (dev && dev->of_node)
 		return of_property_read_bool(dev->of_node, "use-iram");
 	return false;
 }
+#endif /* CONFIG_ARCH_LPC32XX */
 
 /* Receive Status information word */
 #define RXSTATUS_SIZE			0x000007FF
@@ -1302,8 +1306,9 @@ static int lpc_eth_drv_probe(struct platform_device *pdev)
 	struct phy_device *phydev;
 	dma_addr_t dma_handle;
 	int irq, ret;
-	u32 tmp;
 
+#if defined(CONFIG_ARCH_LPC32XX)
+	u32 tmp;
 	/* Setup network interface for RMII or MII mode */
 	tmp = __raw_readl(LPC32XX_CLKPWR_MACCLK_CTRL);
 	tmp &= ~LPC32XX_CLKPWR_MACCTRL_PINS_MSK;
@@ -1312,6 +1317,7 @@ static int lpc_eth_drv_probe(struct platform_device *pdev)
 	else
 		tmp |= LPC32XX_CLKPWR_MACCTRL_USE_RMII_PINS;
 	__raw_writel(tmp, LPC32XX_CLKPWR_MACCLK_CTRL);
+#endif /* CONFIG_ARCH_LPC32XX */
 
 	/* Get platform resources */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -1378,6 +1384,7 @@ static int lpc_eth_drv_probe(struct platform_device *pdev)
 		sizeof(struct txrx_desc_t) + sizeof(struct rx_status_t));
 	pldat->dma_buff_base_v = 0;
 
+#if defined(CONFIG_ARCH_LPC32XX)
 	if (use_iram_for_net(&pldat->pdev->dev)) {
 		dma_handle = LPC32XX_IRAM_BASE;
 		if (pldat->dma_buff_size <= lpc32xx_return_iram_size())
@@ -1387,6 +1394,7 @@ static int lpc_eth_drv_probe(struct platform_device *pdev)
 			netdev_err(ndev,
 				"IRAM not big enough for net buffers, using SDRAM instead.\n");
 	}
+#endif /* CONFIG_ARCH_LPC32XX */
 
 	if (pldat->dma_buff_base_v == 0) {
 		ret = dma_coerce_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
@@ -1475,8 +1483,10 @@ static int lpc_eth_drv_probe(struct platform_device *pdev)
 err_out_unregister_netdev:
 	unregister_netdev(ndev);
 err_out_dma_unmap:
+#if defined(CONFIG_ARCH_LPC32XX)
 	if (!use_iram_for_net(&pldat->pdev->dev) ||
 	    pldat->dma_buff_size > lpc32xx_return_iram_size())
+#endif /* CONFIG_ARCH_LPC32XX */
 		dma_free_coherent(&pldat->pdev->dev, pldat->dma_buff_size,
 				  pldat->dma_buff_base_v,
 				  pldat->dma_buff_base_p);
@@ -1502,8 +1512,10 @@ static int lpc_eth_drv_remove(struct platform_device *pdev)
 
 	unregister_netdev(ndev);
 
+#if defined(CONFIG_ARCH_LPC32XX)
 	if (!use_iram_for_net(&pldat->pdev->dev) ||
 	    pldat->dma_buff_size > lpc32xx_return_iram_size())
+#endif /* CONFIG_ARCH_LPC32XX */
 		dma_free_coherent(&pldat->pdev->dev, pldat->dma_buff_size,
 				  pldat->dma_buff_base_v,
 				  pldat->dma_buff_base_p);

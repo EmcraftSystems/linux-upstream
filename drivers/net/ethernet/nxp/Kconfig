@@ -1,6 +1,6 @@
 config LPC_ENET
         tristate "NXP ethernet MAC on LPC devices"
-        depends on ARCH_LPC32XX
+        depends on (ARCH_LPC32XX || ARCH_LPC17XX)
         select PHYLIB
         help
 	  Say Y or M here if you want to use the NXP ethernet MAC included on
