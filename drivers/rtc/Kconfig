@@ -1458,7 +1458,7 @@ config RTC_DRV_JZ4740
 
 config RTC_DRV_LPC24XX
 	tristate "NXP RTC for LPC178x/18xx/408x/43xx"
-	depends on ARCH_LPC18XX || COMPILE_TEST
+	depends on ARCH_LPC18XX || ARCH_LPC17XX || COMPILE_TEST
 	depends on OF && HAS_IOMEM
 	help
 	  This enables support for the NXP RTC found which can be found on
