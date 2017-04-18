@@ -39,6 +39,8 @@
 #include <linux/of_platform.h>
 #include <linux/slab.h>
 
+#include <mach/sram.h>
+
 #define CYCLES_PER_US	168
 #define STM32_SDRAM_FMC_BASE		0xA0000140
 #define STM32_SDRAM_FMC			((volatile struct stm32_fmc_regs *) \
@@ -60,9 +62,6 @@
 		__asm__ __volatile__ ("dsb" : : : "memory"); \
 		while(STM32_SDRAM_FMC->sdsr & FMC_SDSR_BUSY); \
 	} while(0);
-
-#define SRAM_DATA	__attribute__((section (".sram.data")))
-#define SRAM_TEXT	__attribute__((section (".sram.text"),__long_call__))
 
 struct of_flash_list {
 	struct mtd_info *mtd;
@@ -269,26 +268,39 @@ void stm32f4_flash_copy_to(struct map_info *map, unsigned long to, const void *f
 
 static int stm32f4_flash_init(void)
 {
-	unsigned long p;
+	int rv;
 
 	printk(KERN_INFO "Initializing STM32F4 mapper, "
 		"copying code from %p to %p, size %d",
 		&__sram_loc, &_sram_start, &_esram_loc - &__sram_loc);
 
 	/*
-	 * Copy code to SRAM
+	 * Init SRAM, copy code to SRAM, and allocate buf
 	 */
-	memcpy((void*)&_sram_start, (void*)&__sram_loc, &_esram_loc - &__sram_loc);
+	rv = stm32_sram_init();
+	if (rv) {
+		printk(KERN_ERR "SRAM init err %d\n", rv);
+		goto out;
+	}
+	rv = stm32_sram_relocate();
+	if (rv) {
+		printk(KERN_ERR "SRAM reloc err %d\n", rv);
+		goto out;
+	}
 
-	p = (unsigned long)&_sram_end;
-	p = ALIGN(p, 0x100);
-
-	sram_buffer_start = p;
 	sram_buffer_size = CONFIG_MTD_STM32F4_SRAM_BUFFER_SIZE;
+	sram_buffer_start = (u32)stm32_sram_data_alloc(sram_buffer_size);
+	if (!sram_buffer_start) {
+		printk(KERN_ERR "SRAM alloc err\n");
+		rv = -ENOMEM;
+		goto out;
+	}
+
+	rv = 0;
 	printk(KERN_INFO "Using SRAM as buffer with start %lx and size %lx\n",
 		sram_buffer_start, sram_buffer_size);
-
-	return 0;
+out:
+	return rv;
 }
 
 /******************************************************************************

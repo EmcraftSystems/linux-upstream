@@ -102,6 +102,10 @@
 		status = "disabled";
 	};
 
+	stm_sys_sram {
+		compatible = "st,stm32-sram";
+	};
+
 	clocks {
 		clk_hse: clk-hse {
 			#clock-cells = <0>;
@@ -568,6 +572,12 @@
 			clocks = <&rcc 0 22>;
 			st,streams = <8>;
 			status = "disabled";
+		};
+
+		bkpsram: bkpsram@0x40024000 {
+			compatible = "st,stm32-bkpsram";
+			reg = <0x40024000 0x1000>;
+			clocks = <&rcc 0 18>;
 		};
 
 		mac: ethernet@40028000 {

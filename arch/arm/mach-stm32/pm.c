@@ -42,11 +42,11 @@
 
 #include <mach/gpio.h>
 #include <mach/pwr.h>
+#include <mach/sram.h>
 
 /*
  * Assembler-level imports (from SRAM)
  */
-#define SRAM_TEXT	__attribute__((section (".sram.text"),__long_call__))
 SRAM_TEXT void stm32_suspend_to_ram(void);
 extern u32 stm32_suspend_moder[STM32_GPIO_PORTS];
 
@@ -54,12 +54,6 @@ extern u32 stm32_suspend_moder[STM32_GPIO_PORTS];
  * Import from stm32 pinctrl driver
  */
 int stm32_pctrl_alt_to_analog(struct platform_device *p, u32 *moder, u32 len);
-
-/*
- * Linker symbols
- */
-extern char _sram_start;
-extern char __sram_loc, _esram_loc;
 
 /*
  * Cortex-M3 System Control Register
@@ -257,8 +251,8 @@ static int __init stm32_pm_init(void)
 	/*
 	 * Relocate code to SRAM
 	 */
-	memcpy((void*)&_sram_start, (void*)&__sram_loc,
-	       &_esram_loc - &__sram_loc);
+	stm32_sram_init();
+	stm32_sram_relocate();
 
 	/*
 	 * Get PWR register base, and enable PWR module
@@ -336,7 +330,8 @@ static int __init stm32_pm_init(void)
 	/*
 	 * Want the lowest consumption in Stop mode
 	 */
-	writel(STM32_PWR_CR_MODE, pwr_regs + STM32_PWR_CR);
+	writel((STM32_PWR_CR_DBP & readl(pwr_regs + STM32_PWR_CR)) |
+		STM32_PWR_CR_MODE, pwr_regs + STM32_PWR_CR);
 
 	/*
 	 * Register the PM driver
