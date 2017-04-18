@@ -291,7 +291,7 @@ err_clk_enable:
 static void __init lpc32xx_timer_init(struct device_node *np)
 {
 	if (of_find_property(np, "clocksource", NULL)) {
-		lpc32xx_clockevent_init(np);
+		lpc32xx_clocksource_init(np);
 	} else if (of_find_property(np, "clockevent", NULL)) {
 		lpc32xx_clockevent_init(np);
 	}
