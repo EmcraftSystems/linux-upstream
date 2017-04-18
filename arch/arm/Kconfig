@@ -980,6 +980,7 @@ config ARCH_LPC17XX
 	select CLKSRC_LPC32XX
 	select PINCTRL
 	select ARMV7M_SYSTICK
+	select NEED_MACH_MEMORY_H
 	help
 	  Support for NXP's LPC178x and LPC177x Cortex-M3
 	  high performance microcontrollers.
