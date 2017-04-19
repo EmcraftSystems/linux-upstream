@@ -24,6 +24,47 @@
  *       sdio, dac, pwm, quadrature, exti, sysctrl.
  */
 
+#define LPC17XX_IRQ_WDT		0
+#define LPC17XX_IRQ_TIM0	1
+#define LPC17XX_IRQ_TIM1	2
+#define LPC17XX_IRQ_TIM2	3
+#define LPC17XX_IRQ_TIM3	4
+#define LPC17XX_IRQ_UART0	5
+#define LPC17XX_IRQ_UART1	6
+#define LPC17XX_IRQ_UART2	7
+#define LPC17XX_IRQ_UART3	8
+#define LPC17XX_IRQ_PWM1	9
+#define LPC17XX_IRQ_I2C0	10
+#define LPC17XX_IRQ_I2C1	11
+#define LPC17XX_IRQ_I2C2	12
+#define LPC17XX_IRQ_SSP0	14
+#define LPC17XX_IRQ_SSP1	15
+#define LPC17XX_IRQ_PLL0	16
+#define LPC17XX_IRQ_RTC		17
+#define LPC17XX_IRQ_EINT0	18
+#define LPC17XX_IRQ_EINT1	19
+#define LPC17XX_IRQ_EINT2	20
+#define LPC17XX_IRQ_EINT3	21
+#define LPC17XX_IRQ_ADC		22
+#define LPC17XX_IRQ_BOD		23
+#define LPC17XX_IRQ_USB		24
+#define LPC17XX_IRQ_CAN		25
+#define LPC17XX_IRQ_DMA		26
+#define LPC17XX_IRQ_I2S		27
+#define LPC17XX_IRQ_ENET	28
+#define LPC17XX_IRQ_MMC		29
+#define LPC17XX_IRQ_MOTOR_PWM	30
+#define LPC17XX_IRQ_QUADRATURE	31
+#define LPC17XX_IRQ_PLL1	32
+#define LPC17XX_IRQ_USB_ACTVTY	33
+#define LPC17XX_IRQ_CAN_ACTVTY	34
+#define LPC17XX_IRQ_UART4	35
+#define LPC17XX_IRQ_SSP2	36
+#define LPC17XX_IRQ_LCD		37
+#define LPC17XX_IRQ_GPIO	38
+#define LPC17XX_IRQ_PWM0	39
+#define LPC17XX_IRQ_EEPROM	40
+
 / {
 	#address-cells = <1>;
 	#size-cells = <1>;
@@ -72,7 +113,7 @@
 		timer0: timer@40004000 {
 			compatible = "nxp,lpc3220-timer";
 			reg = <0x40004000 0x74>;
-			interrupts = <1 0>;
+			interrupts = <LPC17XX_IRQ_TIM0 0>;
 			clocks = <&clks CLOCK_TIM0>;
 			clock-names = "timerclk";
 			resets = <&rst RST_TIM0>;
@@ -82,7 +123,7 @@
 		timer1: timer@40008000 {
 			compatible = "nxp,lpc3220-timer";
 			reg = <0x40008000 0x74>;
-			interrupts = <2 0>;
+			interrupts = <LPC17XX_IRQ_TIM1 0>;
 			clocks = <&clks CLOCK_TIM1>;
 			clock-names = "timerclk";
 			resets = <&rst RST_TIM1>;
@@ -92,7 +133,7 @@
 		timer2: timer@40090000 {
 			compatible = "nxp,lpc3220-timer";
 			reg = <0x40090000 0x74>;
-			interrupts = <3 0>;
+			interrupts = <LPC17XX_IRQ_TIM2 0>;
 			clocks = <&clks CLOCK_TIM2>;
 			clock-names = "timerclk";
 			resets = <&rst RST_TIM2>;
@@ -102,7 +143,7 @@
 		timer3: timer@40094000 {
 			compatible = "nxp,lpc3220-timer";
 			reg = <0x40094000 0x74>;
-			interrupts = <4 0>;
+			interrupts = <LPC17XX_IRQ_TIM3 0>;
 			clocks = <&clks CLOCK_TIM3>;
 			clock-names = "timerclk";
 			resets = <&rst RST_TIM3>;
@@ -112,7 +153,7 @@
 		dma: dma-controller@20080000 {
 			compatible = "arm,pl080", "arm,primecell";
 			reg = <0x20080000 0x1000>;
-			interrupts = <26 0>;
+			interrupts = <LPC17XX_IRQ_DMA 0>;
 			arm,primecell-periphid = <0x00041080>;
 			#dma-cells = <2>;
 			dma-channels = <8>;
@@ -131,7 +172,7 @@
 			compatible = "nxp,lpc1850-uart", "ns16550a";
 			reg = <0x4000c000 0x1000>;
 			reg-shift = <2>;
-			interrupts = <5 0>;
+			interrupts = <LPC17XX_IRQ_UART0 0>;
 			status = "disabled";
 			clocks = <&clks CLOCK_UART0>, <&clks CLOCK_UART0>;
 			clock-names = "uartclk", "reg";
@@ -143,7 +184,7 @@
 		mac: ethernet@20084000 {
 			compatible = "nxp,lpc-eth";
 			reg = <0x20084000 0x1000>;
-			interrupts = <28 IRQ_TYPE_LEVEL_HIGH>;
+			interrupts = <LPC17XX_IRQ_ENET IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clks CLOCK_ENET>;
 			resets = <&rst RST_ENET>;
 			status = "disabled";
@@ -155,7 +196,7 @@
 			clocks = <&clks CLOCK_RTC>, <&clks CLOCK_RTC>;
 			clock-names = "rtc", "reg";
 			resets = <&rst RST_RTC>;
-			interrupts = <17 0>;
+			interrupts = <LPC17XX_IRQ_RTC 0>;
 			status = "disabled";
 		};
 	};
