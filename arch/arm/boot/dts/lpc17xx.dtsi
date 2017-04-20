@@ -181,6 +181,19 @@
 			dma-names = "tx", "rx";
 		};
 
+		uart2: serial@40098000 {
+			compatible = "nxp,lpc1850-uart", "ns16550a";
+			reg = <0x40098000 0x1000>;
+			reg-shift = <2>;
+			interrupts = <LPC17XX_IRQ_UART2 0>;
+			status = "disabled";
+			clocks = <&clks CLOCK_UART2>, <&clks CLOCK_UART2>;
+			clock-names = "uartclk", "reg";
+			resets = <&rst RST_UART2>;
+			dmas = <&dma 14 PL08X_AHB2>, <&dma 15 PL08X_AHB2>;
+			dma-names = "tx", "rx";
+		};
+
 		mac: ethernet@20084000 {
 			compatible = "nxp,lpc-eth";
 			reg = <0x20084000 0x1000>;
