@@ -1624,8 +1624,11 @@ int serial8250_handle_irq(struct uart_port *port, unsigned int iir)
 	struct uart_8250_port *up = up_to_u8250p(port);
 	int dma_err = 0;
 
-	if (iir & UART_IIR_NO_INT)
+	if (iir & UART_IIR_NO_INT) {
+		if (up->dma->rx_running)
+			serial8250_rx_dma_flush(up);
 		return 0;
+	}
 
 	spin_lock_irqsave(&port->lock, flags);
 
