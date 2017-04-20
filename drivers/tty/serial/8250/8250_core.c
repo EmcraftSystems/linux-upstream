@@ -590,7 +590,7 @@ EXPORT_SYMBOL_GPL(serial8250_rpm_put);
  * once and disable_runtime_pm_tx() will still disable RPM because the fifo is
  * empty and the HW can idle again.
  */
-static void serial8250_rpm_get_tx(struct uart_8250_port *p)
+void serial8250_rpm_get_tx(struct uart_8250_port *p)
 {
 	unsigned char rpm_active;
 
@@ -603,7 +603,7 @@ static void serial8250_rpm_get_tx(struct uart_8250_port *p)
 	pm_runtime_get_sync(p->port.dev);
 }
 
-static void serial8250_rpm_put_tx(struct uart_8250_port *p)
+void serial8250_rpm_put_tx(struct uart_8250_port *p)
 {
 	unsigned char rpm_active;
 
@@ -1600,6 +1600,20 @@ unsigned int serial8250_modem_status(struct uart_8250_port *up)
 }
 EXPORT_SYMBOL_GPL(serial8250_modem_status);
 
+static bool handle_rx_dma(struct uart_8250_port *up, unsigned int iir)
+{
+	switch (iir & 0x3f) {
+	case UART_IIR_RX_TIMEOUT:
+		serial8250_rx_dma_flush(up);
+		/* fall-through */
+	case UART_IIR_RLSI:
+		return true;
+	}
+	return up->dma->rx_dma(up);
+}
+
+void serial8250_tx_dma_flush(struct uart_8250_port *p);
+
 /*
  * This handles the interrupt from one port.
  */
@@ -1621,7 +1635,7 @@ int serial8250_handle_irq(struct uart_port *port, unsigned int iir)
 
 	if (status & (UART_LSR_DR | UART_LSR_BI)) {
 		if (up->dma)
-			dma_err = up->dma->rx_dma(up, iir);
+			dma_err = handle_rx_dma(up, iir);
 
 		if (!up->dma || dma_err)
 			status = serial8250_rx_chars(up, status);
