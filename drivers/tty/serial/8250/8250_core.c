@@ -1625,7 +1625,7 @@ int serial8250_handle_irq(struct uart_port *port, unsigned int iir)
 	int dma_err = 0;
 
 	if (iir & UART_IIR_NO_INT) {
-		if (up->dma->rx_running)
+		if (up->dma && up->dma->rx_running)
 			serial8250_rx_dma_flush(up);
 		return 0;
 	}
@@ -3359,7 +3359,7 @@ static void serial8250_console_write(struct uart_8250_port *up, const char *s,
 				     unsigned int count)
 {
 	struct uart_port *port = &up->port;
-	unsigned long flags;
+	unsigned long flags = 0;
 	unsigned int ier;
 	int locked = 1;
 
