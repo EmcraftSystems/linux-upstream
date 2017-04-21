@@ -158,8 +158,7 @@
 			#dma-cells = <2>;
 			dma-channels = <8>;
 			dma-requests = <16>;
-			lli-bus-interface-ahb1;
-			mem-bus-interface-ahb1;
+			no-bus-selection-support;
 			memcpy-burst-size = <256>;
 			memcpy-bus-width = <32>;
 			clocks = <&clks CLOCK_GPDMA>;

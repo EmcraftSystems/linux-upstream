@@ -273,6 +273,7 @@ struct pl08x_driver_data {
 	struct pl08x_platform_data *pd;
 	struct pl08x_phy_chan *phy_chans;
 	struct dma_pool *pool;
+	bool support_buses_selection;
 	u8 lli_buses;
 	u8 mem_buses;
 	u8 lli_words;
@@ -1461,7 +1462,7 @@ static struct dma_async_tx_descriptor *pl08x_prep_dma_memcpy(
 	/* Both to be incremented or the code will break */
 	txd->cctl |= PL080_CONTROL_SRC_INCR | PL080_CONTROL_DST_INCR;
 
-	if (pl08x->vd->dualmaster)
+	if (pl08x->vd->dualmaster && pl08x->support_buses_selection)
 		txd->cctl |= pl08x_select_bus(pl08x->mem_buses,
 					      pl08x->mem_buses);
 
@@ -1527,7 +1528,10 @@ static struct pl08x_txd *pl08x_init_txd(
 		return NULL;
 	}
 
-	txd->cctl = cctl | pl08x_select_bus(src_buses, dst_buses);
+	if (pl08x->support_buses_selection)
+		cctl |= pl08x_select_bus(src_buses, dst_buses);
+
+	txd->cctl = cctl;
 
 	if (plchan->cfg.device_fc)
 		tmp = (direction == DMA_MEM_TO_DEV) ? PL080_FLOW_MEM2PER_PER :
@@ -2104,24 +2108,27 @@ static int pl08x_of_probe(struct amba_device *adev,
 	if (!pd)
 		return -ENOMEM;
 
-	/* Eligible bus masters for fetching LLIs */
-	if (of_property_read_bool(np, "lli-bus-interface-ahb1"))
-		pd->lli_buses |= PL08X_AHB1;
-	if (of_property_read_bool(np, "lli-bus-interface-ahb2"))
-		pd->lli_buses |= PL08X_AHB2;
-	if (!pd->lli_buses) {
-		dev_info(&adev->dev, "no bus masters for LLIs stated, assume all\n");
-		pd->lli_buses |= PL08X_AHB1 | PL08X_AHB2;
-	}
+	pl08x->support_buses_selection = !of_property_read_bool(np, "no-bus-selection-support");
+	if (pl08x->support_buses_selection) {
+		/* Eligible bus masters for fetching LLIs */
+		if (of_property_read_bool(np, "lli-bus-interface-ahb1"))
+			pd->lli_buses |= PL08X_AHB1;
+		if (of_property_read_bool(np, "lli-bus-interface-ahb2"))
+			pd->lli_buses |= PL08X_AHB2;
+		if (!pd->lli_buses) {
+			dev_info(&adev->dev, "no bus masters for LLIs stated, assume all\n");
+			pd->lli_buses |= PL08X_AHB1 | PL08X_AHB2;
+		}
 
-	/* Eligible bus masters for memory access */
-	if (of_property_read_bool(np, "mem-bus-interface-ahb1"))
-		pd->mem_buses |= PL08X_AHB1;
-	if (of_property_read_bool(np, "mem-bus-interface-ahb2"))
-		pd->mem_buses |= PL08X_AHB2;
-	if (!pd->mem_buses) {
-		dev_info(&adev->dev, "no bus masters for memory stated, assume all\n");
-		pd->mem_buses |= PL08X_AHB1 | PL08X_AHB2;
+		/* Eligible bus masters for memory access */
+		if (of_property_read_bool(np, "mem-bus-interface-ahb1"))
+			pd->mem_buses |= PL08X_AHB1;
+		if (of_property_read_bool(np, "mem-bus-interface-ahb2"))
+			pd->mem_buses |= PL08X_AHB2;
+		if (!pd->mem_buses) {
+			dev_info(&adev->dev, "no bus masters for memory stated, assume all\n");
+			pd->mem_buses |= PL08X_AHB1 | PL08X_AHB2;
+		}
 	}
 
 	/* Parse the memcpy channel properties */
