@@ -162,6 +162,7 @@ static int lpc18xx_serial_probe(struct platform_device *pdev)
 
 	data->dma.rx_param = data;
 	data->dma.tx_param = data;
+	data->dma.strict = true;
 
 	spin_lock_init(&uart.port.lock);
 	uart.port.dev = &pdev->dev;

@@ -45,6 +45,7 @@ struct uart_8250_dma {
 	unsigned char		tx_running:1;
 	unsigned char		tx_err: 1;
 	unsigned char		rx_running:1;
+	bool			strict;
 };
 
 struct old_serial_port {

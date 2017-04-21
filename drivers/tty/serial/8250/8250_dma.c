@@ -167,9 +167,12 @@ int serial8250_request_dma(struct uart_8250_port *p)
 	dma_cap_set(DMA_SLAVE, mask);
 
 	/* Get a channel for RX */
-	dma->rxchan = dma_request_slave_channel_compat(mask,
-						       dma->fn, dma->rx_param,
-						       p->port.dev, "rx");
+	if (dma->strict)
+		dma->rxchan = dma_request_slave_channel(p->port.dev, "rx");
+	else
+		dma->rxchan = dma_request_slave_channel_compat(mask,
+							       dma->fn, dma->rx_param,
+							       p->port.dev, "rx");
 	if (!dma->rxchan)
 		return -ENODEV;
 
@@ -186,9 +189,12 @@ int serial8250_request_dma(struct uart_8250_port *p)
 	dmaengine_slave_config(dma->rxchan, &dma->rxconf);
 
 	/* Get a channel for TX */
-	dma->txchan = dma_request_slave_channel_compat(mask,
-						       dma->fn, dma->tx_param,
-						       p->port.dev, "tx");
+	if (dma->strict)
+		dma->txchan = dma_request_slave_channel(p->port.dev, "tx");
+	else
+		dma->txchan = dma_request_slave_channel_compat(mask,
+							       dma->fn, dma->tx_param,
+							       p->port.dev, "tx");
 	if (!dma->txchan) {
 		ret = -ENODEV;
 		goto release_rx;
