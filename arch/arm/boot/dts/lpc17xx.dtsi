@@ -176,6 +176,7 @@
 			clocks = <&clks CLOCK_UART0>, <&clks CLOCK_UART0>;
 			clock-names = "uartclk", "reg";
 			resets = <&rst RST_UART0>;
+			/* DMA for UART3 conflicts with UART0 */
 			dmas = <&dma 10 PL08X_AHB1>, <&dma 11 PL08X_AHB1>;
 			dma-names = "tx", "rx";
 		};
@@ -190,6 +191,23 @@
 			resets = <&rst RST_UART2>;
 			dmas = <&dma 14 PL08X_AHB2>, <&dma 15 PL08X_AHB2>;
 			dma-names = "tx", "rx";
+		};
+
+		uart3: serial@4009c000 {
+			compatible = "nxp,lpc1850-uart", "ns16550a";
+			reg = <0x4009c000 0x1000>;
+			interrupts = <LPC17XX_IRQ_UART3 0>;
+			status = "disabled";
+			clocks = <&clks CLOCK_UART3>, <&clks CLOCK_UART3>;
+			clock-names = "uartclk", "reg";
+			resets = <&rst RST_UART3>;
+			/* DMA for UART3 conflicts with UART0 */
+			#if 0
+			dmas = <&dma 10 PL08X_AHB2>, <&dma 11 PL08X_AHB2>;
+			dma-names = "tx", "rx";
+			#else
+			dmas = <>;
+			#endif
 		};
 
 		mac: ethernet@20084000 {
