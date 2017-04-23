@@ -57,3 +57,4 @@ obj-$(CONFIG_VEXPRESS_SYSCFG)	+= vexpress-syscfg.o
 obj-$(CONFIG_CXL_BASE)		+= cxl/
 obj-$(CONFIG_PROMATE_7_SEG_LCD)	+= numeric_display.o
 obj-$(CONFIG_NFCTAG_NXP)	+= nxp_ntag.o
+obj-$(CONFIG_GEN_STM32)		+= gen_stm32.o

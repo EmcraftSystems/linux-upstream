@@ -623,6 +623,11 @@
 			compatible = "usb-nop-xceiv";
 			#phy-cells = <0>;
 		};
+
+		stm32_dummy_gen: dummy_gen {
+			compatible = "stm32-dummy-pulse-gen";
+			status = "disabled";
+		};
 	};
 };
 

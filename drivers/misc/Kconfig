@@ -523,6 +523,15 @@ config NFCTAG_NXP
 	bool "NXP NT3H2211 NFC tag"
 	depends on I2C && SYSFS
 
+config GEN_STM32
+	bool "Dummy STM32 Pulse Generator"
+	depends on PINCTRL_STM32 && SYSFS
+	help
+	  Driver allows to generate rather precise pulses on STM32 GPIO. To
+	  do this interrupts are masked, and the specified number of pulses
+	  is generated. Interface is /sys/kernel/pulse_gen/. GPIO is specified
+	  in dtb.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
