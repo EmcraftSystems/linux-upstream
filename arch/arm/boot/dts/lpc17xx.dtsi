@@ -118,6 +118,16 @@
 			compatible = "nxp,lpc17xx-pinctrl";
 		};
 
+		gpio: gpio@20098000 {
+			compatible = "nxp,lpc17xx-gpio";
+			reg = <0x20098000 0x4000>;
+			clocks = <&clks CLOCK_GPIO>;
+			resets = <&rst RST_GPIO>;
+			gpio-controller;
+			#gpio-cells = <3>; /* bank, pin, flags */
+			status = "okay";
+		};
+
 		timer0: timer@40004000 {
 			compatible = "nxp,lpc3220-timer";
 			reg = <0x40004000 0x74>;

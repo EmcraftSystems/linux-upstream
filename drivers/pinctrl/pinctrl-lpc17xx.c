@@ -75,6 +75,10 @@ static int iocon_pins_type_w[] = {
 	IOCON_PIN(0, 9),
 };
 
+static struct pinctrl_gpio_range lpc17xx_pinctrl_gpio_range = {
+	.npins = IOCON_NR_PORTS * IOCON_PINS_PER_PORT,
+};
+
 static enum iocon_pin_type iocon_pins_type_table[IOCON_NR_PORTS * IOCON_PINS_PER_PORT];
 
 /* The rest are pins of Type D (digital) */
@@ -172,7 +176,7 @@ static int lpc17xx_pmx_set(struct pinctrl_dev *pctldev, unsigned selector,
 		u32 orig = readl_relaxed(ipctl->base + 4 * pin->idx);
 		u32 tmp = orig & ~IOCON_FUNC_MASK;
 
-		/* Don't touch the mux */
+		/* Don't touch the config */
 		tmp |= pin->mux & IOCON_FUNC_MASK;
 		dev_dbg(ipctl->dev, "%s: pin %d: 0x%x -> 0x%x\n", __func__, pin->idx, orig, tmp);
 		writel_relaxed(tmp, ipctl->base + 4 * pin->idx);
@@ -286,6 +290,43 @@ static void lpc17xx_dt_free_map(struct pinctrl_dev *pctldev,
 	kfree(map);
 }
 
+static int lpc17xx_pmx_gpio_request_enable(struct pinctrl_dev *pctldev,
+					   struct pinctrl_gpio_range *range, unsigned offset)
+{
+	struct lpc17xx_pinctrl *ipctl = pinctrl_dev_get_drvdata(pctldev);
+	u32 new_cfg, orig_cfg = readl_relaxed(ipctl->base + 4 * offset);
+	bool found_in_dts = false;
+	unsigned int group;
+
+	/* Find the pinctrl config with GPIO mux mode for the requested pin */
+	for (group = 0; group < ipctl->ngroups; group++) {
+		struct lpc17xx_group *grp = &ipctl->groups[group];
+		unsigned int pin;
+
+		for (pin = 0; pin < grp->npins; pin++) {
+			struct lpc17xx_pin *lpc_pin = &grp->pins[pin];
+			if ((lpc_pin->idx == offset) && (lpc_pin->mux == IOCON_FUNC__GPIO)) {
+				new_cfg = lpc_pin->mux | lpc_pin->config;
+				found_in_dts = true;
+				break;
+			}
+		}
+
+		if (found_in_dts)
+			break;
+	}
+
+	if (!found_in_dts) {
+		dev_err(ipctl->dev, "%s: pin %d is not described in dts, unable to set up\n", __func__, offset);
+		return -EINVAL;
+	}
+
+	dev_dbg(ipctl->dev, "%s: pin %d: 0x%x -> 0x%x\n", __func__, offset, orig_cfg, new_cfg);
+	writel_relaxed(new_cfg, ipctl->base + 4 * offset);
+
+	return 0;
+}
+
 static const struct pinctrl_ops lpc17xx_pctl_ops = {
 	.get_groups_count	= lpc17xx_pinctrl_get_groups_count,
 	.get_group_name		= lpc17xx_pinctrl_get_group_name,
@@ -300,6 +341,7 @@ static const struct pinmux_ops lpc17xx_pmx_ops = {
 	.get_function_name	= lpc17xx_pmx_get_func_name,
 	.get_function_groups	= lpc17xx_pmx_get_groups,
 	.set_mux		= lpc17xx_pmx_set,
+	.gpio_request_enable	= lpc17xx_pmx_gpio_request_enable,
 };
 
 static const struct pinconf_ops lpc17xx_conf_ops = {
@@ -486,6 +528,8 @@ static int lpc17xx_pctl_probe(struct platform_device *pdev)
 		dev_err(ipctl->dev, "Failed pinctrl registration\n");
 		return -EINVAL;
 	}
+
+	pinctrl_add_gpio_range(ipctl->pctl, &lpc17xx_pinctrl_gpio_range);
 
 	dev_info(&pdev->dev, "initialized LPC17xx pinctrl driver\n");
 	return 0;
