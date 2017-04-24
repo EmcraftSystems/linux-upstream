@@ -82,6 +82,14 @@
 		};
 	};
 
+	aliases {
+		gpio0 = &gpio;
+		serial0 = &uart0;
+		serial2 = &uart2;
+		serial3 = &uart3;
+		ethernet0 = &mac;
+	};
+
 	clocks {
 		xtal: xtal {
 			compatible = "fixed-clock";
