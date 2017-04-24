@@ -819,7 +819,7 @@ static int stm32_spi_int_xfer(struct spi_stm32 *c, int *rlen)
 	/*
 	 * Wait for the transfer to complete, one way or another
 	 */
-	if (wait_event_interruptible_timeout(c->wait,
+	if (wait_event_timeout(c->wait,
 		c->xfer_status != -EBUSY,  timeout * HZ) == 0) {
 		ret = -ETIMEDOUT;
 	} else {
@@ -1124,7 +1124,7 @@ static int stm32_spi_dma_xfer(struct spi_stm32 *c, int *rlen)
 	 * Wait for the transfer to complete, one way or another
 	 */
 	tm = c->cs_timeout[s->chip_select] ? c->cs_timeout[s->chip_select] : 1;
-	if (wait_event_interruptible_timeout(c->wait,
+	if (wait_event_timeout(c->wait,
 				c->xfer_status != -EBUSY, tm * HZ) == 0) {
 		rv = -ETIMEDOUT;
 		goto out;
