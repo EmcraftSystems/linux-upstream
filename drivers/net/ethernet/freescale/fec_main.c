@@ -1354,9 +1354,11 @@ static bool fec_enet_copybreak(struct net_device *ndev, struct sk_buff **skb,
 	if (length > fep->rx_copybreak)
 		return false;
 
-	new_skb = netdev_alloc_skb(ndev, length);
+	new_skb = netdev_alloc_skb(ndev, length + NET_IP_ALIGN);
 	if (!new_skb)
 		return false;
+	else
+		skb_reserve(new_skb, NET_IP_ALIGN);
 
 	dma_sync_single_for_cpu(&fep->pdev->dev,
 				fec32_to_cpu(bdp->cbd_bufaddr),
@@ -1461,11 +1463,13 @@ fec_enet_rx_queue(struct net_device *ndev, int budget, u16 queue_id)
 		is_copybreak = fec_enet_copybreak(ndev, &skb, bdp, pkt_len - 4,
 						  need_swap);
 		if (!is_copybreak) {
-			skb_new = netdev_alloc_skb(ndev, FEC_ENET_RX_FRSIZE);
+			skb_new = netdev_alloc_skb(ndev,
+				FEC_ENET_RX_FRSIZE + NET_IP_ALIGN);
 			if (unlikely(!skb_new)) {
 				ndev->stats.rx_dropped++;
 				goto rx_processing_done;
-			}
+			} else
+				skb_reserve(skb_new, NET_IP_ALIGN);
 			dma_unmap_single(&fep->pdev->dev,
 					 fec32_to_cpu(bdp->cbd_bufaddr),
 					 FEC_ENET_RX_FRSIZE - fep->rx_align,
@@ -2799,9 +2803,12 @@ fec_enet_alloc_rxq_buffers(struct net_device *ndev, unsigned int queue)
 	rxq = fep->rx_queue[queue];
 	bdp = rxq->rx_bd_base;
 	for (i = 0; i < rxq->rx_ring_size; i++) {
-		skb = netdev_alloc_skb(ndev, FEC_ENET_RX_FRSIZE);
+		skb = netdev_alloc_skb(ndev,
+			FEC_ENET_RX_FRSIZE + NET_IP_ALIGN);
 		if (!skb)
 			goto err_alloc;
+		else
+			skb_reserve(skb, NET_IP_ALIGN);
 
 		if (fec_enet_new_rxbdp(ndev, bdp, skb)) {
 			dev_kfree_skb(skb);
