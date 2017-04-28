@@ -532,6 +532,12 @@ config GEN_STM32
 	  is generated. Interface is /sys/kernel/pulse_gen/. GPIO is specified
 	  in dtb.
 
+config STM32_DAC
+	bool "STM32 Digital-to-analog converter"
+	depends on PINCTRL_STM32 && SYSFS && OF && HAS_DMA
+	help
+	  Say yes here to build support for STM32 Digital to Analog Converter.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

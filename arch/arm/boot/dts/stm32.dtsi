@@ -80,6 +80,14 @@
 		serial5 = &usart6;
 		serial6 = &usart7;
 		serial7 = &usart8;
+		timer2 = &timer2;
+		timer3 = &timer3;
+		timer4 = &timer4;
+		timer5 = &timer5;
+		timer6 = &timer6;
+		timer7 = &timer7;
+		dac0 = &dac0;
+		dac1 = &dac1;
 	};
 
 	stm_flash_ctl: stm-flash-controller {
@@ -463,6 +471,26 @@
 				reg = <0x200>;
 				clocks = <&rcc 0 170>;
 				st,injected;
+				status = "disabled";
+			};
+		};
+
+		dac: dac@40007400 {
+			compatible = "st,stm32-dac";
+			reg = <0x40007400 0x400>;
+			resets = <&rst STM32F4_APB1_RESET(DAC)>;
+			clocks = <&rcc 0 157>;
+			status = "disabled";
+
+			dac0: dac0 {
+				dmas = <&dma1 5 7 0x400 3>;
+				dma-names = "tx";
+				status = "disabled";
+			};
+
+			dac1: dac1 {
+				dmas = <&dma1 6 7 0x400 3>;
+				dma-names = "tx";
 				status = "disabled";
 			};
 		};
