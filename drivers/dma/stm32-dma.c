@@ -716,7 +716,7 @@ static struct dma_async_tx_descriptor *stm32_dma_prep_slave_sg(
 
 		nb_data_items = desc->sg_req[i].len / buswidth;
 		if (nb_data_items > STM32_DMA_MAX_DATA_ITEMS) {
-			dev_err(chan2dev(chan), "nb items not supported\n");
+			dev_err(chan2dev(chan), "%d items not supported, max is %d\n", nb_data_items, STM32_DMA_MAX_DATA_ITEMS);
 			goto err;
 		}
 
@@ -1010,26 +1010,33 @@ static struct dma_chan *stm32_dma_of_xlate(struct of_phandle_args *dma_spec,
 	struct stm32_dma_chan *chan;
 	struct dma_chan *c;
 
-	if (dma_spec->args_count < 3)
+	if (dma_spec->args_count < 3) {
+		dev_err(dmadev->ddev.dev, "%s: args_count %d must be greater or equal to 3\n", __func__, dma_spec->args_count);
 		return NULL;
+	}
 
 	cfg.channel_id = dma_spec->args[0];
 	cfg.request_line = dma_spec->args[1];
 	cfg.stream_config = dma_spec->args[2];
-	cfg.threshold = 0;
+	cfg.threshold = (dma_spec->args_count > 3) ? dma_spec->args[3] : 0;
 
-	if ((cfg.channel_id >= STM32_DMA_MAX_CHANNELS) || (cfg.request_line >=
-							   dmadev->num_lines))
+	if (cfg.channel_id >= STM32_DMA_MAX_CHANNELS) {
+		dev_err(dmadev->ddev.dev, "%s: channel_id %d must be less than %d\n", __func__, cfg.channel_id, STM32_DMA_MAX_CHANNELS);
 		return NULL;
+	}
 
-	if (dma_spec->args_count > 3)
-		cfg.threshold = dma_spec->args[3];
+	if (cfg.request_line >= dmadev->num_lines) {
+		dev_err(dmadev->ddev.dev, "%s: request_line %d must be less than %d\n", __func__, cfg.request_line, dmadev->num_lines);
+		return NULL;
+	}
 
 	chan = &dmadev->chan[cfg.channel_id];
 
 	c = dma_get_slave_channel(&chan->vchan.chan);
 	if (c)
 		stm32_dma_set_config(chan, &cfg);
+	else
+		dev_err(dmadev->ddev.dev, "%s: unable to get channel %d - was already requested\n", __func__, chan->id);
 
 	return c;
 }
