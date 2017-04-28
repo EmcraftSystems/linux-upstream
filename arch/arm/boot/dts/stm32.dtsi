@@ -377,6 +377,15 @@
 			status = "disabled";
 		};
 
+		can_1: can@40006400 {
+			compatible = "st,stm32-can";
+			reg = <0x40006400 0x400>;
+			interrupts = <19 20 21>;
+			clocks = <&rcc 0 153>;
+			resets = <&rst STM32F4_APB1_RESET(CAN1)>;
+			status = "disabled";
+		};
+
 		pwr: pwr@40007000 {
 			compatible = "st,stm32-pwr", "syscon";
 			reg = <0x40007000 0x400>;

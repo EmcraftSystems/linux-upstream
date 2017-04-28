@@ -86,6 +86,12 @@ config CAN_BFIN
 	  To compile this driver as a module, choose M here: the
 	  module will be called bfin_can.
 
+config CAN_STM32
+	depends on ARCH_STM32
+	tristate "STM32 on-chip bxCAN"
+	---help---
+	  Driver for the STMicro STM32 on-chip CAN controllers
+
 config CAN_JANZ_ICAN3
 	tristate "Janz VMOD-ICAN3 Intelligent CAN controller"
 	depends on MFD_JANZ_CMODIO

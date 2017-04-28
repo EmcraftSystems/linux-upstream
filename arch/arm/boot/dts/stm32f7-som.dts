@@ -29,6 +29,17 @@
 	};
 
 	pin-controller {
+		can_1 {
+			pinctrl_can_1: can_1-0 {
+				st,pins {
+					tx = <&gpioh 13 ALT9
+						NO_PULL PUSH_PULL LOW_SPEED>;
+					rx = <&gpioi 9 ALT9
+						NO_PULL PUSH_PULL LOW_SPEED>;
+				};
+			};
+		};
+
 		ltdc {
 			pinctrl_ltdc: ltdc-0 {
 				st,pins {
