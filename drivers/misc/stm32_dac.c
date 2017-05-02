@@ -159,8 +159,8 @@ static int stm32_dac_simple(struct stm32_dac *dac, int channel, unsigned value)
 	cr &= ~(0xffff << cr_shift);
 	cr |= STM32_CR__EN << cr_shift;
 
-	writel(value, dac_ch->hold_reg);
 	writel(cr, &dac->regs->cr);
+	writel(value, dac_ch->hold_reg);
 
 	return 0;
 }
