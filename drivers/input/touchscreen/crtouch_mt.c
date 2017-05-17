@@ -383,6 +383,18 @@ static int crtouch_probe(struct i2c_client *client,
 	s32 mask_trigger = 0;
 	struct device_node *node = client->dev.of_node;
 	struct crtouch_data *crtouch;
+	struct gpio_desc *wakeup_gpio = NULL;
+
+	wakeup_gpio = devm_gpiod_get_optional(&client->dev,
+							 "wakeup", GPIOD_OUT_HIGH);
+	if (IS_ERR(wakeup_gpio)) {
+		if (PTR_ERR(wakeup_gpio) == -EPROBE_DEFER) {
+			return -EPROBE_DEFER;
+		}
+		dev_info(&client->dev, "Operating without wakeup gpio: %li\n",
+			 PTR_ERR(wakeup_gpio));
+		wakeup_gpio = NULL;
+	}
 
 	crtouch = devm_kzalloc(&client->dev, sizeof(*crtouch), GFP_KERNEL);
 
@@ -494,13 +506,7 @@ static int crtouch_probe(struct i2c_client *client,
 		dev_dbg(&client->dev, "Configured to poll every %d ms\n", crtouch->polling_period);
 	}
 
-	crtouch->wakeup_gpio = devm_gpiod_get_optional(&client->dev,
-							 "wakeup", GPIOD_OUT_HIGH);
-	if (IS_ERR(crtouch->wakeup_gpio)) {
-		dev_info(&client->dev, "Operating without wakeup gpio: %li\n",
-			 PTR_ERR(crtouch->wakeup_gpio));
-		crtouch->wakeup_gpio = NULL;
-	}
+	crtouch->wakeup_gpio = wakeup_gpio;
 
 	/*clean interrupt pin*/
 	i2c_smbus_read_byte_data(client, STATUS_REGISTER_1);

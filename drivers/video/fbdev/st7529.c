@@ -313,6 +313,8 @@ static int st7529_probe(struct spi_device *spi)
 	int err = 0;
 	dma_addr_t dma_handle;
 	u8 save;
+	struct gpio_desc *reset_gpio = NULL;
+	struct gpio_desc *a0_gpio = NULL;
 
 	if (NULL == node) {
 		dev_err(&spi->dev, "No device info\n");
@@ -328,6 +330,28 @@ static int st7529_probe(struct spi_device *spi)
 		dev_err(&spi->dev, "Incorrect spi bits per word mode: %d."
 			" Valid values are 8 or 9.\n", spi_mode);
 		return -EINVAL;
+	}
+
+	reset_gpio = devm_gpiod_get(&spi->dev,
+				    "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR_OR_NULL(reset_gpio)) {
+		err = reset_gpio ? PTR_ERR(reset_gpio) : -EINVAL;
+		if (err != -EPROBE_DEFER) {
+			dev_err(&spi->dev, "Failed to get reset gpio: %d\n", err);
+		}
+		return err;
+	}
+
+	if (spi_mode == 8) {
+		a0_gpio = devm_gpiod_get(&spi->dev,
+					 "a0", GPIOD_OUT_HIGH);
+		if (IS_ERR_OR_NULL(a0_gpio)) {
+			err = a0_gpio ? PTR_ERR(a0_gpio) : -EINVAL;
+			if (err != -EPROBE_DEFER) {
+				dev_err(&spi->dev, "Failed to get A0 gpio: %d\n", err);
+			}
+			return err;
+		}
 	}
 
 	/* Setup SPI */
@@ -397,23 +421,9 @@ static int st7529_probe(struct spi_device *spi)
 	mfbi->volctrl			= VOLCTRL_DEFAULT;
 	mfbi->spi_mode = spi_mode;
 
-	mfbi->reset_gpio = devm_gpiod_get(&spi->dev,
-					  "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR_OR_NULL(mfbi->reset_gpio)) {
-		err = mfbi->reset_gpio ? PTR_ERR(mfbi->reset_gpio) : -EINVAL;
-		dev_err(&spi->dev, "Failed to get reset gpio: %d\n", err);
-		goto failed_install_fb;
-	}
+	mfbi->reset_gpio = reset_gpio;
+	mfbi->a0_gpio = a0_gpio;
 
-	if (mfbi->spi_mode == 8) {
-		mfbi->a0_gpio = devm_gpiod_get(&spi->dev,
-					       "a0", GPIOD_OUT_HIGH);
-		if (IS_ERR_OR_NULL(mfbi->a0_gpio)) {
-			err = mfbi->a0_gpio ? PTR_ERR(mfbi->a0_gpio) : -EINVAL;
-			dev_err(&spi->dev, "Failed to get A0 gpio: %d\n", err);
-			goto failed_install_fb;
-		}
-	}
 
 	st7529_hw_init(mfbi);
 

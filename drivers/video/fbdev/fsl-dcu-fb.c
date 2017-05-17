@@ -27,6 +27,7 @@
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #include <linux/of_address.h>
+#include <linux/regulator/consumer.h>
 
 #define DRIVER_NAME			"fsl-dcu-fb"
 
@@ -159,6 +160,7 @@ struct dcu_fb_data {
 	struct completion vsync_wait;
 	struct gpio_desc *lcd_enable_gpio;
 	struct gpio_desc *lcd_backlight_gpio;
+	struct regulator *lcd_supply;
 };
 
 struct layer_display_offset {
@@ -1037,6 +1039,12 @@ static irqreturn_t fsl_dcu_irq(int irq, void *dev_id)
 
 static void fsl_dcu_turn_on_lcd(struct dcu_fb_data *dcufb)
 {
+	if (dcufb->lcd_supply) {
+		int err = regulator_enable(dcufb->lcd_supply);
+		if (err < 0)
+			dev_err(dcufb->dev, "failed to enable LCD supply\n");
+	}
+
 	if (dcufb->lcd_enable_gpio) {
 		if (gpiod_cansleep(dcufb->lcd_enable_gpio))
 			gpiod_set_value_cansleep(dcufb->lcd_enable_gpio, 1);
@@ -1065,6 +1073,12 @@ static void fsl_dcu_turn_off_lcd(struct dcu_fb_data *dcufb)
 			gpiod_set_value_cansleep(dcufb->lcd_backlight_gpio, 0);
 		else
 			gpiod_set_value(dcufb->lcd_backlight_gpio, 0);
+	}
+
+	if (dcufb->lcd_supply) {
+		int err = regulator_disable(dcufb->lcd_supply);
+		if (err < 0)
+			dev_err(dcufb->dev, "failed to disable LCD supply\n");
 	}
 }
 #endif /* CONFIG_PM_SLEEP */
@@ -1195,6 +1209,9 @@ static int fsl_dcu_probe(struct platform_device *pdev)
 	int i;
 	char *option = NULL;
 	struct device_node *node = pdev->dev.of_node;
+	struct gpio_desc *lcd_en_gpio = NULL;
+	struct gpio_desc *bl_gpio = NULL;
+	struct regulator *lcd_reg = NULL;
 
 	fb_get_options("dcufb", &option);
 
@@ -1202,6 +1219,41 @@ static int fsl_dcu_probe(struct platform_device *pdev)
 		dev_info(&pdev->dev, "using cmd options: %s\n", option);
 		if (!strcmp(option, "off"))
 			return -ENODEV;
+	}
+
+	lcd_en_gpio = devm_gpiod_get_optional(&pdev->dev,
+					      "lcd-en", GPIOD_OUT_HIGH);
+	if (IS_ERR(lcd_en_gpio)) {
+		ret = PTR_ERR(lcd_en_gpio);
+		if (ret == -EPROBE_DEFER) {
+			return -EPROBE_DEFER;
+		}
+		dev_info(&pdev->dev, "Operating without lcd_enable gpio: %li\n",
+			 PTR_ERR(lcd_en_gpio));
+		lcd_en_gpio = NULL;
+	}
+
+	bl_gpio = devm_gpiod_get_optional(&pdev->dev,
+					  "lcd-backlight", GPIOD_OUT_HIGH);
+	if (IS_ERR(bl_gpio)) {
+		ret = PTR_ERR(bl_gpio);
+		if (ret == -EPROBE_DEFER) {
+			return -EPROBE_DEFER;
+		}
+		dev_info(&pdev->dev, "Operating without backlight_enable gpio: %li\n",
+			 PTR_ERR(bl_gpio));
+		bl_gpio = NULL;
+	}
+
+	lcd_reg = devm_regulator_get(&pdev->dev, "lcd");
+	if (IS_ERR(lcd_reg)) {
+		ret = PTR_ERR(lcd_reg);
+		if (ret == -EPROBE_DEFER) {
+			return -EPROBE_DEFER;
+		}
+		dev_info(&pdev->dev, "Operating without lcd_supply regulator: %li\n",
+			 PTR_ERR(lcd_reg));
+		lcd_reg = NULL;
 	}
 
 	dcufb = devm_kzalloc(&pdev->dev,
@@ -1305,21 +1357,9 @@ static int fsl_dcu_probe(struct platform_device *pdev)
 			goto failed_alloc_framebuffer;
 	}
 
-	dcufb->lcd_enable_gpio = devm_gpiod_get_optional(&pdev->dev,
-							 "lcd-en", GPIOD_OUT_HIGH);
-	if (IS_ERR(dcufb->lcd_enable_gpio)) {
-		dev_info(&pdev->dev, "Operating without lcd_enable gpio: %li\n",
-			 PTR_ERR(dcufb->lcd_enable_gpio));
-		dcufb->lcd_enable_gpio = NULL;
-	}
-
-	dcufb->lcd_backlight_gpio = devm_gpiod_get_optional(&pdev->dev,
-							    "lcd-backlight", GPIOD_OUT_HIGH);
-	if (IS_ERR(dcufb->lcd_backlight_gpio)) {
-		dev_info(&pdev->dev, "Operating without backlight_enable gpio: %li\n",
-			 PTR_ERR(dcufb->lcd_backlight_gpio));
-		dcufb->lcd_backlight_gpio = NULL;
-	}
+	dcufb->lcd_enable_gpio = lcd_en_gpio;
+	dcufb->lcd_backlight_gpio = bl_gpio;
+	dcufb->lcd_supply = lcd_reg;
 
 	if (of_property_read_u32(pdev->dev.of_node, "turnoff-delay",
 				 &dcufb->turnoff_delay) != 0) {
