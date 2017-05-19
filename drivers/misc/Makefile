@@ -58,4 +58,5 @@ obj-$(CONFIG_CXL_BASE)		+= cxl/
 obj-$(CONFIG_PROMATE_7_SEG_LCD)	+= numeric_display.o
 obj-$(CONFIG_NFCTAG_NXP)	+= nxp_ntag.o
 obj-$(CONFIG_GEN_STM32)		+= gen_stm32.o
+obj-$(CONFIG_STM32_ADC_CUSTOM)	+= stm32_adc.o
 obj-$(CONFIG_STM32_DAC)		+= stm32_dac.o

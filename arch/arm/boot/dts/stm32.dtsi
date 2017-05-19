@@ -86,6 +86,9 @@
 		timer5 = &timer5;
 		timer6 = &timer6;
 		timer7 = &timer7;
+		adc0 = &adc1;
+		adc1 = &adc2;
+		adc2 = &adc3;
 		dac0 = &dac0;
 		dac1 = &dac1;
 	};
@@ -457,6 +460,8 @@
 				#io-channel-cells = <1>;
 				reg = <0x100>;
 				clocks = <&rcc 0 169>;
+				dmas = <&dma2 3 1 0x400 0>;
+				dma-names = "rx";
 				status = "disabled";
 			};
 
@@ -472,6 +477,8 @@
 				#io-channel-cells = <1>;
 				reg = <0x200>;
 				clocks = <&rcc 0 170>;
+				dmas = <&dma2 1 2 0x400 0>;
+				dma-names = "rx";
 				status = "disabled";
 			};
 
