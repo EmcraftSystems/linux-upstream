@@ -114,3 +114,4 @@ all.config
 *.kdev4
 
 rootfs.cpio
+arch/arm/boot/dts/emcraft.dts
