@@ -10,6 +10,149 @@
 #define __DTS_IMX6ULL_PINFUNC_H
 
 #include "imx6ul-pinfunc.h"
+
+#define PAD_CTL_SRE_SLOW		(0 << 0)
+#define PAD_CTL_SRE_FAST		(1 << 0)
+
+#define PAD_CTL_DSE_DISABLE		(0 << 3)
+#define PAD_CTL_DSE_260ohm_3V3		(1 << 3)
+#define PAD_CTL_DSE_130ohm_3V3		(2 << 3)
+#define PAD_CTL_DSE_87ohm_3V3		(3 << 3)
+#define PAD_CTL_DSE_65ohm_3V3		(4 << 3)
+#define PAD_CTL_DSE_52ohm_3V3		(5 << 3)
+#define PAD_CTL_DSE_43ohm_3V3		(6 << 3)
+#define PAD_CTL_DSE_37ohm_3V3		(7 << 3)
+
+#define PAD_CTL_DSE_150ohm_1V8		(1 << 3)
+#define PAD_CTL_DSE_75ohm_1V8		(2 << 3)
+#define PAD_CTL_DSE_50ohm_1V8		(3 << 3)
+#define PAD_CTL_DSE_37ohm_1V8		(4 << 3)
+#define PAD_CTL_DSE_30ohm_1V8		(5 << 3)
+#define PAD_CTL_DSE_25ohm_1V8		(6 << 3)
+#define PAD_CTL_DSE_22ohm_1V8		(7 << 3)
+
+#define PAD_CTL_SPEED_0_LOW_50mhz	(0 << 6)
+#define PAD_CTL_SPEED_1_MED_100mhz	(1 << 6)
+#define PAD_CTL_SPEED_2_MED_100mhz	(2 << 6)
+#define PAD_CTL_SPEED_3_HIGH_200mhz	(3 << 6)
+
+#define PAD_CTL_ODE			(1 << 11)
+#define PAD_CTL_PKE			(1 << 12)
+#define PAD_CTL_PUE			(1 << 13)
+
+#define PAD_CTL_PUS_100K_DOWN		(0 << 14)
+#define PAD_CTL_PUS_47K_UP		(1 << 14)
+#define PAD_CTL_PUS_100K_UP		(2 << 14)
+#define PAD_CTL_PUS_22K_UP		(3 << 14)
+
+#define PAD_CTL_HYS			(1 << 16)
+
+#define PAD_CTL_SION			(1 << 30)
+
+
+#define MX6UL_HIGH_DRV			(PAD_CTL_DSE_260ohm_3V3)
+
+#define MX6UL_UART_PAD_CTRL		(PAD_CTL_DSE_43ohm_3V3 |	\
+					 PAD_CTL_SPEED_2_MED_100mhz |	\
+					 PAD_CTL_SRE_FAST |		\
+					 PAD_CTL_HYS)
+
+#define MX6UL_SPI_PAD_CTRL		(PAD_CTL_DSE_87ohm_3V3 |	\
+					 PAD_CTL_PUS_100K_UP |		\
+					 PAD_CTL_SPEED_2_MED_100mhz |	\
+					 PAD_CTL_HYS)
+
+#define MX6UL_ENET_TX_PAD_CTRL		(PAD_CTL_DSE_52ohm_3V3 |	\
+					 PAD_CTL_SPEED_3_HIGH_200mhz |	\
+					 PAD_CTL_PUE |			\
+					 PAD_CTL_PKE |			\
+					 PAD_CTL_PUS_22K_UP |		\
+					 PAD_CTL_SRE_FAST)
+
+#define MX6UL_ENET_RX_PAD_CTRL		(PAD_CTL_DSE_DISABLE |		\
+					 PAD_CTL_SPEED_3_HIGH_200mhz |	\
+					 PAD_CTL_PUE |			\
+					 PAD_CTL_PKE |			\
+					 PAD_CTL_PUS_22K_UP)
+
+#define MX6UL_ENET_MDIO_PAD_CTRL	(PAD_CTL_DSE_52ohm_3V3 |	\
+					 PAD_CTL_SPEED_3_HIGH_200mhz |	\
+					 PAD_CTL_PUE |			\
+					 PAD_CTL_PKE |			\
+					 PAD_CTL_PUS_22K_UP |		\
+					 PAD_CTL_SRE_FAST)
+
+#define MX6UL_ENET_CLK_PAD_CTRL		(PAD_CTL_SION |			\
+					 PAD_CTL_DSE_65ohm_3V3 |	\
+					 PAD_CTL_SPEED_3_HIGH_200mhz |	\
+					 PAD_CTL_SRE_FAST)
+
+#define MX6UL_I2C_PAD_CTRL		(PAD_CTL_SION |			\
+					 PAD_CTL_DSE_43ohm_3V3 |	\
+					 PAD_CTL_SPEED_2_MED_100mhz |	\
+					 PAD_CTL_ODE |			\
+					 PAD_CTL_PKE |			\
+					 PAD_CTL_PUE |			\
+					 PAD_CTL_PUS_100K_UP |		\
+					 PAD_CTL_HYS)
+
+#define MX6UL_SDHC_PAD_CTRL		(PAD_CTL_SRE_FAST |		\
+					 PAD_CTL_DSE_87ohm_3V3 |	\
+					 PAD_CTL_SPEED_1_MED_100mhz |	\
+					 PAD_CTL_PKE |			\
+					 PAD_CTL_PUE |			\
+					 PAD_CTL_PUS_22K_UP |		\
+					 PAD_CTL_HYS)
+
+#define MX6UL_SDHC_CLK_PAD_CTRL		(PAD_CTL_SRE_FAST |		\
+					 PAD_CTL_DSE_43ohm_3V3 |	\
+					 PAD_CTL_SPEED_1_MED_100mhz |	\
+					 PAD_CTL_HYS)
+
+#define MX6UL_LCD_PAD_CTRL		(PAD_CTL_SRE_FAST |		\
+					 PAD_CTL_DSE_37ohm_3V3 |	\
+					 PAD_CTL_SPEED_1_MED_100mhz)
+
+#define MX6UL_PWM_PAD_CTRL		(PAD_CTL_DSE_43ohm_3V3 |	\
+					 PAD_CTL_SPEED_2_MED_100mhz |	\
+					 PAD_CTL_PKE |			\
+					 PAD_CTL_HYS)
+
+#define MX6UL_NAND_PAD_CTRL		(PAD_CTL_SRE_FAST |		\
+					 PAD_CTL_DSE_43ohm_3V3 |	\
+					 PAD_CTL_SPEED_2_MED_100mhz |	\
+					 PAD_CTL_PKE |			\
+					 PAD_CTL_PUE)
+
+#define MX6UL_GPIO_PAD_CTRL		(PAD_CTL_DSE_43ohm_3V3 |	\
+					 PAD_CTL_SPEED_0_LOW_50mhz |	\
+					 PAD_CTL_PUS_100K_UP)
+
+#define MX6UL_GPIO_KEY_PAD_CTRL		(PAD_CTL_DSE_43ohm_3V3 |	\
+					 PAD_CTL_SPEED_0_LOW_50mhz |	\
+					 PAD_CTL_PKE |			\
+					 PAD_CTL_PUE |			\
+					 PAD_CTL_PUS_100K_UP |		\
+					 PAD_CTL_HYS)
+
+#define MX6UL_SOUND_PAD_CTRL		(PAD_CTL_DSE_43ohm_3V3 |	\
+					 PAD_CTL_SPEED_2_MED_100mhz |	\
+					 PAD_CTL_PKE |			\
+					 PAD_CTL_PUE |			\
+					 PAD_CTL_HYS)
+
+#define MX6UL_WDOG_PAD_CTRL		(PAD_CTL_DSE_43ohm_3V3 |	\
+					 PAD_CTL_SPEED_2_MED_100mhz |	\
+					 PAD_CTL_PKE |			\
+					 PAD_CTL_PUE)
+
+#define MX6UL_OTG_ID_PAD_CTRL		(PAD_CTL_SRE_FAST |		\
+					 PAD_CTL_DSE_87ohm_3V3 |	\
+					 PAD_CTL_SPEED_1_MED_100mhz |	\
+					 PAD_CTL_PKE |			\
+					 PAD_CTL_PUE |			\
+					 PAD_CTL_PUS_22K_UP |		\
+					 PAD_CTL_HYS)
 /*
  * The pin function ID is a tuple of
  * <mux_reg conf_reg input_reg mux_mode input_val>
