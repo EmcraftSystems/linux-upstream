@@ -446,7 +446,6 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
-				gpio-ranges = <&iomuxc 0 5 26>;
 			};
 
 			gpio2: gpio@020a0000 {
@@ -458,7 +457,6 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
-				gpio-ranges = <&iomuxc 0 31 20>;
 			};
 
 			gpio3: gpio@020a4000 {
@@ -470,7 +468,6 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
-				gpio-ranges = <&iomuxc 0 51 29>;
 			};
 
 			gpio4: gpio@020a8000 {
@@ -482,7 +479,6 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
-				gpio-ranges = <&iomuxc 0 80 32>;
 			};
 
 			gpio5: gpio@020ac000 {
@@ -494,7 +490,6 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
-				gpio-ranges = <&iomuxc 0 112 24>;
 			};
 
 			gpio6: gpio@020b0000 {
@@ -506,7 +501,6 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
-				gpio-ranges = <&iomuxc 0 136 12>, <&iomuxc 12 158 11>;
 			};
 
 			gpio7: gpio@020b4000 {
@@ -518,7 +512,6 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
-				gpio-ranges = <&iomuxc 0 148 10>, <&iomuxc 10 169 2>;
 			};
 
 			kpp: kpp@020b8000 {
