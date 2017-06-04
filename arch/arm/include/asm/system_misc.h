@@ -20,6 +20,9 @@ extern void (*arm_pm_idle)(void);
 #define UDBG_SEGV	(1 << 3)
 #define UDBG_BUS	(1 << 4)
 
+#define UDBG_ALL	(UDBG_UNDEFINED | UDBG_SYSCALL | UDBG_BADABORT | \
+			 UDBG_SEGV | UDBG_BUS)
+
 extern unsigned int user_debug;
 
 #endif /* !__ASSEMBLY__ */

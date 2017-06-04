@@ -54,7 +54,7 @@ static const char *handler[]= {
 void *vectors_page;
 
 #ifdef CONFIG_DEBUG_USER
-unsigned int user_debug;
+unsigned int user_debug = UDBG_ALL;
 
 static int __init user_debug_setup(char *str)
 {
