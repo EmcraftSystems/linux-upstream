@@ -267,16 +267,17 @@ static void mpu_hw_on(void)
 
 		/*
 		 * If the default region is off, then enable the default region,
-		 * and free the last system region by moving it to region #0
+		 * and free the last system region by shifting regions to #0
 		 */
 		v = readl(&NVIC->mpu_control);
 		if (i && !(v & MPU_CTRL_PRIVDEFENA)) {
 			writel(v | MPU_CTRL_PRIVDEFENA, &NVIC->mpu_control);
 
+			for (v = 0; v < i; v++) {
+				mpu_region_read(v + 1, &b, &a);
+				mpu_region_write(v, b, a);
+			}
 			i--;
-			mpu_region_read(i, &b, &a);
-			mpu_region_write(0, b, a);
-			mpu_region_write(i, 0, 0);
 		}
 
 		/*
