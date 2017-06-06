@@ -990,6 +990,19 @@ asmlinkage void __exception do_memmanage(struct pt_regs *regs)
 	 */
 	if (mpu_context_addr_valid(mm, addr, flags)) {
 		mpu_page_map_32k(mm, addr, flags);
+
+		/*
+		 * If the fault address is close to the 32K boundary, then check
+		 * and map next 32K area as well. This is to be able to handle
+		 * situations when the CPU must cross the 32K boundary to
+		 * complete an instruction/data fetch
+		 */
+		if ((addr & PAGE32K_MASK) !=
+		    ((addr + (1 << CONFIG_ARM_L1_CACHE_SHIFT)) & PAGE32K_MASK)){
+			addr = addr + (1 << CONFIG_ARM_L1_CACHE_SHIFT);
+			if (mpu_context_addr_valid(mm, addr, flags))
+				mpu_page_map_32k(mm, addr, flags);
+		}
 	}
 	/*
 	 * No mapping for the offending address. Kill the process.
