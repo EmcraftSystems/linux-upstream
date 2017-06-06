@@ -245,5 +245,25 @@
 			interrupts = <LPC17XX_IRQ_RTC 0>;
 			status = "disabled";
 		};
+
+		can1: can@40044000 {
+			compatible = "nxp,lpc17xx-can";
+			reg = <0x40044000 0x60>, <0x4003c000 0x30>;
+			clocks = <&clks CLOCK_CAN1>;
+			clock-names = "can";
+			resets = <&rst RST_CAN1>;
+			interrupts = <LPC17XX_IRQ_CAN 0>;
+			status = "disabled";
+		};
+
+		can2: can@40048000 {
+			compatible = "nxp,lpc17xx-can";
+			reg = <0x40048000 0x60>, <0x4003c000 0x30>;
+			clocks = <&clks CLOCK_CAN2>;
+			clock-names = "can";
+			resets = <&rst RST_CANACC>;
+			interrupts = <LPC17XX_IRQ_CAN 0>;
+			status = "disabled";
+		};
 	};
 };
