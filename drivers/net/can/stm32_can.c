@@ -149,6 +149,7 @@
  */
 #define STM_CAN_FMR_BASE	0x200
 #define STM_CAN_FMR_FINIT	(1 << 0)
+#define STM_CAN_FMR_CANSB_GET(x)        ((x >> 8) & 0x3F)
 
 #define STM_CAN_FM1R_BASE	0x204
 #define STM_CAN_FM1R_IM(x)	(0 << (x))
@@ -326,39 +327,6 @@ static int stm32_chip_start(struct net_device *ndev)
 	rv = stm32_chip_init(prv, 0);
 	if (rv)
 		goto out;
-
-	/*
-	 * Set-up default rx filter:
-	 * - use filter #0
-	 * - Identifier/Mask mode
-	 * - 32-bit scale
-	 * - assign to RX FIFO0
-	 * - receive all
-	 */
-	i = 0;
-	val = readl(prv->reg + STM_CAN_FMR_BASE);
-	writel(val | STM_CAN_FMR_FINIT, prv->reg + STM_CAN_FMR_BASE);
-
-	val = readl(prv->reg + STM_CAN_FA1R_BASE);
-	writel(val & ~STM_CAN_FA1R_FACT(i), prv->reg + STM_CAN_FA1R_BASE);
-
-	val = readl(prv->reg + STM_CAN_FM1R_BASE) & ~STM_CAN_FM1R_MSK(i);
-	writel(val | STM_CAN_FM1R_IM(i), prv->reg + STM_CAN_FM1R_BASE);
-
-	val = readl(prv->reg + STM_CAN_FS1R_BASE);
-	writel(val | STM_CAN_FS1R_32BIT(i), prv->reg + STM_CAN_FS1R_BASE);
-
-	val = readl(prv->reg + STM_CAN_FFA1R_BASE) & ~STM_CAN_FFA1R_MSK(i);
-	writel(val | STM_CAN_FFA1R_FIFO0(i), prv->reg + STM_CAN_FFA1R_BASE);
-
-	writel(0, prv->reg + STM_CAN_FIR1_BASE(i));
-	writel(0, prv->reg + STM_CAN_FIR2_BASE(i));
-
-	val = readl(prv->reg + STM_CAN_FA1R_BASE);
-	writel(val | STM_CAN_FA1R_FACT(i), prv->reg + STM_CAN_FA1R_BASE);
-
-	val = readl(prv->reg + STM_CAN_FMR_BASE);
-	writel(val & ~STM_CAN_FMR_FINIT, prv->reg + STM_CAN_FMR_BASE);
 
 	/*
 	 * Enable interrupts
@@ -737,6 +705,43 @@ static const struct net_device_ops stm32_netdev_ops = {
 	.ndo_start_xmit	= stm32_start_xmit,
 };
 
+static void setup_rx_filter(void __iomem *regs, bool master)
+{
+	int i, val;
+	/*
+	 * Set-up default rx filter:
+	 * - use filter #0 for master or slave default
+	 * - Identifier/Mask mode
+	 * - 32-bit scale
+	 * - assign to RX FIFO0
+	 * - receive all
+	 */
+	val = readl(regs + STM_CAN_FMR_BASE);
+	i = master ? 0 : STM_CAN_FMR_CANSB_GET(val);
+	writel(val | STM_CAN_FMR_FINIT, regs + STM_CAN_FMR_BASE);
+
+	val = readl(regs + STM_CAN_FA1R_BASE);
+	writel(val & ~STM_CAN_FA1R_FACT(i), regs + STM_CAN_FA1R_BASE);
+
+	val = readl(regs + STM_CAN_FM1R_BASE) & ~STM_CAN_FM1R_MSK(i);
+	writel(val | STM_CAN_FM1R_IM(i), regs + STM_CAN_FM1R_BASE);
+
+	val = readl(regs + STM_CAN_FS1R_BASE);
+	writel(val | STM_CAN_FS1R_32BIT(i), regs + STM_CAN_FS1R_BASE);
+
+	val = readl(regs + STM_CAN_FFA1R_BASE) & ~STM_CAN_FFA1R_MSK(i);
+	writel(val | STM_CAN_FFA1R_FIFO0(i), regs + STM_CAN_FFA1R_BASE);
+
+	writel(0, regs + STM_CAN_FIR1_BASE(i));
+	writel(0, regs + STM_CAN_FIR2_BASE(i));
+
+	val = readl(regs + STM_CAN_FA1R_BASE);
+	writel(val | STM_CAN_FA1R_FACT(i), regs + STM_CAN_FA1R_BASE);
+
+	val = readl(regs + STM_CAN_FMR_BASE);
+	writel(val & ~STM_CAN_FMR_FINIT, regs + STM_CAN_FMR_BASE);
+}
+
 /******************************************************************************
  * Platform driver interface
  ******************************************************************************/
@@ -816,6 +821,13 @@ static int stm32_can_probe(struct platform_device *pdev)
 	if (rv) {
 		dev_err(dev, "registering netdev failed (%d)\n", rv);
 		goto out_free;
+	}
+
+	/* as only CAN1 features receive filter registers, configure
+	   default filter for both CAN1/CAN2 here */
+	if (of_get_property(pdev->dev.of_node, "st,stm32-can-master", NULL)) {
+		setup_rx_filter(prv->reg, 1);
+		setup_rx_filter(prv->reg, 0);
 	}
 
 	dev_info(dev, "device registered (reg=%p, irq=%d)\n", addr, irq);

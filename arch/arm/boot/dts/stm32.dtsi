@@ -386,6 +386,7 @@
 			interrupts = <19 20 21>;
 			clocks = <&rcc 0 153>;
 			resets = <&rst STM32F4_APB1_RESET(CAN1)>;
+			st,stm32-can-master;
 			status = "disabled";
 		};
 
