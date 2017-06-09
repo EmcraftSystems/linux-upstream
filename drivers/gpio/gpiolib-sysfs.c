@@ -363,8 +363,14 @@ static umode_t gpio_is_visible(struct kobject *kobj, struct attribute *attr,
 		if (!show_direction)
 			mode = 0;
 	} else if (attr == &dev_attr_edge.attr) {
+		/*
+		 * On STM32 gpiod_to_irq actually binds an EXTI IRQ
+		 * to selected GPIO.
+		 */
+#if !defined(CONFIG_ARCH_STM32)
 		if (gpiod_to_irq(desc) < 0)
 			mode = 0;
+#endif
 		if (!show_direction && test_bit(FLAG_IS_OUT, &desc->flags))
 			mode = 0;
 	}
