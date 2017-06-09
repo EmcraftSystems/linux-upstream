@@ -64,6 +64,8 @@
 #define LTDC_LAYER_WHPCR(i)	(0x88 + 0x80 * (i))
 #define LTDC_LAYER_WVPCR(i)	(0x8c + 0x80 * (i))
 #define LTDC_LAYER_PFCR(i)	(0x94 + 0x80 * (i))
+#define LTDC_LAYER_DCCR(i)	(0x9c + 0x80 * (i))
+#define LTDC_LAYER_BFCR(i)	(0xa0 + 0x80 * (i))
 #define LTDC_LAYER_CFBAR(i)	(0xac + 0x80 * (i))
 #define LTDC_LAYER_CFBLR(i)	(0xb0 + 0x80 * (i))
 #define LTDC_LAYER_CFBLNR(i)	(0xb4 + 0x80 * (i))
@@ -166,6 +168,11 @@ static int fb_enable_panel(struct fb_info *info)
 
 		/* Set pixel format to ARGB8888 */
 		writel(0, fb->base + LTDC_LAYER_PFCR(i));
+
+		/* Set Blending Factor1 (BF1) to Constant Alpha, so
+		 * 24bpp images would have Alpha set to 0xff */
+		writel((readl(fb->base + LTDC_LAYER_BFCR(i)) & ~(0x7 << 8))
+			| (0x4 << 8), fb->base + LTDC_LAYER_BFCR(i));
 
 		writel(layer_desc->addr, fb->base + LTDC_LAYER_CFBAR(i));
 
