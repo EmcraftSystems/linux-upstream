@@ -34,11 +34,17 @@
  * Constants local to this module
  ******************************************************************************/
 /*
- * Enable / disable debug print-outs
+ * #define debug print-outs:
+ * DEBUG_MPU to enable additional print-outs on tasks creation
+ * DEBUG_PROC_NAME "process" to print-out any mapping for the process specified
  */
-#if 0
-#define DEBUG
-#endif
+#undef DEBUG_MPU
+#undef DEBUG_PROC_NAME
+
+/*
+ * Number of MPU regions
+ */
+#define MPU_REG_NUM			8
 
 /*
  * Maximum number of static MPU regions allocated for stack (32K stack pages
@@ -135,7 +141,7 @@ struct mpu_context {
 	struct {
 		u32		base;		/* Region base */
 		u32		attr;		/* Region attr */
-	} mpu_regs[8];				/* MPU regions copy */
+	} mpu_regs[MPU_REG_NUM];		/* MPU regions copy */
 	u32			indx;		/* Next reg to use */
 	u32			barrier;	/* Locked regs bar */
 #ifdef CONFIG_MPU_STACK_REDZONE
@@ -253,7 +259,7 @@ static void mpu_hw_on(void)
 	 * So, skip all regions set by the loader.
 	 */
 	if (readl(&NVIC->mpu_control) & MPU_CTRL_ENABLE) {
-		for (i = 0; i < 8; i++) {
+		for (i = 0; i < MPU_REG_NUM; i++) {
 			/*
 			 * Make sure the mapping is valid only for the kernel
 			 */
@@ -347,7 +353,7 @@ static void mpu_addr_region_geometry(void)
 		mpu_page_tbl_off[i] = s;
 		s += sizeof(u32) *
 		     ((((r->top - r->bot) >> PAGE_SHIFT) + 31) / 32);
-#if defined(DEBUG)
+#if defined(DEBUG_MPU)
 		printk("%s: %d: b=0x%x,t=0x%x,sz=%dK,s=%d\n", __func__,
 			i, r->bot, r->top,
 			(r->top - r->bot) / 1024, s);
@@ -360,7 +366,7 @@ static void mpu_addr_region_geometry(void)
 	 */
 	mpu_page_tbl_len = sizeof(struct mpu_context) + s;
 	mpu_page_tbl_order = max(1, get_order(mpu_page_tbl_len));
-#if defined(DEBUG)
+#if defined(DEBUG_MPU)
 	printk("%s: tbl=%d,ord=%d\n", __func__,
 		mpu_page_tbl_len, mpu_page_tbl_order);
 #endif
@@ -386,7 +392,7 @@ static inline struct mpu_addr_region *mpu_addr_region_find(u32 a)
 /*
  * Debug service: print active MPU address regions
  */
-#if defined(DEBUG)
+#if defined(DEBUG_MPU)
 static void mpu_addr_region_tbl_print(void)
 {
 	struct mpu_addr_region *r;
@@ -394,8 +400,7 @@ static void mpu_addr_region_tbl_print(void)
 
 	for (i = 0; i < mpu_addr_region_next; i++) {
 		r = &mpu_addr_region_tbl[i];
-		printk("%s: %d: %x,%x\n",
-		      __func__, i, r->bot, r->top);
+		printk("%s: %d: %x,%x\n", __func__, i, r->bot, r->top);
 	}
 }
 #endif
@@ -615,7 +620,7 @@ static inline void mpu_page_map(struct mm_struct *mm, u32 a, u32 s,
 	/*
 	 * Set the context for a next region allocation.
 	 */
-	p->indx = (i == 7) ? p->barrier : i + 1;
+	p->indx = (i == (MPU_REG_NUM - 1)) ? p->barrier : i + 1;
 }
 
 /*
@@ -637,7 +642,7 @@ static inline void mpu_page_copyall(struct mm_struct *mm)
 	struct mpu_context *p = mpu_context_p(mm);
 	int i;
 
-	for (i = mpu_hw_reg_indx; i < 8; i ++)
+	for (i = mpu_hw_reg_indx; i < MPU_REG_NUM; i ++)
 		mpu_region_write(i, p->mpu_regs[i].base, p->mpu_regs[i].attr);
 }
 
@@ -705,7 +710,7 @@ static void mpu_page_printall(const char *s, struct mm_struct *mm)
 	u32 a, b;
 	int i;
 
-	for (i = 0; i < 8; i ++) {
+	for (i = 0; i < MPU_REG_NUM; i ++) {
 		mpu_region_read(i, &b, &a);
 		printk("%s: reg=%d: cb=%08x,ca=%08x,mb=%08x,ma=%08x\n", s, i,
 			p->mpu_regs[i].base, p->mpu_regs[i].attr, b, a);
@@ -808,27 +813,15 @@ void mpu_start_thread(struct pt_regs *regs)
 	u32 t, b, p;
 	int n, len;
 
-	len = mm->start_stack - mm->context.end_brk;
-#if defined(DEBUG)
-	printk("%s: control=%x,indx=%d\n", __func__,
-		readl(&NVIC->mpu_control), mpu_hw_reg_indx);
-	printk("%s: end_stack=%lx,start_stack=%lx,len_stack=%d\n", __func__,
-               mm->context.end_brk, mm->start_stack, len);
-	mpu_addr_region_tbl_print();
-#endif
-
 	/*
 	 * Set up mappings for the stack.
 	 */
+	len = mm->start_stack - mm->context.end_brk;
 	b = mm->context.end_brk;
 	for (t = b;
 	     mpu_context_addr_valid(mm, t, (VM_READ | VM_WRITE));
 	     t += PAGE_SIZE);
 	t &= PAGE_MASK;
-
-#if defined(DEBUG)
-	printk("%s: b=%x,t=%x\n", __func__, b, t);
-#endif
 
 	/*
 	 * Disable interrupts since it is important to leave
@@ -841,12 +834,8 @@ void mpu_start_thread(struct pt_regs *regs)
 	 */
 	for (p = b & PAGE32K_MASK, n = 0;
 	     p < t && n < MPU_STACK_BAR;
-	     p += PAGE32K_SIZE, n++) {
+	     p += PAGE32K_SIZE, n++)
 		mpu_page_map_32k(mm, p, (VM_READ | VM_WRITE));
-#if defined(DEBUG)
-		printk("%s: p=%x\n", __func__, p);
-#endif
-	}
 
 #ifdef CONFIG_MPU_STACK_REDZONE
 	/*
@@ -897,7 +886,22 @@ void mpu_start_thread(struct pt_regs *regs)
 	 */
 	mpu_page_barrier(mm, mpu_hw_reg_indx + n);
 
-#ifdef DEBUG
+#ifdef DEBUG_MPU
+	printk("Start process:\n"
+		"   name: `%s`, control: 0x%x, indx: %d\n"
+		"   code section: 0x%08lx .. 0x%08lx %ld\n"
+		"   data section: 0x%08lx .. 0x%08lx %ld\n"
+		"  stack section: 0x%08lx .. 0x%08lx %ld\n",
+		current->comm, readl(&NVIC->mpu_control), mpu_hw_reg_indx,
+		mm->start_code, mm->end_code, mm->end_code - mm->start_code,
+		mm->start_data, mm->end_data, mm->end_data - mm->start_data,
+		mm->context.end_brk, mm->start_stack,
+		mm->start_stack - mm->context.end_brk);
+#ifdef CONFIG_MPU_STACK_REDZONE
+	p = (mm->context.end_brk + PAGE256B_SIZE - 1) & PAGE256B_MASK;
+	printk(" stack red zone: 0x%08x .. 0x%08x\n", p, p + 255);
+#endif
+	mpu_addr_region_tbl_print();
 	mpu_page_printall(__func__, mm);
 #endif
 done:
@@ -989,6 +993,13 @@ asmlinkage void __exception do_memmanage(struct pt_regs *regs)
 	 * are READ/WRITE/EXEC.
 	 */
 	if (mpu_context_addr_valid(mm, addr, flags)) {
+#if defined(DEBUG_PROC_NAME)
+		if (!strcmp(current->comm, DEBUG_PROC_NAME))
+			printk("%s.1: %08x.%02x/%d/%s\n",
+				__func__, addr, fault_status,
+				mpu_context_p(mm)->indx,
+				current->comm);
+#endif
 		mpu_page_map_32k(mm, addr, flags);
 
 		/*
@@ -1000,8 +1011,16 @@ asmlinkage void __exception do_memmanage(struct pt_regs *regs)
 		if ((addr & PAGE32K_MASK) !=
 		    ((addr + (1 << CONFIG_ARM_L1_CACHE_SHIFT)) & PAGE32K_MASK)){
 			addr = addr + (1 << CONFIG_ARM_L1_CACHE_SHIFT);
-			if (mpu_context_addr_valid(mm, addr, flags))
+			if (mpu_context_addr_valid(mm, addr, flags)) {
+#if defined(DEBUG_PROC_NAME)
+				if (!strcmp(current->comm, DEBUG_PROC_NAME))
+					printk("%s.2: %08x.%02x/%d/%s\n",
+						__func__, addr, fault_status,
+						mpu_context_p(mm)->indx,
+						current->comm);
+#endif
 				mpu_page_map_32k(mm, addr, flags);
+			}
 		}
 	}
 	/*
