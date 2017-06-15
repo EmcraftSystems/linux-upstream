@@ -82,5 +82,3 @@ config MPU_STACK_REDZONE
 	help
 	  Attempt to read/write from a user-space process the red zone
 	  will result in a memory fault exception for the process.
-	  The red zone consumes up to 512 bytes of the lower stack
-	  (the red zone itself is 256 bytes + alignment).

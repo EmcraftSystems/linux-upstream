@@ -42,17 +42,11 @@
 #undef DEBUG_PROC_NAME
 
 /*
- * Number of MPU regions
+ * Number of MPU regions and subregions
  */
 #define MPU_REG_NUM			8
-
-/*
- * Maximum number of static MPU regions allocated for stack (32K stack pages
- * and 1 redzone region). This limits the maximum size of stack which the
- * process could have, and defines the number of free MPU regions available
- * for data and code of the process
- */
-#define MPU_STACK_BAR			3
+#define MPU_SUB_NUM			8
+#define MPU_SUB_MSK			((1 << MPU_SUB_NUM) - 1)
 
 /*
  * Non-standard pages used by this module
@@ -98,6 +92,11 @@
  * Maximum number of mappable regions
  */
 #define MPU_ADDR_REGION_TBLSZ		16
+
+/*
+ * Minimum red-zone size
+ */
+#define MPU_REDZONE_MIN			256
 
 /******************************************************************************
  * C-types local to this module
@@ -259,37 +258,62 @@ static void mpu_hw_on(void)
 	 * So, skip all regions set by the loader.
 	 */
 	if (readl(&NVIC->mpu_control) & MPU_CTRL_ENABLE) {
+		/*
+		 * Make sure the mapping is valid only for the kernel
+		 */
 		for (i = 0; i < MPU_REG_NUM; i++) {
-			/*
-			 * Make sure the mapping is valid only for the kernel
-			 */
 			mpu_region_read(i, &b, &a);
 			if (!(a & MPU_RASR_ENABLE))
-				break;
+				continue;
 			a &= ~MPU_RASR_AP_MASK;
 			a |= MPU_RASR_AP_PRVL_RW;
 			mpu_region_write(i, b, a);
 		}
 
 		/*
-		 * If the default region is off, then enable the default region,
-		 * and free the last system region by shifting regions to #0
+		 * If the default region is off, then enable it, and disable the
+		 * 4G-region (assume it's first)
 		 */
 		v = readl(&NVIC->mpu_control);
-		if (i && !(v & MPU_CTRL_PRIVDEFENA)) {
+		if (!(v & MPU_CTRL_PRIVDEFENA)) {
 			writel(v | MPU_CTRL_PRIVDEFENA, &NVIC->mpu_control);
-
-			for (v = 0; v < i; v++) {
-				mpu_region_read(v + 1, &b, &a);
-				mpu_region_write(v, b, a);
-			}
-			i--;
+			mpu_region_write(0, 0, 0);
 		}
 
 		/*
-		 * Make sure the mapping is never affected
+		 * Remove all regions except DRAM
 		 */
-		mpu_hw_reg_indx = i;
+		for (i = 0; i < MPU_REG_NUM; i++) {
+			mpu_region_read(i, &b, &a);
+			if (!(a & MPU_RASR_ENABLE))
+				continue;
+			b &= MPU_RBAR_ADDR_MASK;
+			if (b >= CONFIG_DRAM_BASE &&
+			    b < (CONFIG_DRAM_BASE + CONFIG_DRAM_SIZE))
+				continue;
+			if (b >= CONFIG_FLASH_MEM_BASE &&
+			    b < (CONFIG_FLASH_MEM_BASE + CONFIG_FLASH_SIZE))
+				pr_warn("Programming on-chip flash may work "
+					"incorrectly when MPU enabled\n");
+			mpu_region_write(i, 0, 0);
+		}
+
+		/*
+		 * Shift all remain regions to #0
+		 */
+		for (i = 0, v = 0; i < MPU_REG_NUM; i++) {
+			mpu_region_read(i, &b, &a);
+			if (!(a & MPU_RASR_ENABLE))
+				continue;
+			mpu_region_write(v, b, a);
+			mpu_region_write(i, 0, 0);
+			v++;
+		}
+
+		/*
+		 * Make sure this mapping is never affected
+		 */
+		mpu_hw_reg_indx = v;
 	} else {
 		/*
 		 * Turn the MPU on, enable the default map for
@@ -509,8 +533,17 @@ static inline int mpu_context_addr_valid_for_region(struct mm_struct *mm,
 {
 	struct mpu_context *p = mpu_context_p(mm);
 	u32 page, idx, bit;
-	int i, b = 0;
+	int i;
 	u32 *mask;
+
+#ifdef CONFIG_MPU_STACK_REDZONE
+	/*
+	 * If page overlaps redzone, then permission denied
+	 */
+	page = a & PAGE_MASK;
+	if (page < p->redzone_top && (page + PAGE_SIZE) > p->redzone_bot)
+		return 0;
+#endif
 
 	/*
 	 * Get access to: region index; page table
@@ -530,9 +563,7 @@ static inline int mpu_context_addr_valid_for_region(struct mm_struct *mm,
 	 * Note that we do not distinguish between RD/WR/EXEC,
 	 * any permission results in a valid mapping.
 	 */
-	b = (mask[idx] & bit) ? 1 : 0;
-
-	return b;
+	return (mask[idx] & bit) ? 1 : 0;
 }
 
 /*
@@ -550,7 +581,7 @@ static inline int mpu_context_addr_valid(struct mm_struct *mm, u32 a, u32 f)
 	/*
 	 * Check if the address is not in the stack redzone
 	 */
-	if ((p->redzone_bot <= a) && (a < p->redzone_top))
+	if (a < p->redzone_top && a >= p->redzone_bot)
 		goto done;
 #endif
 
@@ -573,11 +604,11 @@ done:
  * that have the priority above the barrier (i.e. all regions
  * below barrier are locked).
  */
-static inline void mpu_page_map(struct mm_struct *mm, u32 a, u32 s,
+static inline void mpu_page_map(struct mm_struct *mm, u32 a,
 	u32 sz, u32 acs, u32 srd, u32 xn)
 {
 	struct mpu_context *p = mpu_context_p(mm);
-	u32 i, b, t;
+	u32 i, b, t, s = 1 << (sz + 1);
 
 	/*
 	 * Prepare region settings. Get attributes of the appropriate
@@ -647,12 +678,14 @@ static inline void mpu_page_copyall(struct mm_struct *mm)
 }
 
 /*
- * Calculate settings for sub-regions in a 32K page
+ * Calculate settings for sub-regions in a page
  */
-static inline int mpu_page_srd(struct mm_struct *mm, u32 a, u32 f)
+static inline int mpu_page_srd(struct mm_struct *mm, u32 a, u32 f, u32 reg_size)
 {
 	struct mpu_addr_region *r;
-	u32 pb, pt, p, srd, x;
+	u32 pb, pt, p, x, srd = 0;
+	u32 reg_mask = ~(reg_size - 1);
+	u32 subreg_size = reg_size / MPU_SUB_NUM;
 	int s;
 
 	/*
@@ -663,17 +696,17 @@ static inline int mpu_page_srd(struct mm_struct *mm, u32 a, u32 f)
 		goto done;
 
 	/*
-	 * These are the boundaries for the 32K region
+	 * These are the boundaries for the region
 	 */
-	pb = a & PAGE32K_MASK;
-	pt = pb + PAGE32K_SIZE;
+	pb = a & reg_mask;
+	pt = pb + reg_size;
 
 	/*
-	 * Only those 4K pages that are mapped in the context
+	 * Only those parts of 4K pages that are mapped in the context
 	 * get mapped as sub-regions.
 	 */
-	for (srd = 0xFF, s = 0, p = pb + PAGE_SIZE-1;
-	     p < pt; p += PAGE_SIZE, s ++) {
+	for (srd = MPU_SUB_MSK, s = 0, p = pb + subreg_size - 1;
+	     p < pt; p += subreg_size, s++) {
 		x = mpu_context_addr_valid_for_region(mm, r, p, f);
 		srd &= ~(x << s);
 	}
@@ -688,17 +721,9 @@ done:
  */
 static inline void mpu_page_map_32k(struct mm_struct *mm, u32 a, u32 f)
 {
-	u32 srd = mpu_page_srd(mm, a, f);
+	u32 srd = mpu_page_srd(mm, a, f, PAGE32K_SIZE);
 
-	mpu_page_map(mm, a, PAGE32K_SIZE, 0xE, 0x3, srd, 0);
-}
-
-/*
- * Map in a 256K protection region. Access is NONE for user mode.
- */
-static inline void mpu_page_map_256b(struct mm_struct *mm, u32 a, u32 f)
-{
-	mpu_page_map(mm, a, PAGE256B_SIZE, 0x7, 0x1, 0, 1);
+	mpu_page_map(mm, a, 0xE, 0x3, srd, 0);
 }
 
 /*
@@ -810,18 +835,35 @@ void mpu_switch_mm(struct mm_struct *prev, struct mm_struct *next)
 void mpu_start_thread(struct pt_regs *regs)
 {
 	struct mm_struct *mm = current->mm;
-	u32 t, b, p;
-	int n, len;
+#ifdef CONFIG_MPU_STACK_REDZONE
+	struct mpu_context *p = mpu_context_p(mm);
+	u32 top, bot;
+#endif
+	u32 reg_pow, reg_len, reg_msk;
+	u32 sub_pow, sub_len, sub_msk;
+	u32 srd, adr;
+	int n = 0, len;
 
 	/*
-	 * Set up mappings for the stack.
+	 * Set up mappings for the stack. Select the region size which is most
+	 * close to the stack length
 	 */
 	len = mm->start_stack - mm->context.end_brk;
-	b = mm->context.end_brk;
-	for (t = b;
-	     mpu_context_addr_valid(mm, t, (VM_READ | VM_WRITE));
-	     t += PAGE_SIZE);
-	t &= PAGE_MASK;
+	for (reg_pow = 7; reg_pow < 32; reg_pow++)
+		if ((1 << (reg_pow + 1)) >= len)
+			break;
+
+	if (reg_pow == 32) {
+		reg_len = reg_msk = sub_len = sub_msk = 0;
+		goto out;
+	}
+
+	reg_len = 1 << (reg_pow + 1);
+	reg_msk = ~(reg_len - 1);
+
+	sub_len = reg_len >> 3;
+	sub_pow = __ffs(sub_len);
+	sub_msk = ~(sub_len - 1);
 
 	/*
 	 * Disable interrupts since it is important to leave
@@ -830,82 +872,117 @@ void mpu_start_thread(struct pt_regs *regs)
 	local_irq_disable();
 
 	/*
-	 * Map in the stack pages
+	 * Map in the page for the stack bottom half
 	 */
-	for (p = b & PAGE32K_MASK, n = 0;
-	     p < t && n < MPU_STACK_BAR;
-	     p += PAGE32K_SIZE, n++)
-		mpu_page_map_32k(mm, p, (VM_READ | VM_WRITE));
+#ifdef CONFIG_MPU_STACK_REDZONE
+	p->redzone_bot = p->redzone_top = 0;
+#endif
+
+	adr = mm->context.end_brk;
+	srd = mpu_page_srd(mm, adr, VM_READ | VM_WRITE, reg_len);
 
 #ifdef CONFIG_MPU_STACK_REDZONE
 	/*
-	 * If the user has configured a stack "red zone",
-	 * disable a 256 bytes region at the bottom of the stack.
+	 * If the user has configured a stack "red zone", disable the
+	 * subregion(s) at the bottom of the stack
 	 */
-	p = (b + PAGE256B_SIZE - 1) & PAGE256B_MASK;
-	mpu_page_map_256b(mm, p, 0);
-	n++;
-
-	/*
-	 * Save the redzone geometry in the context
-	 */
-	mpu_context_p(mm)->redzone_bot = p;
-	mpu_context_p(mm)->redzone_top = p + PAGE256B_SIZE;
+	bot = top = (adr + sub_len - 1) & sub_msk;
+	adr &= reg_msk;
+	while ((top < adr + reg_len) && (top - bot < MPU_REDZONE_MIN)) {
+		srd |= 1 << ((top - adr) >> sub_pow);
+		top = (top + sub_len) & sub_msk;
+	}
 #endif
+	if (srd != MPU_SUB_MSK) {
+		mpu_page_map(mm, adr, reg_pow, 0x3, srd, 0);
+		n++;
+	}
 
 	/*
-	 * Enable interrupts
+	 * Map in the page for the stack top half
 	 */
-	local_irq_enable();
+	if ((mm->context.end_brk & reg_msk) != (mm->start_stack & reg_msk)) {
+		adr = mm->start_stack;
+		srd = mpu_page_srd(mm, adr, VM_READ | VM_WRITE, reg_len);
 
-	/*
-	 * Check if stack is large and we are not able to fit it in
-	 */
-	if (n > MPU_STACK_BAR) {
-		printk("MPU: can't map %dB of stack @{%08x;%08x}%s for '%s' "
-			"using %d regions (need %d); kill the process\n",
-			len, b, t,
 #ifdef CONFIG_MPU_STACK_REDZONE
-			" + redzone area",
-#else
-			"",
+		adr &= reg_msk;
+		while ((top < adr + reg_len) && (top - bot < MPU_REDZONE_MIN)) {
+			srd |= 1 << ((top - adr) >> sub_pow);
+			top = (top + sub_len) & sub_msk;
+		}
 #endif
-			current->comm, MPU_STACK_BAR, n);
-		mpu_page_printall(__func__, mm);
-
-		/*
-		 * Send a SIGSEGV to the process
-		 */
-		send_sig(SIGSEGV, current, 0);
-		goto done;
+		if (srd != MPU_SUB_MSK) {
+			mpu_page_map(mm, adr, reg_pow, 0x3, srd, 0);
+			n++;
+		}
 	}
 
 	/*
 	 * Stack is mapped. Set a barrier in the MPU context so that the
 	 * round-robin page mapping doesn't touch the mappings for the stack.
 	 */
+#ifdef CONFIG_MPU_STACK_REDZONE
+	p->redzone_top = top;
+	p->redzone_bot = bot;
+#endif
 	mpu_page_barrier(mm, mpu_hw_reg_indx + n);
+
+	/*
+	 * Enable interrupts
+	 */
+	local_irq_enable();
+	if (!n)
+		goto out;
 
 #ifdef DEBUG_MPU
 	printk("Start process:\n"
-		"   name: `%s`, control: 0x%x, indx: %d\n"
-		"   code section: 0x%08lx .. 0x%08lx %ld\n"
-		"   data section: 0x%08lx .. 0x%08lx %ld\n"
-		"  stack section: 0x%08lx .. 0x%08lx %ld\n",
-		current->comm, readl(&NVIC->mpu_control), mpu_hw_reg_indx,
+		"   name: `%s`, control: 0x%x, indx: %d/%d\n"
+		"   code section: 0x%08lx .. 0x%08lx %6ld\n"
+		"   data section: 0x%08lx .. 0x%08lx %6ld\n"
+		"  stack section: 0x%08lx .. 0x%08lx %6ld/%ld(%d%s region%s)\n",
+		current->comm, readl(&NVIC->mpu_control), mpu_hw_reg_indx, n,
 		mm->start_code, mm->end_code, mm->end_code - mm->start_code,
 		mm->start_data, mm->end_data, mm->end_data - mm->start_data,
 		mm->context.end_brk, mm->start_stack,
-		mm->start_stack - mm->context.end_brk);
 #ifdef CONFIG_MPU_STACK_REDZONE
-	p = (mm->context.end_brk + PAGE256B_SIZE - 1) & PAGE256B_MASK;
-	printk(" stack red zone: 0x%08x .. 0x%08x\n", p, p + 255);
+		mm->start_stack - p->redzone_top,
+#else
+		mm->start_stack - mm->context.end_brk,
+#endif
+		mm->start_stack - mm->context.end_brk,
+		reg_len >= 1024 ? reg_len / 1024 : reg_len,
+		reg_len >= 1024 ? "K" : "", n > 1 ? "s" : "");
+#ifdef CONFIG_MPU_STACK_REDZONE
+	printk(" stack red zone: 0x%08x .. 0x%08x %6d\n",
+		p->redzone_bot, p->redzone_top,
+		p->redzone_top - p->redzone_bot);
 #endif
 	mpu_addr_region_tbl_print();
 	mpu_page_printall(__func__, mm);
 #endif
-done:
-	return;
+
+out:
+	if (!n) {
+		printk("MPU: can't map %dB of stack @{%08lx;%08lx}%s\n"
+			" reg(%d): %d,%d,0x%08x; sub: %d,0x%08x\n"
+			" kill the process `%s`\n",
+			len, mm->context.end_brk, mm->start_stack,
+#ifdef CONFIG_MPU_STACK_REDZONE
+			" + redzone area",
+#else
+			"",
+#endif
+			n, reg_pow, reg_len, reg_msk,
+			sub_len, sub_msk,
+			current->comm);
+		mpu_page_printall(__func__, mm);
+
+		/*
+		 * Send a SIGSEGV to the process
+		 */
+		send_sig(SIGSEGV, current, 0);
+	}
 }
 
 /*
@@ -929,6 +1006,9 @@ asmlinkage void __exception do_memmanage(struct pt_regs *regs)
 	int i, n;
 #endif /* CONFIG_DEBUG_USER */
 
+#ifdef CONFIG_MPU_STACK_REDZONE
+	struct mpu_context *p;
+#endif
 	u32 fault_status, mfar, pc, addr = 0;
 	struct mm_struct *mm = current->mm;
 	unsigned long flags;
@@ -1054,19 +1134,28 @@ kill:
 		printk("Fault address:\n"
 			"   0x%08x\n", addr);
 	}
+#ifdef CONFIG_MPU_STACK_REDZONE
+	p = mpu_context_p(mm);
+#endif
 	printk("Fault process:\n"
 		"   name: `%s`\n"
-		"   code section: 0x%08lx .. 0x%08lx\n"
-		"   data section: 0x%08lx .. 0x%08lx\n"
-		"  stack section: 0x%08lx .. 0x%08lx\n",
+		"   code section: 0x%08lx .. 0x%08lx %6ld\n"
+		"   data section: 0x%08lx .. 0x%08lx %6ld\n"
+		"  stack section: 0x%08lx .. 0x%08lx %6ld/%ld\n",
 		current->comm,
-		mm->start_code, mm->end_code,
-		mm->start_data, mm->end_data,
-		mm->context.end_brk, mm->start_stack);
+		mm->start_code, mm->end_code, mm->end_code - mm->start_code,
+		mm->start_data, mm->end_data, mm->end_data - mm->start_data,
+		mm->context.end_brk, mm->start_stack,
 #ifdef CONFIG_MPU_STACK_REDZONE
-	addr = (mm->context.end_brk + PAGE256B_SIZE - 1) & PAGE256B_MASK;
-	printk(" stack red zone: 0x%08x .. 0x%08x%s\n", addr, addr + 255,
-		(mfar >= addr && mfar <= (addr + 255)) ? " [*]" : "");
+		mm->start_stack - p->redzone_top,
+#else
+		mm->start_stack - mm->context.end_brk,
+#endif
+		mm->start_stack - mm->context.end_brk);
+#ifdef CONFIG_MPU_STACK_REDZONE
+	printk(" stack red zone: 0x%08x .. 0x%08x %6d %s\n",
+		p->redzone_bot, p->redzone_top, p->redzone_top - p->redzone_bot,
+		(addr >= p->redzone_bot && addr < p->redzone_top) ? "[*]" : "");
 #endif
 	printk("MPU regions on fault:\n");
 	mpu_page_printall("   ", mm);
