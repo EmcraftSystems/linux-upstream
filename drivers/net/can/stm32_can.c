@@ -19,6 +19,7 @@
 #include <linux/reset.h>
 #include <linux/clk.h>
 #include <linux/io.h>
+#include <linux/gpio/consumer.h>
 
 #include <linux/can.h>
 #include <linux/can/dev.h>
@@ -184,6 +185,7 @@ struct stm32_prv {
 	struct clk			*clk;
 	struct reset_control		*rst;
 	u32				rx_next;
+	struct gpio_desc		*power_gpio;
 };
 
 /******************************************************************************
@@ -334,6 +336,11 @@ static int stm32_chip_start(struct net_device *ndev)
 	val = STM_CAN_IER_TMEIE | STM_CAN_IER_FMPIE(0) | STM_CAN_IER_FMPIE(1);
 	writel(val, prv->reg + STM_CAN_IER_BASE);
 
+	if (prv->power_gpio) {
+		gpiod_set_value(prv->power_gpio, 1);
+		msleep(1);
+	}
+
 out:
 	if (rv)
 		dev_err(prv->dev, "%s: error %d\n", __func__, rv);
@@ -346,6 +353,10 @@ static int stm32_chip_stop(struct net_device *ndev, enum can_state state)
 	struct stm32_prv *prv = netdev_priv(ndev);
 	u32 val;
 	int i, rv;
+
+	if (prv->power_gpio) {
+		gpiod_set_value(prv->power_gpio, 0);
+	}
 
 	/*
 	 * Switch Sleep mode
@@ -799,6 +810,10 @@ static int stm32_can_probe(struct platform_device *pdev)
 		rv = -EINVAL;
 		goto out_free;
 	}
+
+	prv->power_gpio = devm_gpiod_get(dev, "power", GPIOD_OUT_HIGH);
+	if (IS_ERR_OR_NULL(prv->power_gpio))
+		prv->power_gpio = NULL;
 
 	reset_control_assert(prv->rst);
 	reset_control_deassert(prv->rst);
