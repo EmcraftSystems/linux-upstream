@@ -23,11 +23,17 @@ static void __init imx6ul_enet_clk_init(void)
 	struct regmap *gpr;
 
 	gpr = syscon_regmap_lookup_by_compatible("fsl,imx6ul-iomuxc-gpr");
-	if (!IS_ERR(gpr))
+	if (!IS_ERR(gpr)) {
 		regmap_update_bits(gpr, IOMUXC_GPR1, IMX6UL_GPR1_ENET_CLK_DIR,
 				   IMX6UL_GPR1_ENET_CLK_OUTPUT);
-	else
+
+		if (of_machine_is_compatible("emcraft,6ull-som"))
+			regmap_update_bits(gpr, IOMUXC_GPR1,
+					   IMX6UL_GPR1_ENET2_CLK_DIR | IMX6UL_GPR1_ENET2_CLK_OUTPUT,
+					   0);
+	} else {
 		pr_err("failed to find fsl,imx6ul-iomux-gpr regmap\n");
+	}
 
 }
 
