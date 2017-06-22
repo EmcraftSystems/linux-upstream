@@ -102,6 +102,7 @@
 #define CTRL_VSYNC_MODE			(1 << 18)
 #define CTRL_DOTCLK_MODE		(1 << 17)
 #define CTRL_DATA_SELECT		(1 << 16)
+#define CTRL_CSC_DATA_SWIZZLE_LITTLE	(1 << 12)
 #define CTRL_SET_BUS_WIDTH(x)		(((x) & 0x3) << 10)
 #define CTRL_GET_BUS_WIDTH(x)		(((x) >> 10) & 0x3)
 #define CTRL_SET_WORD_LENGTH(x)		(((x) & 0x3) << 8)
@@ -264,7 +265,7 @@ struct mxsfb_info {
 	struct pm_qos_request pm_qos_req;
 
 	char disp_videomode[NAME_LEN];
-
+	bool data_swizzle;
 #ifdef CONFIG_FB_MXC_OVERLAY
 	struct mxsfb_layer overlay;
 #endif
@@ -917,6 +918,9 @@ static int mxsfb_set_par(struct fb_info *fb_info)
 		return -EINVAL;
 	}
 
+	if (host->data_swizzle)
+		ctrl |= CTRL_CSC_DATA_SWIZZLE_LITTLE;
+
 	writel(ctrl, host->base + LCDC_CTRL);
 
 	writel(TRANSFER_COUNT_SET_VCOUNT(fb_info->var.yres) |
@@ -1347,6 +1351,8 @@ static int mxsfb_init_fbinfo_dt(struct mxsfb_info *host)
 		ret = -EINVAL;
 		goto put_display_node;
 	}
+
+	host->data_swizzle = of_property_read_bool(display_np, "data-swizzle");
 
 	ret = of_property_read_u32(display_np, "bits-per-pixel",
 				   &var->bits_per_pixel);
