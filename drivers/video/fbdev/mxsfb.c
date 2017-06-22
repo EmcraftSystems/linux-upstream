@@ -86,6 +86,7 @@
 #define CTRL_VSYNC_MODE			(1 << 18)
 #define CTRL_DOTCLK_MODE		(1 << 17)
 #define CTRL_DATA_SELECT		(1 << 16)
+#define CTRL_CSC_DATA_SWIZZLE_LITTLE	(1 << 12)
 #define CTRL_SET_BUS_WIDTH(x)		(((x) & 0x3) << 10)
 #define CTRL_GET_BUS_WIDTH(x)		(((x) >> 10) & 0x3)
 #define CTRL_SET_WORD_LENGTH(x)		(((x) & 0x3) << 8)
@@ -182,6 +183,7 @@ struct mxsfb_info {
 	const struct mxsfb_devdata *devdata;
 	u32 sync;
 	struct regulator *reg_lcd;
+	bool data_swizzle;
 };
 
 #define mxsfb_is_v3(host) (host->devdata->ipversion == 3)
@@ -470,6 +472,9 @@ static int mxsfb_set_par(struct fb_info *fb_info)
 				fb_info->var.bits_per_pixel);
 		return -EINVAL;
 	}
+
+	if (host->data_swizzle)
+		ctrl |= CTRL_CSC_DATA_SWIZZLE_LITTLE;
 
 	writel(ctrl, host->base + LCDC_CTRL);
 
@@ -768,6 +773,8 @@ static int mxsfb_init_fbinfo_dt(struct mxsfb_info *host,
 		ret = -EINVAL;
 		goto put_display_node;
 	}
+
+	host->data_swizzle = of_property_read_bool(display_np, "data-swizzle");
 
 	ret = of_property_read_u32(display_np, "bits-per-pixel",
 				   &var->bits_per_pixel);
