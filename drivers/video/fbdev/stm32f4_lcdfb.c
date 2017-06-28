@@ -47,8 +47,11 @@
 #include <linux/delay.h>
 #include <video/stm32f4_fb.h>
 #include <video/of_display_timing.h>
+#include <linux/of_platform.h>
 #include <video/videomode.h>
 #include <asm/mach-types.h>
+
+#include "stm32_dsi.h"
 
 /* STM32F4 LTDC registers */
 #define LTDC_SSCR	0x08
@@ -63,7 +66,9 @@
 #define LTDC_LAYER_CR(i)	(0x84 + 0x80 * (i))
 #define LTDC_LAYER_WHPCR(i)	(0x88 + 0x80 * (i))
 #define LTDC_LAYER_WVPCR(i)	(0x8c + 0x80 * (i))
+#define LTDC_LAYER_CKCR(i)	(0x8c + 0x80 * (i))
 #define LTDC_LAYER_PFCR(i)	(0x94 + 0x80 * (i))
+#define LTDC_LAYER_CACR(i)	(0x98 + 0x80 * (i))
 #define LTDC_LAYER_DCCR(i)	(0x9c + 0x80 * (i))
 #define LTDC_LAYER_BFCR(i)	(0xa0 + 0x80 * (i))
 #define LTDC_LAYER_CFBAR(i)	(0xac + 0x80 * (i))
@@ -87,6 +92,7 @@ struct stm32f4_ltdc_fb_data {
 	struct clk *clk;
 	struct clk *pix_clk;
 	int fb_enabled;
+	volatile u32 *dsi_wcr_reg;
 };
 
 struct mfb_info {
@@ -437,6 +443,14 @@ static int fb_set_par(struct fb_info *info)
 	struct mfb_info *mfbi = info->par;
 	struct device *dev = &mfbi->parent->pdev->dev;
 	struct stm32f4_layer_desc *layer_desc = mfbi->layer_desc;
+	struct stm32f4_ltdc_fb_data *fb = mfbi->parent;
+
+#if defined(CONFIG_FB_STM32_DSI)
+	if (fb->dsi_wcr_reg) {
+		*fb->dsi_wcr_reg &= ~STM32_DSI_WCR_DSIEN;
+		*fb->dsi_wcr_reg |= STM32_DSI_WCR_LTDCEN;
+	}
+#endif /* CONFIG_FB_STM32_DSI */
 
 	set_fix(info);
 
@@ -470,6 +484,13 @@ static int fb_set_par(struct fb_info *info)
 		update_lcdc(info);
 
 	fb_enable_panel(info);
+
+#if defined(CONFIG_FB_STM32_DSI)
+	if (fb->dsi_wcr_reg) {
+		*fb->dsi_wcr_reg |= STM32_DSI_WCR_DSIEN;
+	}
+#endif /* CONFIG_FB_STM32_DSI */
+
 	return 0;
 }
 
@@ -707,13 +728,36 @@ static int fb_probe(struct platform_device *pdev)
 	struct mfb_info *mfbi;
 	struct resource *res;
 	struct fb_info *info;
+	volatile u32 *dsi_wcr_reg = NULL;
 	int ret = 0;
 	int i;
+
+#if defined(CONFIG_FB_STM32_DSI)
+	struct device_node *dsi_node;
+	struct platform_device *dsi_pdev;
+	dsi_node = of_find_compatible_node(NULL, NULL, "st,stm32-dsi");
+	if (dsi_node) {
+		dsi_pdev = of_find_device_by_node(dsi_node);
+		if (dsi_pdev) {
+			struct stm32_dsi_regs *stm32_dsi_regs;
+			res = platform_get_resource(dsi_pdev, IORESOURCE_MEM, 0);
+			stm32_dsi_regs = devm_ioremap_resource(&dsi_pdev->dev, res);
+
+			if (!IS_ERR_OR_NULL(stm32_dsi_regs))
+				dsi_wcr_reg = &stm32_dsi_regs->wcr;
+		} else {
+			dev_warn(&pdev->dev, "failed to find DSI device\n");
+		}
+	} else {
+		dev_warn(&pdev->dev, "No DSI node found\n");
+	}
+#endif /* CONFIG_FB_STM32_DSI */
 
 	fb = kmalloc(sizeof(struct stm32f4_ltdc_fb_data), GFP_KERNEL);
 	if (!fb)
 		return -ENOMEM;
 	fb->pdev = pdev;
+	fb->dsi_wcr_reg = dsi_wcr_reg;
 
 	for (i = 0; i < ARRAY_SIZE(fb->layer_info); i++) {
 		info = framebuffer_alloc(sizeof(struct mfb_info), &pdev->dev);
