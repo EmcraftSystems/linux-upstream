@@ -1147,8 +1147,6 @@ static int fsl_dcu_suspend(struct device *dev)
 	fsl_dcu_turn_off_lcd(dcufb);
 
 	if(dcufb->turnoff_delay) {
-		/* Workaround for Poplabcom board:
-		   wait for discharging of the power rail. */
 		msleep(dcufb->turnoff_delay);
 	}
 
