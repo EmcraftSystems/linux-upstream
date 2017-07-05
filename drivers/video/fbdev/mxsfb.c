@@ -51,6 +51,7 @@
 #include <video/of_display_timing.h>
 #include <video/of_videomode.h>
 #include <video/videomode.h>
+#include <linux/interrupt.h>
 
 #define REG_SET	4
 #define REG_CLR	8
@@ -97,6 +98,10 @@
 #define CTRL_DF24			(1 << 1)
 #define CTRL_RUN			(1 << 0)
 
+#define CTRL1_VSYNC_EDGE_IRQ		(1 << 8)
+#define CTRL1_CUR_FRAME_DONE_IRQ	(1 << 9)
+#define CTRL1_VSYNC_EDGE_IRQ_EN		(1 << 12)
+#define CTRL1_CUR_FRAME_DONE_IRQ_EN	(1 << 13)
 #define CTRL1_FIFO_CLEAR		(1 << 21)
 #define CTRL1_SET_BYTE_PACKAGING(x)	(((x) & 0xf) << 16)
 #define CTRL1_GET_BYTE_PACKAGING(x)	(((x) >> 16) & 0xf)
@@ -184,6 +189,8 @@ struct mxsfb_info {
 	u32 sync;
 	struct regulator *reg_lcd;
 	bool data_swizzle;
+	struct completion vsync_wait;
+	unsigned int irq;
 };
 
 #define mxsfb_is_v3(host) (host->devdata->ipversion == 3)
@@ -328,6 +335,19 @@ static inline void mxsfb_disable_axi_clk(struct mxsfb_info *host)
 {
 	if (host->clk_axi)
 		clk_disable_unprepare(host->clk_axi);
+}
+
+static irqreturn_t mxsfb_irq(int irq, void *dev_id)
+{
+	struct mxsfb_info *host = dev_id;
+
+	if (CTRL1_CUR_FRAME_DONE_IRQ | readl(host->base + LCDC_CTRL1)) {
+		writel(CTRL1_CUR_FRAME_DONE_IRQ, host->base + LCDC_CTRL1 + REG_CLR);
+		writel(CTRL1_CUR_FRAME_DONE_IRQ_EN, host->base + LCDC_CTRL1 + REG_CLR);
+		complete(&host->vsync_wait);
+	}
+
+	return IRQ_HANDLED;
 }
 
 static void mxsfb_enable_controller(struct fb_info *fb_info)
@@ -615,6 +635,43 @@ static int mxsfb_pan_display(struct fb_var_screeninfo *var,
 	return 0;
 }
 
+static int mxsfb_wait_for_vsync(struct mxsfb_info *host)
+{
+	int ret;
+
+	writel(CTRL1_CUR_FRAME_DONE_IRQ_EN, host->base + LCDC_CTRL1 + REG_SET);
+
+	ret = wait_for_completion_timeout(&host->vsync_wait, msecs_to_jiffies(100));
+
+	if (ret < 0) {
+		dev_warn(&host->pdev->dev, "wait_for_vsync failed: %d!\n", ret);
+		return ret;
+	}
+
+	if (ret == 0) {
+		dev_warn(&host->pdev->dev, "wait_for_vsync timed out!\n");
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
+static int mxsfb_ioctl(struct fb_info *info, unsigned int cmd,
+		unsigned long arg)
+{
+	struct mxsfb_info *host = to_imxfb_host(info);
+
+	switch (cmd) {
+	case FBIO_WAITFORVSYNC:
+		return mxsfb_wait_for_vsync(host);
+	default:
+		dev_err(&host->pdev->dev, "unknown ioctl command (0x%08X)\n", cmd);
+		return -ENOIOCTLCMD;
+	}
+
+	return 0;
+}
+
 static struct fb_ops mxsfb_ops = {
 	.owner = THIS_MODULE,
 	.fb_check_var = mxsfb_check_var,
@@ -625,6 +682,7 @@ static struct fb_ops mxsfb_ops = {
 	.fb_fillrect = cfb_fillrect,
 	.fb_copyarea = cfb_copyarea,
 	.fb_imageblit = cfb_imageblit,
+	.fb_ioctl = mxsfb_ioctl,
 };
 
 static int mxsfb_restore_mode(struct mxsfb_info *host,
@@ -948,6 +1006,21 @@ static int mxsfb_probe(struct platform_device *pdev)
 	mxsfb_check_var(&fb_info->var, fb_info);
 
 	platform_set_drvdata(pdev, fb_info);
+
+	host->irq = platform_get_irq(pdev, 0);
+	if (!host->irq) {
+		dev_err(&pdev->dev, "could not get irq\n");
+		return -EINVAL;
+	}
+
+	init_completion(&host->vsync_wait);
+
+	ret = devm_request_irq(&pdev->dev, host->irq, mxsfb_irq,
+			0, DRIVER_NAME, host);
+	if (ret) {
+		dev_err(&pdev->dev, "could not request irq\n");
+		goto fb_release;
+	}
 
 	ret = register_framebuffer(fb_info);
 	if (ret != 0) {
