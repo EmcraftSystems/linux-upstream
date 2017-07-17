@@ -14,7 +14,7 @@
 
 #ifndef __ASSEMBLY__
 struct pt_regs {
-	unsigned long uregs[18];
+	unsigned long uregs[20];
 };
 
 #define user_mode(regs)	\
@@ -118,7 +118,7 @@ extern unsigned long profile_pc(struct pt_regs *regs);
  */
 #include <linux/stddef.h>
 #include <linux/types.h>
-#define MAX_REG_OFFSET (offsetof(struct pt_regs, ARM_ORIG_r0))
+#define MAX_REG_OFFSET (offsetof(struct pt_regs, ARM_EXC_lr))
 
 extern int regs_query_register_offset(const char *name);
 extern const char *regs_query_register_name(unsigned int offset);

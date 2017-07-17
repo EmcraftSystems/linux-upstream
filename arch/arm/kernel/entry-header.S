@@ -111,6 +111,7 @@
 
 	@ store saved r12 using str to have a register to hold the base for stm
 	str	r8, [sp, #S_IP]
+	str	lr, [sp, #S_EXC_LR]
 	add	r8, sp, #S_SP
 	@ store r13-r15, xPSR
 	stmia	r8!, {r9-r12}

@@ -127,7 +127,7 @@
  */
 #ifndef __KERNEL__
 struct pt_regs {
-	long uregs[18];
+	long uregs[20];
 };
 #endif /* __KERNEL__ */
 
@@ -149,6 +149,7 @@ struct pt_regs {
 #define ARM_r1		uregs[1]
 #define ARM_r0		uregs[0]
 #define ARM_ORIG_r0	uregs[17]
+#define ARM_EXC_lr      uregs[18]
 
 /*
  * The size of the user-visible VFP state as seen by PTRACE_GET/SETVFPREGS
