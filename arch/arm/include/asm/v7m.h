@@ -46,6 +46,7 @@
  */
 #define EXC_RET_STACK_MASK			0x00000004
 #define EXC_RET_THREADMODE_PROCESSSTACK		0xfffffffd
+#define EXC_RET_THREADMODE_PROCESSSTACK_FPU	0xffffffed
 
 #ifndef __ASSEMBLY__
 
