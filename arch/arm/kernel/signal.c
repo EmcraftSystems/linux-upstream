@@ -147,8 +147,6 @@ static int restore_vfp_context(struct vfp_sigframe __user *frame)
  * Do a signal return; undo the signal stack.  These are aligned to 64-bit.
  */
 struct sigframe {
-	unsigned long registers_frame[8]; /* {r0-r3, ip, lr, pc, PSR) */
-	unsigned long fpu_high_frame[18]; /* {FPU.s0-s15, FPSCR, 4-byte pad} */
 	struct ucontext uc;
 	unsigned long retcode[4];
 };

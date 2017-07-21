@@ -114,6 +114,8 @@ static struct traps traps[] = {
 	{NULL}
 };
 
+int v7m_vfp_exception(void);
+
 /*
  * The function initializes Bus fault and Usage fault exceptions,
  * forbids unaligned data access and division by 0.
@@ -177,6 +179,14 @@ void traps_v7m_common(struct pt_regs *regs, enum interrupts in)
 
 	writel(hstatus, &NVIC->hard_fault_status);
 	writel(lstatus, &NVIC->local_fault_status);
+
+#if defined(CONFIG_VFPM)
+	if (lstatus & NOCP) {
+		if (0 == v7m_vfp_exception()) {
+			return;
+		}
+	}
+#endif
 
 	if (user_mode(regs)) {
 #if defined(CONFIG_DEBUG_USER)
