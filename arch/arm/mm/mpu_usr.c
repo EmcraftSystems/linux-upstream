@@ -1159,6 +1159,10 @@ kill:
 #endif
 	printk("MPU regions on fault:\n");
 	mpu_page_printall("   ", mm);
+	if (regs->ARM_pc >= mm->start_code && regs->ARM_pc < mm->end_code)
+		printk("PC 0x%x is in the code section, offset 0x%x\n", (u32)regs->ARM_pc, (u32)(regs->ARM_pc - mm->start_code));
+	if (regs->ARM_lr >= mm->start_code && regs->ARM_lr < mm->end_code)
+		printk("LR 0x%x is in the code section, offset 0x%x\n", (u32)regs->ARM_lr, (u32)(regs->ARM_lr - mm->start_code));
 	printk("Register values on fault:\n");
 	__show_regs(regs);
 
