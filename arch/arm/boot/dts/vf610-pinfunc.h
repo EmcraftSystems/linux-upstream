@@ -60,6 +60,8 @@
 
 #define VF610_UART_PAD_CTRL	(PAD_CTL_DSE_25ohm |	\
 				 PAD_CTL_PUS_100K_UP |	\
+				 PAD_CTL_PKE | \
+				 PAD_CTL_PUE | \
 				 PAD_CTL_SPEED_MED)
 
 #define VF610_SDHC_PAD_CTRL	(PAD_CTL_DSE_20ohm |	\
