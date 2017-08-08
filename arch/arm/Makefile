@@ -40,6 +40,10 @@ MMUEXT		:= -nommu
 KBUILD_CFLAGS	+= $(call cc-option,-mno-unaligned-access)
 endif
 
+ifeq ($(CROSS_COMPILE),arm-v7-linux-uclibceabi-)
+KBUILD_CFLAGS	+= -mno-fdpic
+endif
+
 ifeq ($(CONFIG_FRAME_POINTER),y)
 KBUILD_CFLAGS	+=-fno-omit-frame-pointer -mapcs -mno-sched-prolog
 endif
