@@ -105,7 +105,7 @@
 #define DCU_CTRLDESCLN_4_RLE_EN		(1 << 15)
 #define DCU_CTRLDESCLN_4_LUOFFS(x)	((x) << 4)
 #define DCU_CTRLDESCLN_4_BB_ON		(1 << 2)
-#define DCU_CTRLDESCLN_4_AB(x)		(x)
+#define DCU_CTRLDESCLN_4_AB(x)		((x) & 3)
 
 #define DCU_CTRLDESCLN_5(x)		(0x210 + (x) * 0x40)
 #define DCU_CTRLDESCLN_5_CKMAX_R(x)	((x) << 16)
@@ -360,6 +360,7 @@ static int disable_panel(struct fb_info *info)
 
 	/* Clear Mode flag and schedule one transfer using READREG */
 	writel(DCU_UPDATE_MODE_READREG, dcufb->reg_base + DCU_UPDATE_MODE);
+	while (readl(dcufb->reg_base + DCU_UPDATE_MODE) & DCU_UPDATE_MODE_READREG);
 	return 0;
 }
 
@@ -1153,9 +1154,6 @@ static int fsl_dcu_suspend(struct device *dev)
 
 	disable_panel(fbi);
 
-	disable_controller(dcufb->fsl_dcu_info[0]);
-	clk_disable_unprepare(dcufb->clk);
-
 	pinctrl_pm_select_sleep_state(dev);
 
 	fsl_dcu_turn_off_lcd(dcufb);
@@ -1177,15 +1175,11 @@ static int fsl_dcu_resume(struct device *dev)
 
 	pinctrl_pm_select_default_state(dev);
 
-	clk_prepare_enable(dcufb->clk);
-
 	ret = bypass_tcon(dev->of_node);
 	if (ret) {
 		dev_err(dev, "could not bypass TCON\n");
 		goto failed_bypasstcon;
 	}
-
-	enable_controller(dcufb->fsl_dcu_info[0]);
 
 	console_lock();
 	fb_set_suspend(fbi, 0);
