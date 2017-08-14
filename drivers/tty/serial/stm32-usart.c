@@ -603,7 +603,7 @@ static void stm32_set_mctrl(struct uart_port *port, unsigned int mctrl)
 static unsigned int stm32_get_mctrl(struct uart_port *port)
 {
 	/* This routine is used to get signals of: DCD, DSR, RI, and CTS */
-	return TIOCM_CAR | TIOCM_DSR | TIOCM_CTS;
+	return TIOCM_CAR | TIOCM_DSR | TIOCM_CTS | TIOCM_RTS;
 }
 
 /* Transmit stop */
@@ -752,6 +752,7 @@ static void stm32_set_termios(struct uart_port *port, struct ktermios *termios,
 	if (cflag & CRTSCTS) {
 		port->status |= UPSTAT_AUTOCTS | UPSTAT_AUTORTS;
 		cr3 |= USART_CR3_CTSE;
+		cr3 |= USART_CR3_RTSE;
 	}
 
 	usartdiv = DIV_ROUND_CLOSEST(port->uartclk, baud);
