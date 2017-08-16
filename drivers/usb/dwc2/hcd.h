@@ -715,6 +715,9 @@ extern int dwc2_host_get_speed(struct dwc2_hsotg *hsotg, void *context);
 extern void dwc2_host_complete(struct dwc2_hsotg *hsotg, struct dwc2_qtd *qtd,
 			       int status);
 
+extern void dwc2_host_suspend(struct dwc2_hsotg *hsotg);
+extern void dwc2_host_resume(struct dwc2_hsotg *hsotg);
+
 #ifdef DEBUG
 /*
  * Macro to sample the remaining PHY clocks left in the current frame. This

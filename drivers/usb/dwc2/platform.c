@@ -416,9 +416,9 @@ static int __maybe_unused dwc2_suspend(struct device *dev)
 		if (dwc2->lx_state == DWC2_L0)
 			return 0;
 
+		dwc2_host_suspend(dwc2);
 		phy_exit(dwc2->phy);
 		phy_power_off(dwc2->phy);
-
 		if (dwc2->pwr_en)
 			gpiod_direction_output(dwc2->pwr_en, 0);
 	}
@@ -437,7 +437,7 @@ static int __maybe_unused dwc2_resume(struct device *dev)
 			gpiod_direction_output(dwc2->pwr_en, 1);
 		phy_power_on(dwc2->phy);
 		phy_init(dwc2->phy);
-
+		dwc2_host_resume(dwc2);
 	}
 	return ret;
 }

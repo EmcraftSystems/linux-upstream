@@ -2331,20 +2331,6 @@ static void _dwc2_hcd_stop(struct usb_hcd *hcd)
 	usleep_range(1000, 3000);
 }
 
-#ifdef CONFIG_USB_DWC2_WAKEUP_ON_PLUGIN
-irqreturn_t _dwc2_hdc_wake_handler(int irq, void *dev_id)
-{
-	return IRQ_HANDLED;
-}
-
-/*
- * The list of ULPI PHYs we support (for low-powering)
- */
-static unsigned long ulpi_phy_ids[] = {
-	/* VID hi, VID lo, PID hi, PID lo */
-	0x24040400,	/* Microchip USB3300 PHY */
-};
-
 /*
  * Read ULPI PHY register 'reg'.
  * Implementation is based on a non-documented PHYCR (+0x34) register, see the
@@ -2385,6 +2371,20 @@ static unsigned int _dwc2_ulpi_reg_write(struct usb_hcd *hcd, unsigned int reg,
 
 	return 0;
 }
+
+#ifdef CONFIG_USB_DWC2_WAKEUP_ON_PLUGIN
+irqreturn_t _dwc2_hdc_wake_handler(int irq, void *dev_id)
+{
+	return IRQ_HANDLED;
+}
+
+/*
+ * The list of ULPI PHYs we support (for low-powering)
+ */
+static unsigned long ulpi_phy_ids[] = {
+	/* VID hi, VID lo, PID hi, PID lo */
+	0x24040400,	/* Microchip USB3300 PHY */
+};
 
 /*
  * Put ULPI PHY into low-power
@@ -2553,6 +2553,39 @@ static int _dwc2_hcd_resume(struct usb_hcd *hcd)
 
 	hsotg->lx_state = DWC2_L0;
 	return 0;
+}
+
+void dwc2_host_suspend(struct dwc2_hsotg *hsotg)
+{
+#ifndef CONFIG_USB_DWC2_WAKEUP_ON_PLUGIN
+	/*
+	 * Stop driving VBus power
+	 */
+	if (hsotg->hw_params.hs_phy_type == DWC2_PHY_TYPE_PARAM_ULPI) {
+		struct usb_hcd *hcd = dwc2_hsotg_to_hcd(hsotg);
+		unsigned long val;
+
+		val = _dwc2_ulpi_reg_read(hcd, 0x0A);
+		_dwc2_ulpi_reg_write(hcd, 0x0A, val & ~0x60);
+	}
+#endif
+}
+
+void dwc2_host_resume(struct dwc2_hsotg *hsotg)
+{
+#ifndef CONFIG_USB_DWC2_WAKEUP_ON_PLUGIN
+	/*
+	 * Resume driving VBus power
+	 */
+	if (hsotg->hw_params.hs_phy_type == DWC2_PHY_TYPE_PARAM_ULPI) {
+		struct usb_hcd *hcd = dwc2_hsotg_to_hcd(hsotg);
+		unsigned long val;
+
+		hcd = dwc2_hsotg_to_hcd(hsotg);
+		val = _dwc2_ulpi_reg_read(hcd, 0x0A);
+		_dwc2_ulpi_reg_write(hcd, 0x0A, val | 0x60);
+	}
+#endif
 }
 
 /* Returns the current frame number */
