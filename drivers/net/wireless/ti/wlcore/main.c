@@ -2431,7 +2431,7 @@ power_off:
 	 * 11a channels if not supported
 	 */
 	if (!wl->enable_11a)
-		wiphy->bands[IEEE80211_BAND_5GHZ]->n_channels = 0;
+		wiphy->bands[IEEE80211_BAND_5GHZ] = NULL;
 
 	wl1271_debug(DEBUG_MAC80211, "11a is %ssupported",
 		     wl->enable_11a ? "" : "not ");
