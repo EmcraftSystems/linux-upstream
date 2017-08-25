@@ -856,7 +856,9 @@ static void mmci_start_data(struct mmci_host *host, struct mmc_data *data)
 	writel(host->size, base + MMCIDATALENGTH);
 
 	blksz_bits = ffs(data->blksz) - 1;
-	BUG_ON(1 << blksz_bits != data->blksz);
+	if (!(host->mmc->card && mmc_card_sdio(host->mmc->card))) {
+		BUG_ON(1 << blksz_bits != data->blksz);
+	}
 
 	datactrl = MCI_DPSM_ENABLE;
 
