@@ -103,7 +103,9 @@ static char *v7m_best_cache(void)
  */
 char *dcache_is_arch_specific(void)
 {
-	return !(CCR() & (1 << 16)) ? "OFF" : v7m_best_cache();
+	/* Enable L1 data cache */
+	CCR() |= 1 << 16;
+	return v7m_best_cache();
 }
 
 /*
@@ -111,7 +113,9 @@ char *dcache_is_arch_specific(void)
  */
 char *icache_is_arch_specific(void)
 {
-	return !(CCR() & (1 << 17)) ? "OFF" : v7m_best_cache();
+	/* Enable L1 instruction cache */
+	CCR() |= 1 << 17;
+	return v7m_best_cache();
 }
 
 /*

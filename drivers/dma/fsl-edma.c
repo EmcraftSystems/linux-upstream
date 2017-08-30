@@ -110,7 +110,11 @@
 #define EDMAMUX_CHCFG_ENBL		0x80
 #define EDMAMUX_CHCFG_SOURCE(n)		((n) & 0x3F)
 
+#if !defined(CONFIG_ARCH_IMXRT105X)
 #define DMAMUX_NR	2
+#else
+#define DMAMUX_NR	1
+#endif
 
 #define FSL_EDMA_BUSWIDTHS	BIT(DMA_SLAVE_BUSWIDTH_1_BYTE) | \
 				BIT(DMA_SLAVE_BUSWIDTH_2_BYTES) | \
@@ -168,7 +172,7 @@ struct fsl_edma_desc {
 	struct fsl_edma_sw_tcd		tcd[];
 };
 
-#ifdef CONFIG_ARCH_KINETIS
+#if defined(CONFIG_ARCH_KINETIS) || defined(CONFIG_ARCH_IMXRT105X)
 static const char * const txirq_names[] = {
 	"edma-tx-0,16",
 	"edma-tx-1,17",
@@ -192,14 +196,14 @@ static const char * const txirq_names[] = {
 struct fsl_edma_engine {
 	struct dma_device	dma_dev;
 	void __iomem		*membase;
-#ifdef CONFIG_ARCH_KINETIS
+#if defined(CONFIG_ARCH_KINETIS) || defined(CONFIG_ARCH_IMXRT105X)
 	struct clk		*clk;
 #endif
 	void __iomem		*muxbase[DMAMUX_NR];
 	struct clk		*muxclk[DMAMUX_NR];
 	struct mutex		fsl_edma_mutex;
 	u32			n_chans;
-#ifdef CONFIG_ARCH_KINETIS
+#if defined(CONFIG_ARCH_KINETIS) || defined(CONFIG_ARCH_IMXRT105X)
 	int			txirq[ARRAY_SIZE(txirq_names)];
 #else
 	int			txirq;
@@ -750,7 +754,7 @@ static irqreturn_t fsl_edma_err_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-#ifndef CONFIG_ARCH_KINETIS
+#if !defined(CONFIG_ARCH_KINETIS) && !defined(CONFIG_ARCH_IMXRT105X)
 static irqreturn_t fsl_edma_irq_handler(int irq, void *dev_id)
 {
 	if (fsl_edma_tx_handler(irq, dev_id) == IRQ_HANDLED)
@@ -844,7 +848,7 @@ fsl_edma_irq_init(struct platform_device *pdev,
 		  struct fsl_edma_engine *fsl_edma)
 {
 	int ret;
-#ifdef CONFIG_ARCH_KINETIS
+#if defined(CONFIG_ARCH_KINETIS) || defined(CONFIG_ARCH_IMXRT105X)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(txirq_names); i++) {
@@ -870,7 +874,7 @@ fsl_edma_irq_init(struct platform_device *pdev,
 		return fsl_edma->errirq;
 	}
 
-#ifdef CONFIG_ARCH_KINETIS
+#if defined(CONFIG_ARCH_KINETIS) || defined(CONFIG_ARCH_IMXRT105X)
 	for (i = 0; i < ARRAY_SIZE(txirq_names); i++) {
 		ret = devm_request_irq(&pdev->dev, fsl_edma->txirq[i],
 			fsl_edma_tx_handler, 0, txirq_names[i], fsl_edma);
@@ -902,7 +906,7 @@ fsl_edma_irq_init(struct platform_device *pdev,
 			dev_err(&pdev->dev, "Can't register eDMA err IRQ.\n");
 			return  ret;
 		}
-#ifndef CONFIG_ARCH_KINETIS
+#if !defined(CONFIG_ARCH_KINETIS) && !defined(CONFIG_ARCH_IMXRT105X)
 	}
 #endif
 
@@ -937,7 +941,7 @@ static int fsl_edma_probe(struct platform_device *pdev)
 	if (IS_ERR(fsl_edma->membase))
 		return PTR_ERR(fsl_edma->membase);
 
-#ifdef CONFIG_ARCH_KINETIS
+#if defined(CONFIG_ARCH_KINETIS) || defined(CONFIG_ARCH_IMXRT105X)
 	fsl_edma->clk = devm_clk_get(&pdev->dev, "edma");
 	if (IS_ERR(fsl_edma->clk)) {
 		dev_err(&pdev->dev, "Missing EDMA clock.\n");
@@ -1051,7 +1055,7 @@ static int fsl_edma_remove(struct platform_device *pdev)
 	for (i = 0; i < DMAMUX_NR; i++)
 		clk_disable_unprepare(fsl_edma->muxclk[i]);
 
-#ifdef CONFIG_ARCH_KINETIS
+#if defined(CONFIG_ARCH_KINETIS) || defined(CONFIG_ARCH_IMXRT105X)
 	clk_disable_unprepare(fsl_edma->clk);
 #endif
 
@@ -1113,7 +1117,7 @@ static const struct dev_pm_ops fsl_edma_pm_ops = {
 };
 
 static const struct of_device_id fsl_edma_dt_ids[] = {
-#ifdef CONFIG_ARCH_KINETIS
+#if defined(CONFIG_ARCH_KINETIS) || defined(CONFIG_ARCH_IMXRT105X)
 	{ .compatible = "fsl,kinetis-edma", },
 #else
 	{ .compatible = "fsl,vf610-edma", },

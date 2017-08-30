@@ -1,0 +1,128 @@
+/*
+ * Copyright 2017
+ * Dmitry Konyshev, Emcraft Systems, <probables@emcraft.com>
+ *
+ * IMXRT1050-EVK
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * publishhed by the Free Software Foundation.
+ */
+/dts-v1/;
+
+#include "armv7-m.dtsi"
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	model = "NXP IMXRT1050 board";
+	compatible = "nxp,imxrt1050-evk", "nxp,imxrt105x";
+
+	memory {
+		device_type = "memory";
+		reg = <0x80000000 0x02000000>;
+	};
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	core_clk: core_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <600000000>;
+	};
+
+	ipg_clk: ipg_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <150000000>;
+	};
+
+	uart_clk: uart_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <6000000>;
+	};
+
+	osc_clk: osc_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <24000000>;
+	};
+
+	dmac_clk: dmac_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <150000000>;
+	};
+
+	dmamux_clk: dmamux_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <150000000>;
+	};
+
+	soc {
+		aips0: aips-bus@40000000 {
+			compatible = "fsl,aips-bus", "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+
+			edma: dma-controller@40008000 {
+				compatible = "fsl,kinetis-edma";
+				reg = <0x400E8000 0x2000>, /* DMAC */
+					<0x400EC000 0x1000>; /* DMAMUX0 */
+				#dma-cells = <2>;
+				dma-channels = <32>;
+				interrupts = <0>,  <1>,  <2>,  <3>,
+					<4>,  <5>,  <6>,  <7>,
+					<8>,  <9>, <10>, <11>,
+					<12>, <13>, <14>, <15>,
+					<16>;
+				interrupt-names = "edma-tx-0,16",
+					"edma-tx-1,17",
+					"edma-tx-2,18",
+					"edma-tx-3,19",
+					"edma-tx-4,20",
+					"edma-tx-5,21",
+					"edma-tx-6,22",
+					"edma-tx-7,23",
+					"edma-tx-8,24",
+					"edma-tx-9,25",
+					"edma-tx-10,26",
+					"edma-tx-11,27",
+					"edma-tx-12,28",
+					"edma-tx-13,29",
+					"edma-tx-14,30",
+					"edma-tx-15,31",
+					"edma-err";
+				clocks = <&dmac_clk>, <&dmamux_clk>;
+				clock-names = "edma", "dmamux0";
+			};
+
+			uart0: serial@40184000 {
+				compatible = "fsl,imxrt1050-lpuart";
+				reg = <0x40184000 0x1000>;
+				interrupts = <20 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&uart_clk>;
+				clock-names = "ipg";
+				dmas = <&edma 0 2>,
+					<&edma 0 3>;
+				dma-names = "rx","tx";
+				status = "disabled";
+			};
+		};
+	};
+};
+
+&systick {
+	status = "okay";
+	clocks = <&core_clk>;
+};
+
+&uart0 {
+	status = "okay";
+};
+
