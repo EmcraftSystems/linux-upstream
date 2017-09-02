@@ -176,6 +176,7 @@ static int lpc18xx_serial_probe(struct platform_device *pdev)
 	uart.port.private_data = data;
 	uart.port.rs485_config = lpc18xx_rs485_config;
 	uart.port.serial_out = lpc18xx_uart_serial_out;
+	uart.bugs = UART_BUG_FIFO;
 
 	uart.dma = &data->dma;
 	uart.dma->rxconf.src_maxburst = 1;

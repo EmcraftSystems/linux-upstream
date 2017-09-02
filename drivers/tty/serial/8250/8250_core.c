@@ -557,7 +557,8 @@ static void serial8250_clear_fifos(struct uart_8250_port *p)
 		serial_out(p, UART_FCR, UART_FCR_ENABLE_FIFO);
 		serial_out(p, UART_FCR, UART_FCR_ENABLE_FIFO |
 			       UART_FCR_CLEAR_RCVR | UART_FCR_CLEAR_XMIT);
-		serial_out(p, UART_FCR, 0);
+		serial_out(p, UART_FCR, (p->bugs & UART_BUG_FIFO) ?
+					UART_FCR_ENABLE_FIFO : 0);
 	}
 }
 
