@@ -24,6 +24,7 @@
 	};
 
 	aliases {
+		pit0 = &pit;
 		serial0 = &uart0;
 	};
 
@@ -70,6 +71,15 @@
 			#size-cells = <1>;
 			ranges;
 
+			pit: pit@40084000 {
+				compatible = "fsl,vf610-pit";
+				reg = <0x40084000 0x1000>;
+				interrupts = <122>;
+				clocks = <&ipg_clk>;
+				clock-names = "pit";
+				pit_cnt = <4>;
+			};
+
 			edma: dma-controller@40008000 {
 				compatible = "fsl,kinetis-edma";
 				reg = <0x400E8000 0x2000>, /* DMAC */
@@ -115,11 +125,6 @@
 			};
 		};
 	};
-};
-
-&systick {
-	status = "okay";
-	clocks = <&core_clk>;
 };
 
 &uart0 {

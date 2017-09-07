@@ -923,7 +923,7 @@ config ARCH_IMXRT105X
 	bool "NXP i.MXRT105X"
 	select CPU_CACHE_V7M
 	select CPU_CACHE_V7M_USR
-	select ARMV7M_SYSTICK
+	select VF_PIT_TIMER
 	select ARM_AMBA
 	help
 	  Support for NXP IMXRT105X processors.
