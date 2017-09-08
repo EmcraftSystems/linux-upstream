@@ -40,6 +40,12 @@
 		clock-frequency = <150000000>;
 	};
 
+	periph_clk: periph_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <75000000>;
+	};
+
 	uart_clk: uart_clk {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
@@ -75,7 +81,7 @@
 				compatible = "fsl,vf610-pit";
 				reg = <0x40084000 0x1000>;
 				interrupts = <122>;
-				clocks = <&ipg_clk>;
+				clocks = <&periph_clk>;
 				clock-names = "pit";
 				pit_cnt = <4>;
 			};
