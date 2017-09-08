@@ -23,6 +23,12 @@
 		reg = <0x80000000 0x02000000>;
 	};
 
+	dmamem {
+		compatible = "dmamem";
+		base-addr = <0x81f00000>;
+		full-size = <0x100000>;
+	};
+
 	aliases {
 		pit0 = &pit;
 		serial0 = &uart0;
