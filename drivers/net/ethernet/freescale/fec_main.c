@@ -122,6 +122,9 @@ static struct platform_device_id fec_devtype[] = {
 				FEC_QUIRK_HAS_VLAN | FEC_QUIRK_BUG_CAPTURE |
 				FEC_QUIRK_HAS_RACC | FEC_QUIRK_HAS_COALESCE,
 	}, {
+		.name = "imxrt105x-fec",
+		.driver_data = FEC_QUIRK_ENET_MAC | FEC_QUIRK_HAS_RACC,
+	}, {
 		/* sentinel */
 	}
 };
@@ -136,6 +139,7 @@ enum imx_fec_type {
 	IMX6SX_FEC,
 	KINETIS_FEC,
 	IMX6UL_FEC,
+	IMXRT105X_FEC,
 };
 
 static const struct of_device_id fec_dt_ids[] = {
@@ -147,6 +151,7 @@ static const struct of_device_id fec_dt_ids[] = {
 	{ .compatible = "fsl,imx6sx-fec", .data = &fec_devtype[IMX6SX_FEC], },
 	{ .compatible = "fsl,kinetis-fec", .data = &fec_devtype[KINETIS_FEC], },
 	{ .compatible = "fsl,imx6ul-fec", .data = &fec_devtype[IMX6UL_FEC], },
+	{ .compatible = "fsl,imxrt105x-fec", .data = &fec_devtype[IMXRT105X_FEC], },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, fec_dt_ids);
