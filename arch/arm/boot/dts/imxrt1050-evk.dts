@@ -32,6 +32,7 @@
 	aliases {
 		pit0 = &pit;
 		serial0 = &uart0;
+		esdhc0 = &esdhc0;
 	};
 
 	core_clk: core_clk {
@@ -86,6 +87,12 @@
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
 		clock-frequency = <50000000>;
+	};
+
+	usdhc_clk: usdhc_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <22000000>;
 	};
 
 	soc {
@@ -158,6 +165,17 @@
 				clock-names = "ipg", "ahb", "ptp";
 				status = "disabled";
 			};
+
+			esdhc0: esdhc@402c0000 {
+				compatible = "fsl,imxrt105x-usdhc";
+				reg = <0x402c0000 0x1000>;
+				interrupts = <110>;
+				clocks = <&ipg_clk>,
+					<&ipg_clk>,
+					<&usdhc_clk>;
+				clock-names = "ipg", "ahb", "per";
+				status = "disabled";
+			};
 		};
 	};
 };
@@ -183,3 +201,6 @@
 	};
 };
 
+&esdhc0 {
+	status = "ok";
+};

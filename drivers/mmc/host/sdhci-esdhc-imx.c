@@ -188,6 +188,12 @@ static struct esdhc_soc_data esdhc_vf610_data = {
 	.flags = ESDHC_FLAG_MULTIBLK_NO_INT | ESDHC_FLAG_MULTIBLOCK_ACMD12,
 };
 
+static struct esdhc_soc_data usdhc_imxrt105x_data = {
+	.flags = ESDHC_FLAG_USDHC | ESDHC_FLAG_STD_TUNING
+			| ESDHC_FLAG_HAVE_CAP1 | ESDHC_FLAG_HS200
+			| ESDHC_FLAG_ERR004536 | ESDHC_FLAG_HS400,
+};
+
 struct pltfm_imx_data {
 	u32 scratchpad;
 	struct pinctrl *pinctrl;
@@ -233,6 +239,7 @@ static const struct of_device_id imx_esdhc_dt_ids[] = {
 	{ .compatible = "fsl,imx6q-usdhc", .data = &usdhc_imx6q_data, },
 	{ .compatible = "fsl,imx7d-usdhc", .data = &usdhc_imx7d_data, },
 	{ .compatible = "fsl,vf610-esdhc", .data = &esdhc_vf610_data, },
+	{ .compatible = "fsl,imxrt105x-usdhc", .data = &usdhc_imxrt105x_data, },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, imx_esdhc_dt_ids);
