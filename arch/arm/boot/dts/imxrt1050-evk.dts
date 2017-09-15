@@ -12,7 +12,9 @@
 
 #include "armv7-m.dtsi"
 #include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/input/input.h>
 #include <dt-bindings/gpio/gpio.h>
+#include "imxrt105x-pinfunc.h"
 
 / {
 	model = "NXP IMXRT1050 board";
@@ -31,6 +33,11 @@
 
 	aliases {
 		pit0 = &pit;
+		gpio0 = &gpio1;
+		gpio1 = &gpio2;
+		gpio2 = &gpio3;
+		gpio3 = &gpio4;
+		gpio4 = &gpio5;
 		serial0 = &uart0;
 		esdhc0 = &esdhc0;
 	};
@@ -155,6 +162,66 @@
 				clock-names = "edma", "dmamux0";
 			};
 
+			iomuxc: iomuxc@401f8000 {
+				compatible = "fsl,imxrt105x-iomuxc";
+				reg = <0x401f8000 0x4000>;
+			};
+
+			gpio1: gpio@401b8000 {
+				compatible = "fsl,imxrt105x-gpio";
+				reg = <0x401b8000 0x1000>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				interrupts = <80>, <81>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 0 32>;
+			};
+
+			gpio2: gpio@401bc000 {
+				compatible = "fsl,imxrt105x-gpio";
+				reg = <0x401bc000 0x1000>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				interrupts = <82>, <83>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 32 32>;
+			};
+
+			gpio3: gpio@401c0000 {
+				compatible = "fsl,imxrt105x-gpio";
+				reg = <0x401c0000 0x1000>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				interrupts = <84>, <85>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 64 32>;
+			};
+
+			gpio4: gpio@401c4000 {
+				compatible = "fsl,imxrt105x-gpio";
+				reg = <0x401c4000 0x1000>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				interrupts = <86>, <87>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 96 32>;
+			};
+
+			gpio5: gpio@400c0000 {
+				compatible = "fsl,imxrt105x-gpio";
+				reg = <0x400c0000 0x1000>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				interrupts = <88>, <89>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 128 14>;
+			};
+
 			uart0: serial@40184000 {
 				compatible = "fsl,imxrt1050-lpuart";
 				reg = <0x40184000 0x1000>;
@@ -237,9 +304,35 @@
 			};
 		};
 	};
+
+	leds {
+		compatible = "gpio-leds";
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_leds>;
+
+		user-led {
+			gpios = <&gpio1 26 GPIO_ACTIVE_LOW>;
+			retain-state-suspended;
+			default-state = "off";
+		};
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-0 = <&pinctrl_gpio_key>;
+		pinctrl-names = "default";
+
+		button_0 {
+			label = "Button 0";
+			gpios = <&gpio1 0 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_A>;
+		};
+	};
 };
 
 &uart0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart0>;
 	status = "okay";
 };
 
@@ -275,3 +368,27 @@
 	disable-over-current;
 };
 
+&iomuxc {
+	pinctrl_uart0: uart0grp {
+		fsl,pins = <
+			MXRT105X_PAD_AD_B0_12_LPUART1_TX	MXRT105X_PAD_CFG_UART
+			MXRT105X_PAD_AD_B0_13_LPUART1_RX	MXRT105X_PAD_CFG_UART
+		>;
+	};
+	pinctrl_gpio: gpiogrp {
+		fsl,pins = <
+			MXRT105X_PAD_AD_B0_01_GPIO1_IO01	MXRT105X_PAD_CFG_GPIO
+		>;
+	};
+	pinctrl_leds: ledsgrp {
+		fsl,pins = <
+			MXRT105X_PAD_AD_B1_10_GPIO1_IO26	MXRT105X_PAD_CFG_GPIO
+			MXRT105X_PAD_AD_B1_11_GPIO1_IO27	MXRT105X_PAD_CFG_GPIO
+		>;
+	};
+	pinctrl_gpio_key: gpiokeygrp {
+		fsl,pins = <
+			MXRT105X_PAD_AD_B0_00_GPIO1_IO00	MXRT105X_PAD_CFG_GPIO
+		>;
+	};
+};

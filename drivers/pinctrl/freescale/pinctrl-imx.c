@@ -314,7 +314,7 @@ static int imx_pmx_gpio_request_enable(struct pinctrl_dev *pctldev,
 
 	/* Currently implementation only for shared mux/conf register */
 	if (!(info->flags & SHARE_MUX_CONF_REG))
-		return -EINVAL;
+		return 0;
 
 	pin_reg = &info->pin_regs[offset];
 	if (pin_reg->mux_reg == -1)

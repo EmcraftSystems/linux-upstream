@@ -926,6 +926,7 @@ config ARCH_IMXRT105X
 	select VF_PIT_TIMER
 	select ARM_AMBA
 	select DMAMEM
+	select PINCTRL
 	help
 	  Support for NXP IMXRT105X processors.
 endchoice

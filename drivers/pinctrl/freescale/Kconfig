@@ -116,6 +116,13 @@ config PINCTRL_VF610
 	help
 	  Say Y here to enable the Freescale Vybrid VF610 pinctrl driver
 
+config PINCTRL_IMXRT105X
+	bool "NXP i.MX RT105x pinctrl driver"
+	depends on ARCH_IMXRT105X
+	select PINCTRL_IMX
+	help
+	  Say Y here to enable the NXP i.MX RT105X pinctrl driver
+
 config PINCTRL_MXS
 	bool
 	select PINMUX
