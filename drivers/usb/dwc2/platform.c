@@ -46,6 +46,12 @@
 
 #include <linux/usb/of.h>
 
+#ifdef CONFIG_ARCH_STM32
+#include <linux/mfd/syscon.h>
+#include <linux/regmap.h>
+#include <mach/rcc.h>
+#endif
+
 #include "core.h"
 #include "hcd.h"
 #include "debug.h"
@@ -158,6 +164,49 @@ static const struct dwc2_core_params params_stm32_hs = {
 };
 
 /*
+ * STM32 USB HS with internal PHY (FS mode only)
+ */
+static const struct dwc2_core_params params_stm32_hs_fs = {
+	.otg_cap			=  2, /* non-HNP/non-SRP */
+	.otg_ver			= -1,
+	.dma_enable			=  0,
+	.dma_desc_enable		=  0,
+	.speed				=  DWC2_SPEED_PARAM_FULL,
+	.enable_dynamic_fifo		= -1,
+	.en_multiple_tx_fifo		= -1,
+	.host_rx_fifo_size		=  506,
+	.host_nperio_tx_fifo_size	=  500,
+	.host_perio_tx_fifo_size	=  0,
+	.max_transfer_size		= -1,
+	.max_packet_count		= -1,
+	.host_channels			= -1,
+	.phy_type			=  DWC2_PHY_TYPE_PARAM_FS,
+	.phy_utmi_width			= -1,
+	.phy_ulpi_ddr			= -1,
+	.phy_ulpi_ext_vbus		= -1,
+	.i2c_enable			=  0,
+	.ulpi_fs_ls			= -1,
+	.host_support_fs_ls_low_power	= -1,
+	.host_ls_low_power_phy_clk	= -1,
+	.ts_dline			= -1,
+	.reload_ctl			= -1,
+	.ahbcfg				= -1,
+	.uframe_sched			= -1,
+	.external_id_pin_ctl		= -1,
+	.hibernation			= -1,
+
+	/*
+	 * AHB1LPENR: #OTGHSULPILPEN
+	 */
+	.priv				= (1 << 30),
+
+	/*
+	 * GCCFG: NOVBUSSENS | PWRDWN
+	 */
+	.ggpio				= (1 << 21) | (1 << 16),
+};
+
+/*
  * STM32 USB FS has 1.25KB FIFO, that means a total
  * of 320 words. No periodic for now.
  */
@@ -240,6 +289,7 @@ static const struct of_device_id dwc2_of_match_table[] = {
 	{ .compatible = "samsung,s3c6400-hsotg", .data = NULL},
 	{ .compatible = "st,stm32-otg-hs", .data = &params_stm32_hs },
 	{ .compatible = "st,stm32-otg-fs", .data = &params_stm32_fs },
+	{ .compatible = "st,stm32-otg-hs-fs", .data = &params_stm32_hs_fs },
 	{},
 };
 MODULE_DEVICE_TABLE(of, dwc2_of_match_table);
@@ -284,6 +334,23 @@ static int dwc2_driver_probe(struct platform_device *dev)
 		 */
 		defparams.dma_desc_enable = 0;
 	}
+
+#if defined(CONFIG_ARCH_STM32)
+	if (params->priv) {
+		struct regmap *reg;
+
+		/*
+		 * Clear bit OTGHSULPILPEN in register AHB1LPENR when OTG HS in
+		 * FS mode with internal PHY
+		 */
+		reg = syscon_regmap_lookup_by_compatible("st,stm32f42xx-rcc");
+		if (IS_ERR(reg))
+			dev_err(&dev->dev, "failed get stm32f42xx-rcc");
+		else
+			regmap_update_bits(reg, STM32F4_RCC_AHB1LPENR,
+					   params->priv, 0);
+	}
+#endif
 
 	hsotg = devm_kzalloc(&dev->dev, sizeof(*hsotg), GFP_KERNEL);
 	if (!hsotg)

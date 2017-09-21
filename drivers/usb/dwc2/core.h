@@ -353,6 +353,7 @@ enum dwc2_ep0_state {
  *			1 - Yes
  * @ggpio:		Specifies GGPIO content. This register may be used on
  *			some platforms for specific settings
+ * @priv:		Specify private flags for platform
  *
  * The following parameters may be specified when starting the module. These
  * parameters define how the DWC_otg controller should be configured. A
@@ -397,6 +398,7 @@ struct dwc2_core_params {
 	int ggpio;
 	int vbvaloval;
 	int vbvaloen;
+	int priv;
 };
 
 /**

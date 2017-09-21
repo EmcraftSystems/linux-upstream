@@ -803,6 +803,13 @@ int dwc2_core_init(struct dwc2_hsotg *hsotg, bool select_phy, int irq)
 
 	writel(usbcfg, hsotg->regs + GUSBCFG);
 
+	/*
+	 * This needs to happen in FS mode before any other programming occurs
+	 */
+	retval = dwc2_phy_init(hsotg, select_phy);
+	if (retval)
+		return retval;
+
 	/* Reset the Controller */
 	retval = dwc2_core_reset(hsotg);
 	if (retval) {
@@ -810,13 +817,6 @@ int dwc2_core_init(struct dwc2_hsotg *hsotg, bool select_phy, int irq)
 				__func__);
 		return retval;
 	}
-
-	/*
-	 * This needs to happen in FS mode before any other programming occurs
-	 */
-	retval = dwc2_phy_init(hsotg, select_phy);
-	if (retval)
-		return retval;
 
 	/* Program the GAHBCFG Register */
 	retval = dwc2_gahbcfg_init(hsotg);

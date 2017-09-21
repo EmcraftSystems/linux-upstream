@@ -17,4 +17,6 @@
 #define STM32F4_RCC_APB1ENR		0x40
 #define STM32F4_RCC_APB2ENR		0x44
 
+#define STM32F4_RCC_AHB1LPENR		0x50
+
 #endif
