@@ -21,7 +21,7 @@
 
 /**
  * @file
- * @brief LCDIF driver for i.MX23 and i.MX28
+ * @brief LCDIF driver for i.MX23, i.MX28, and i.MXRT
  *
  * The LCDIF support four modes of operation
  * - MPU interface (to drive smart displays) -> not supported yet
@@ -42,6 +42,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/of_device.h>
+#include <linux/of_address.h>
 #include <linux/platform_device.h>
 #include <linux/clk.h>
 #include <linux/dma-mapping.h>
@@ -865,6 +866,7 @@ static int mxsfb_init_fbinfo(struct mxsfb_info *host,
 			struct fb_videomode *vmode)
 {
 	int ret;
+	struct device *dev = &host->pdev->dev;
 	struct fb_info *fb_info = &host->fb_info;
 	struct fb_var_screeninfo *var = &fb_info->var;
 	dma_addr_t fb_phys;
@@ -890,11 +892,10 @@ static int mxsfb_init_fbinfo(struct mxsfb_info *host,
 
 	/* Memory allocation for framebuffer */
 	fb_size = SZ_2M;
-	fb_virt = alloc_pages_exact(fb_size, GFP_DMA);
+	fb_virt = dma_alloc_coherent(dev, PAGE_ALIGN(fb_size), &fb_phys,
+				     GFP_KERNEL);
 	if (!fb_virt)
 		return -ENOMEM;
-
-	fb_phys = virt_to_phys(fb_virt);
 
 	fb_info->fix.smem_start = fb_phys;
 	fb_info->screen_base = fb_virt;
@@ -908,9 +909,11 @@ static int mxsfb_init_fbinfo(struct mxsfb_info *host,
 
 static void mxsfb_free_videomem(struct mxsfb_info *host)
 {
+	struct device *dev = &host->pdev->dev;
 	struct fb_info *fb_info = &host->fb_info;
 
-	free_pages_exact(fb_info->screen_base, fb_info->fix.smem_len);
+	dma_free_coherent(dev, fb_info->screen_size, fb_info->screen_base,
+			  fb_info->fix.smem_start);
 }
 
 static const struct platform_device_id mxsfb_devtype[] = {
@@ -935,13 +938,65 @@ MODULE_DEVICE_TABLE(of, mxsfb_dt_ids);
 
 static int mxsfb_probe(struct platform_device *pdev)
 {
+	static struct clk_regs {
+		u32	ofs;
+		u32	msk;
+		u32	val;
+	}
+	ana_regs[] = {
+		{ 0x0a0, 0x001DF07F,	/* ANALOG_PLL_VIDEO: /2,ENA,d31	*/
+		  (1 << 19) | (1 << 13) | (31 << 0) },
+		{ 0x170, 3 << 30, 3 << 30 }, /* ANALOG_MISC2[VIDEO]: /4	*/
+	},
+	ccm_regs[] = {
+		{ 0x018, 7 << 23, 1 << 23 }, /* CBCMR[LCDIF_PODF]: /2	*/
+		{ 0x038,		     /* CSCDR2[LCDIF]: PLL5,/5	*/
+		  (7 << 15) | (7 << 12) | (7 << 9),
+		  (2 << 15) | (4 << 12) },
+		{ 0x070, 3 << 28, 3 << 28 }, /* CCGR2[CG14]: lcd clk	*/
+		{ 0x074, 3 << 10, 3 << 10 }, /* CCGR3[CG05]: pix clk	*/
+		{ 0x07c, 3 << 16, 3 << 16 }, /* CCGR5[CG08]: sim clk	*/
+	};
+
+	static struct {
+		char		*prop;
+		struct clk_regs	*reg;
+		int		reg_num;
+	} clk[] = {
+		{ "imx-ana-init", ana_regs, ARRAY_SIZE(ana_regs) },
+		{ "imx-ccm-init", ccm_regs, ARRAY_SIZE(ccm_regs) },
+	};
+
 	const struct of_device_id *of_id =
 			of_match_device(mxsfb_dt_ids, &pdev->dev);
 	struct resource *res;
 	struct mxsfb_info *host;
 	struct fb_info *fb_info;
 	struct fb_videomode *mode;
+	struct device_node *np;
+	const char *name;
+	void __iomem *base;
+	u32 i, k, val;
 	int ret;
+
+	/* Check if initialization of some i.MX CCM clocks is required */
+	for (i = 0; i < ARRAY_SIZE(clk); i++) {
+		np = pdev->dev.of_node;
+		if (of_property_read_string(np, clk[i].prop, &name) || !name)
+			continue;
+
+		np = of_find_compatible_node(NULL, NULL, name);
+		base = of_iomap(np, 0);
+		if (!base)
+			continue;
+
+		for (k = 0; k < clk[i].reg_num; k++) {
+			val = readl(base + clk[i].reg[k].ofs);
+			val &= ~clk[i].reg[k].msk;
+			val |= clk[i].reg[k].val;
+			writel(val, base + clk[i].reg[k].ofs);
+		}
+	}
 
 	if (of_id)
 		pdev->id_entry = of_id->data;
