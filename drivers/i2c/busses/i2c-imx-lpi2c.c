@@ -112,6 +112,7 @@ struct lpi2c_imx_struct {
 	__u8			*rx_buf;
 	__u8			*tx_buf;
 	struct completion	complete;
+	unsigned int		msgflags;
 	unsigned int		msglen;
 	unsigned int		delivered;
 	unsigned int		block_data;
@@ -477,6 +478,7 @@ static int lpi2c_imx_xfer(struct i2c_adapter *adapter,
 
 		lpi2c_imx->delivered = 0;
 		lpi2c_imx->msglen = msgs[i].len;
+		lpi2c_imx->msgflags = msgs[i].flags;
 		init_completion(&lpi2c_imx->complete);
 
 		if (msgs[i].flags & I2C_M_RD)
@@ -520,10 +522,10 @@ static irqreturn_t lpi2c_imx_isr(int irq, void *dev_id)
 	lpi2c_imx_intctrl(lpi2c_imx, 0);
 	temp = readl(lpi2c_imx->base + LPI2C_MSR);
 
-	if (temp & MSR_RDF)
+	if ((lpi2c_imx->msgflags & I2C_M_RD) && (temp & MSR_RDF))
 		lpi2c_imx_read_rxfifo(lpi2c_imx);
 
-	if (temp & MSR_TDF)
+	if (!(lpi2c_imx->msgflags & I2C_M_RD) && (temp & MSR_TDF))
 		lpi2c_imx_write_txfifo(lpi2c_imx);
 
 	if (temp & MSR_NDF)
