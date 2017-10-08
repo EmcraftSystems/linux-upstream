@@ -28,6 +28,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/of_address.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/platform_device.h>
 #include <linux/sched.h>
@@ -554,10 +555,37 @@ MODULE_DEVICE_TABLE(of, lpi2c_imx_of_match);
 
 static int lpi2c_imx_probe(struct platform_device *pdev)
 {
+	static struct clk_regs {
+		u32	ofs;
+		u32	msk;
+		u32	val;
+	}
+	ccm_regs[] = {
+		{ 0x70, 3 <<  6, 3 <<  6 }, /* CCGR2[CG03]: lpi2c1 clock */
+		{ 0x70, 3 <<  8, 3 <<  8 }, /* CCGR2[CG04]: lpi2c2 clock */
+		{ 0x70, 3 << 10, 3 << 10 }, /* CCGR2[CG05]: lpi2c3 clock */
+		{ 0x80, 3 << 24, 3 << 24 }, /* CCGR6[CG12]: lpi2c4 clock */
+	};
 	struct lpi2c_imx_struct *lpi2c_imx;
+	struct device_node *np;
 	struct resource *res;
 	unsigned int temp;
-	int irq, ret;
+	void __iomem *base;
+	const char *name;
+	int irq, ret, idx;
+
+	np = pdev->dev.of_node;
+	idx = of_alias_get_id(np, "i2c");
+	if (!of_property_read_string(np, "imx-ccm-init", &name) && name &&
+	    idx >= 0 && idx < ARRAY_SIZE(ccm_regs)) {
+		np = of_find_compatible_node(NULL, NULL, name);
+		base = of_iomap(np, 0);
+
+		temp = readl(base + ccm_regs[idx].ofs);
+		temp &= ~ccm_regs[idx].msk;
+		temp |= ccm_regs[idx].val;
+		writel(temp, base + ccm_regs[idx].ofs);
+	}
 
 	lpi2c_imx = devm_kzalloc(&pdev->dev, sizeof(*lpi2c_imx), GFP_KERNEL);
 	if (!lpi2c_imx)
