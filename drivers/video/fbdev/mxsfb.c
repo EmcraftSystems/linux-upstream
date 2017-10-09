@@ -891,7 +891,7 @@ static int mxsfb_init_fbinfo(struct mxsfb_info *host,
 	var->vmode = FB_VMODE_NONINTERLACED;
 
 	/* Memory allocation for framebuffer */
-	fb_size = SZ_2M;
+	fb_size = CONFIG_FB_MXS_MEM * 1024;
 	fb_virt = dma_alloc_coherent(dev, PAGE_ALIGN(fb_size), &fb_phys,
 				     GFP_KERNEL);
 	if (!fb_virt)

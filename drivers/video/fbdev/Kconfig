@@ -2441,6 +2441,13 @@ config FB_MXS
 	help
 	  Framebuffer support for the MXS SoC.
 
+config FB_MXS_MEM
+	int "Video memory size in KB"
+	depends on FB_MXS
+	default 2048
+	help
+	  This is the amount of memory reserved for the framebuffer.
+
 config FB_PUV3_UNIGFX
 	tristate "PKUnity v3 Unigfx framebuffer support"
 	depends on FB && UNICORE32 && ARCH_PUV3
