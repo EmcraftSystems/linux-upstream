@@ -46,6 +46,7 @@
 #include <linux/platform_device.h>
 #include <linux/clk.h>
 #include <linux/dma-mapping.h>
+#include <linux/dmamem.h>
 #include <linux/io.h>
 #include <linux/fb.h>
 #include <linux/regulator/consumer.h>
@@ -871,6 +872,7 @@ static int mxsfb_init_fbinfo(struct mxsfb_info *host,
 	struct fb_var_screeninfo *var = &fb_info->var;
 	dma_addr_t fb_phys;
 	void *fb_virt;
+	unsigned long size;
 	unsigned fb_size;
 
 	fb_info->fbops = &mxsfb_ops;
@@ -892,8 +894,14 @@ static int mxsfb_init_fbinfo(struct mxsfb_info *host,
 
 	/* Memory allocation for framebuffer */
 	fb_size = CONFIG_FB_MXS_MEM * 1024;
-	fb_virt = dma_alloc_coherent(dev, PAGE_ALIGN(fb_size), &fb_phys,
-				     GFP_KERNEL);
+
+	if (dmamem_fb_get(&fb_phys, &size) || !size) {
+		fb_virt = dma_alloc_coherent(dev, PAGE_ALIGN(fb_size), &fb_phys,
+					     GFP_KERNEL);
+	} else {
+		fb_virt = (void *)fb_phys;
+		fb_size = size;
+	}
 	if (!fb_virt)
 		return -ENOMEM;
 
@@ -911,9 +919,11 @@ static void mxsfb_free_videomem(struct mxsfb_info *host)
 {
 	struct device *dev = &host->pdev->dev;
 	struct fb_info *fb_info = &host->fb_info;
+	unsigned long size;
 
-	dma_free_coherent(dev, fb_info->screen_size, fb_info->screen_base,
-			  fb_info->fix.smem_start);
+	if (dmamem_fb_get(NULL, &size) || !size)
+		dma_free_coherent(dev, fb_info->screen_size,
+				fb_info->screen_base, fb_info->fix.smem_start);
 }
 
 static const struct platform_device_id mxsfb_devtype[] = {
