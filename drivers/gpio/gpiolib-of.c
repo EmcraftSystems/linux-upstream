@@ -148,8 +148,13 @@ static struct gpio_desc *of_get_gpio_hog(struct device_node *np,
 		return ERR_PTR(-EINVAL);
 
 	xlate_flags = 0;
-	*lflags = 0;
-	*dflags = 0;
+	if (lflags) {
+		*lflags = 0;
+	}
+
+	if (dflags) {
+		*dflags = 0;
+	}
 
 	ret = of_property_read_u32(chip_np, "#gpio-cells", &tmp);
 	if (ret)
@@ -175,19 +180,22 @@ static struct gpio_desc *of_get_gpio_hog(struct device_node *np,
 			return ERR_PTR(-EINVAL);
 	}
 
-	if (xlate_flags & OF_GPIO_ACTIVE_LOW)
+	if (lflags && xlate_flags & OF_GPIO_ACTIVE_LOW)
 		*lflags |= GPIO_ACTIVE_LOW;
 
-	if (of_property_read_bool(np, "input"))
-		*dflags |= GPIOD_IN;
-	else if (of_property_read_bool(np, "output-low"))
-		*dflags |= GPIOD_OUT_LOW;
-	else if (of_property_read_bool(np, "output-high"))
-		*dflags |= GPIOD_OUT_HIGH;
-	else {
-		pr_warn("GPIO line %d (%s): no hogging state specified, bailing out\n",
-			desc_to_gpio(gg_data.out_gpio), np->name);
-		return ERR_PTR(-EINVAL);
+	if (dflags) {
+
+		if (of_property_read_bool(np, "input"))
+			*dflags |= GPIOD_IN;
+		else if (of_property_read_bool(np, "output-low"))
+			*dflags |= GPIOD_OUT_LOW;
+		else if (of_property_read_bool(np, "output-high"))
+			*dflags |= GPIOD_OUT_HIGH;
+		else {
+			pr_warn("GPIO line %d (%s): no hogging state specified, bailing out\n",
+				desc_to_gpio(gg_data.out_gpio), np->name);
+			return ERR_PTR(-EINVAL);
+		}
 	}
 
 	if (name && of_property_read_string(np, "line-name", name))
@@ -420,6 +428,24 @@ static void of_gpiochip_add_pin_range(struct gpio_chip *chip)
 static void of_gpiochip_add_pin_range(struct gpio_chip *chip) {}
 #endif
 
+static void of_gpiochip_number_mapping(struct gpio_chip *chip)
+{
+	struct gpio_desc *desc = NULL;
+	struct device_node *np;
+	u32 gpio;
+
+	for_each_child_of_node(chip->of_node, np) {
+		if (of_property_read_u32(np, "gpio-number", &gpio) != 0)
+			continue;
+
+		desc = of_get_gpio_hog(np, NULL, NULL, NULL);
+		if (IS_ERR(desc))
+			continue;
+
+		gpiochip_add_number_map(desc, gpio);
+	}
+}
+
 void of_gpiochip_add(struct gpio_chip *chip)
 {
 	if ((!chip->of_node) && (chip->dev))
@@ -436,6 +462,7 @@ void of_gpiochip_add(struct gpio_chip *chip)
 	of_gpiochip_add_pin_range(chip);
 	of_node_get(chip->of_node);
 
+	of_gpiochip_number_mapping(chip);
 	of_gpiochip_scan_hogs(chip);
 }
 

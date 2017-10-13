@@ -53,6 +53,12 @@ static DEFINE_MUTEX(gpio_lookup_lock);
 static LIST_HEAD(gpio_lookup_list);
 LIST_HEAD(gpio_chips);
 
+struct gpio_number_map {
+	struct list_head node;
+	struct gpio_desc *desc;
+	unsigned gpio;
+};
+LIST_HEAD(gpio_number_map);
 
 static void gpiochip_free_hogs(struct gpio_chip *chip);
 static void gpiochip_irqchip_remove(struct gpio_chip *gpiochip);
@@ -70,8 +76,16 @@ struct gpio_desc *gpio_to_desc(unsigned gpio)
 {
 	struct gpio_chip *chip;
 	unsigned long flags;
+	struct gpio_number_map *map;
 
 	spin_lock_irqsave(&gpio_lock, flags);
+
+	list_for_each_entry(map, &gpio_number_map, node) {
+		if (map->gpio == gpio) {
+			spin_unlock_irqrestore(&gpio_lock, flags);
+			return map->desc;
+		}
+	}
 
 	list_for_each_entry(chip, &gpio_chips, list) {
 		if (chip->base <= gpio && chip->base + chip->ngpio > gpio) {
@@ -108,6 +122,12 @@ struct gpio_desc *gpiochip_get_desc(struct gpio_chip *chip,
  */
 int desc_to_gpio(const struct gpio_desc *desc)
 {
+	struct gpio_number_map *map;
+	list_for_each_entry(map, &gpio_number_map, node) {
+		if (map->desc == desc) {
+			return map->gpio;
+		}
+	}
 	return desc->chip->base + (desc - &desc->chip->desc[0]);
 }
 EXPORT_SYMBOL_GPL(desc_to_gpio);
@@ -216,6 +236,17 @@ static int gpiochip_add_to_list(struct gpio_chip *chip)
 		list_add_tail(&chip->list, pos);
 
 	return err;
+}
+
+int gpiochip_add_number_map(struct gpio_desc *desc, u32 gpio)
+{
+	struct gpio_number_map *map = kzalloc(sizeof(struct gpio_number_map *), GFP_KERNEL);
+	map->desc = desc;
+	map->gpio = gpio;
+
+	list_add_tail(&map->node, &gpio_number_map);
+
+	return 0;
 }
 
 /**
@@ -340,6 +371,7 @@ void gpiochip_remove(struct gpio_chip *chip)
 	unsigned long	flags;
 	unsigned	id;
 	bool		requested = false;
+	struct gpio_number_map *map;
 
 	gpiochip_sysfs_unregister(chip);
 
@@ -356,6 +388,14 @@ void gpiochip_remove(struct gpio_chip *chip)
 		desc->chip = NULL;
 		if (test_bit(FLAG_REQUESTED, &desc->flags))
 			requested = true;
+
+		list_for_each_entry(map, &gpio_number_map, node) {
+			if (map->desc == desc) {
+				list_del(&map->node);
+				kfree(map);
+				break;
+			}
+		}
 	}
 	list_del(&chip->list);
 	spin_unlock_irqrestore(&gpio_lock, flags);

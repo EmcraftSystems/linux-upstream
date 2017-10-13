@@ -226,6 +226,8 @@ gpiochip_remove_pin_ranges(struct gpio_chip *chip)
 
 #endif /* CONFIG_PINCTRL */
 
+int gpiochip_add_number_map(struct gpio_desc *desc, u32 gpio);
+
 struct gpio_desc *gpiochip_request_own_desc(struct gpio_chip *chip, u16 hwnum,
 					    const char *label);
 void gpiochip_free_own_desc(struct gpio_desc *desc);
