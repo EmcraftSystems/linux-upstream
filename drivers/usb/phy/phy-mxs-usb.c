@@ -547,8 +547,6 @@ static int mxs_phy_probe(struct platform_device *pdev)
 		if (ret < 0) {
 			dev_err(&pdev->dev, "cannot create pwr-en-gpio attr\n");
 		}
-	} else {
-		dev_warn(&pdev->dev, "Invalid GPIO: %d\n", mxs_phy->pwr_en_gpio);
 	}
 
 	ret = of_alias_get_id(np, "usbphy");
