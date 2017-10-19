@@ -1059,6 +1059,7 @@ static int elf_fdpic_map_file_by_direct_mmap(struct elf_fdpic_params *params,
 		       (unsigned long) phdr->p_memsz);
 
 		/* determine the mapping parameters */
+		disp = phdr->p_vaddr & ~PAGE_MASK;
 		if (phdr->p_flags & PF_R) prot |= PROT_READ;
 		flags = MAP_PRIVATE;
 		if (phdr->p_flags & PF_W) {
@@ -1067,13 +1068,19 @@ static int elf_fdpic_map_file_by_direct_mmap(struct elf_fdpic_params *params,
 			/*
 			 * A trick to make the kernel on NOMMU architectures
 			 * mmap r/o sections in ramfs rather than copy them
-			 * (the NOMMU mm doesn't allow sharing of
-			 * private mappings)
+			 * (the NOMMU mm doesn't allow sharing of private
+			 * mappings). Before enabling shared mapping check
+			 * if the file is located in adjacent pages.
 			 */
 			if (file->f_op->mmap_capabilities &&
 			    (file->f_op->mmap_capabilities(file) &
-			     NOMMU_MAP_DIRECT))
+			     NOMMU_MAP_DIRECT) &&
+			    !IS_ERR_VALUE(file->f_op->get_unmapped_area(file, 0,
+					phdr->p_memsz + disp,
+					(phdr->p_offset - disp) >> PAGE_SHIFT,
+					MAP_SHARED))) {
 				flags = MAP_SHARED;
+			}
 		}
 		if (phdr->p_flags & PF_X) prot |= PROT_EXEC;
 
@@ -1120,7 +1127,6 @@ static int elf_fdpic_map_file_by_direct_mmap(struct elf_fdpic_params *params,
 		maddr &= PAGE_MASK;
 
 		/* create the mapping */
-		disp = phdr->p_vaddr & ~PAGE_MASK;
 		maddr = vm_mmap(file, maddr, phdr->p_memsz + disp, prot, flags,
 				phdr->p_offset - disp);
 
