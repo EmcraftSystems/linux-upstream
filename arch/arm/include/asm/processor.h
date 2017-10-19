@@ -50,8 +50,16 @@ struct thread_struct {
 #ifdef CONFIG_MMU
 #define nommu_start_thread(regs) do { } while (0)
 #else
+#ifdef CONFIG_MPU
+void mpu_start_thread(struct pt_regs *regs);
+#define nommu_start_thread(regs) do {					\
+	regs->ARM_r10 = current->mm->start_data;			\
+	mpu_start_thread(regs);						\
+} while (0)
+#else
 #define nommu_start_thread(regs) regs->ARM_r10 = current->mm->start_data
-#endif
+#endif /* CONFIG_MPU */
+#endif /* CONFIG_MMU */
 
 #define start_thread(regs,pc,sp)					\
 ({									\

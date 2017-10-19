@@ -19,6 +19,7 @@
 #include <asm/cachetype.h>
 #include <asm/proc-fns.h>
 #include <asm/smp_plat.h>
+#include <asm/mpu_usr.h>
 #include <asm-generic/mm_hooks.h>
 
 void __check_vmalloc_seq(struct mm_struct *mm);
@@ -26,7 +27,7 @@ void __check_vmalloc_seq(struct mm_struct *mm);
 #ifdef CONFIG_CPU_HAS_ASID
 
 void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk);
-#define init_new_context(tsk,mm)	({ atomic64_set(&(mm)->context.id, 0); 0; })
+#define init_new_context(tsk,mm)	({ atomic64_set(&mm->context.id, 0); 0; })
 
 #ifdef CONFIG_ARM_ERRATA_798181
 void a15_erratum_get_cpumask(int this_cpu, struct mm_struct *mm,
@@ -85,11 +86,29 @@ static inline void finish_arch_post_lock_switch(void)
 
 #endif	/* CONFIG_MMU */
 
+#ifdef CONFIG_MPU
+/*
+ * If the MPU is turned on, we need to allocate the "MPU page
+ * table" for the process, in addition to doing whatever generic
+ * things init_new_context needs to do
+ */
+#define init_new_context(tsk,mm)	(mpu_init_new_context(tsk, mm), 0)
+#else
 #define init_new_context(tsk,mm)	0
+#endif
 
 #endif	/* CONFIG_CPU_HAS_ASID */
 
+#ifdef CONFIG_MPU
+/*
+ * If the MPU is turned on, we need to free up the "MPU page
+ * table" for the process, in addition to doing whatever generic
+ * things destroy_context needs to do (which is nothing for this brangh)
+ */
+#define destroy_context(mm)		(mpu_destroy_context(mm), 0)
+#else
 #define destroy_context(mm)		do { } while(0)
+#endif
 #define activate_mm(prev,next)		switch_mm(prev, next, NULL)
 
 /*
@@ -134,7 +153,12 @@ switch_mm(struct mm_struct *prev, struct mm_struct *next,
 		if (cache_is_vivt())
 			cpumask_clear_cpu(cpu, mm_cpumask(prev));
 	}
-#endif
+#else
+#ifdef CONFIG_MPU
+	if (prev != next)
+		mpu_switch_mm(prev, next);
+#endif /* CONFIG_MPU */
+#endif /* CONFIG_MMU */
 }
 
 #define deactivate_mm(tsk,mm)	do { } while (0)

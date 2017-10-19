@@ -18,6 +18,7 @@
 #include <asm/mach/arch.h>
 #include <asm/cputype.h>
 #include <asm/mpu.h>
+#include <asm/mpu_usr.h>
 #include <asm/procinfo.h>
 
 #include "mm.h"
@@ -274,7 +275,9 @@ void __init mpu_setup(void)
 }
 #else
 static void sanity_check_meminfo_mpu(void) {}
+#if !defined(CONFIG_MPU)
 static void __init mpu_setup(void) {}
+#endif /* CONFIG_MPU */
 #endif /* CONFIG_ARM_MPU */
 
 void __init arm_mm_memblock_reserve(void)

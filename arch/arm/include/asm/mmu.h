@@ -33,6 +33,9 @@ typedef struct {
  */
 typedef struct {
 	unsigned long	end_brk;
+#ifdef CONFIG_MPU
+	void		*p;
+#endif
 #ifdef CONFIG_BINFMT_ELF_FDPIC
 	unsigned long	exec_fdpic_loadmap;
 	unsigned long	interp_fdpic_loadmap;

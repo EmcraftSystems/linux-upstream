@@ -21,6 +21,9 @@
 #endif
 
 __invalid_entry:
+#ifndef CONFIG_ARMV7M_SYSTICK
+__systick_entry:
+#endif
 	v7m_exception_entry
 #ifdef CONFIG_PRINTK
 	adr	r0, strerr
@@ -88,8 +91,25 @@ __pendsv_entry:
 	@ execute the pending work, including reschedule
 	get_thread_info tsk
 	mov	why, #0
-	b	ret_to_user_from_irq
+	b	ret_to_user
 ENDPROC(__pendsv_entry)
+
+#ifdef CONFIG_ARMV7M_SYSTICK
+	.align	2
+__systick_entry:
+	v7m_exception_entry
+
+	@ Invoke the SysTick handler
+	stmdb	sp!, {lr}
+	bl	do_systick
+	pop	{lr}
+
+	ldmia	sp!, {r0-r11}
+	add	sp, #S_FRAME_SIZE-S_IP
+	cpsie	i
+	bx	lr
+ENDPROC(__systick_entry)
+#endif
 
 	.align  2
 __hardfault_entry:
@@ -106,6 +126,24 @@ __hardfault_entry:
 	mov	why, #0
 	b	ret_to_user
 ENDPROC(__hardfault_entry)
+
+#ifdef CONFIG_MPU
+	.align 2
+__memmanage_entry:
+	v7m_exception_entry
+
+	@
+	@ Invoke the Memory Manage handler
+	@ routine called with r0 = struct pt_regs *
+	mov	r0, sp
+	bl	do_memmanage
+
+	@ execute the pending work, including reschedule
+	get_thread_info tsk
+	mov	why, #0
+	b	ret_to_user
+ENDPROC(__memmanage_entry)
+#endif /* CONFIG_MPU */
 
 	.align  2
 __busfault_entry:
@@ -179,7 +217,11 @@ ENTRY(vector_table)
 	.long	__invalid_entry		@ 1 - Reset
 	.long	__invalid_entry		@ 2 - NMI
 	.long	__hardfault_entry	@ 3 - HardFault
+#ifdef CONFIG_MPU
+	.long	__memmanage_entry	@ 4 - MemManage
+#else
 	.long	__invalid_entry		@ 4 - MemManage
+#endif
 	.long	__busfault_entry	@ 5 - BusFault
 	.long	__usagefault_entry	@ 6 - UsageFault
 	.long	__invalid_entry		@ 7 - Reserved
@@ -190,7 +232,7 @@ ENTRY(vector_table)
 	.long	__invalid_entry		@ 12 - Debug Monitor
 	.long	__invalid_entry		@ 13 - Reserved
 	.long	__pendsv_entry		@ 14 - PendSV
-	.long	__invalid_entry		@ 15 - SysTick
+	.long	__systick_entry		@ 15 - SysTick
 	.rept	CONFIG_CPU_V7M_NUM_IRQ
 	.long	__irq_entry		@ External Interrupts
 	.endr

@@ -63,6 +63,28 @@ config ARM_MPU
          If your CPU has an MPU then you should choose 'y' here unless you
          know that you do not want to use the MPU.
 
+config MPU
+	bool "Enable the user-level memory protection"
+	depends on CPU_V7M
+	default n
+	help
+	  Use the processor MPU to protect applications from accessing
+	  memory they do not own. This comes at a performance penalty
+	  and is recommended only for debugging.
+	  Enable CONFIG_DEBUG_USER and pass user_debug=8 to the kernel
+	  to make the MPU handler print a verbose debug message on
+	  a process MPU fault.
+
+config MPU_STACK_REDZONE
+	bool "Enable stack protection (red zone) at the bottom of stack"
+	depends on MPU
+	default y
+	help
+	  Attempt to read/write from a user-space process the red zone
+	  will result in a memory fault exception for the process.
+	  The red zone consumes up to 512 bytes of the lower stack
+	  (the red zone itself is 256 bytes + alignment).
+
 config ZLIB_INFLATE_STACK_SAVING
 	bool 'Do not place huge encoder tables on stack' if ZLIB_INFLATE
 	depends on ZLIB_INFLATE
