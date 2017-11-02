@@ -320,7 +320,7 @@ struct imx_port {
 	struct work_struct	tsk_dma_tx;
 	unsigned int		dma_tx_nents;
 	bool			dma_is_txing;
-	bool			dma_is_rxing;
+	int			dma_rxing;
 
 	dma_addr_t		membase_phys;
 	u8			*dma_def_rx_buf;
@@ -335,6 +335,11 @@ struct imx_port {
 	struct mctrl_gpios	*gpios;
 	volatile int		tx_done;
 };
+
+/* imx_port.dma_rxing codes */
+#define DMA_RX_IDLE		0
+#define DMA_RX_INPROGRESS	1
+#define DMA_RX_DISABLED		2
 
 static const struct of_device_id imx_uart_dt_ids[] = {
 	{
@@ -453,9 +458,8 @@ static void dma_rx_fetch(struct imx_port *sport)
 	tty_flip_buffer_push(port);
 }
 
-static void imx_dma_rx_timeout(unsigned long data)
+static void dma_rx_stop(struct imx_port *sport, bool disable)
 {
-	struct imx_port *sport = (struct imx_port *)data;
 	unsigned long temp;
 	unsigned long flags;
 
@@ -463,15 +467,28 @@ static void imx_dma_rx_timeout(unsigned long data)
 
 	spin_lock_irqsave(&sport->port.lock, flags);
 
-	del_timer(&sport->dma_rx_timer);
+	if (sport->dma_rxing == DMA_RX_INPROGRESS) {
+		del_timer(&sport->dma_rx_timer);
 
-	/* Cancel DMA on RX */
-	temp = readb(sport->port.membase + MXC_UARTCR5);
-	temp &= ~MXC_UARTCR5_RDMAS;
-	sport->dma_is_rxing = 0;
-	writeb(temp, sport->port.membase + MXC_UARTCR5);
+		/* Cancel DMA on RX */
+		temp = readb(sport->port.membase + MXC_UARTCR5);
+		temp &= ~MXC_UARTCR5_RDMAS;
+		writeb(temp, sport->port.membase + MXC_UARTCR5);
+		sport->dma_rxing = DMA_RX_IDLE;
+	}
+
+	if (disable) {
+		sport->dma_rxing = DMA_RX_DISABLED;
+	}
 
 	spin_unlock_irqrestore(&sport->port.lock, flags);
+}
+
+static void imx_dma_rx_timeout(unsigned long data)
+{
+	struct imx_port *sport = (struct imx_port *)data;
+
+	dma_rx_stop(sport, 0);
 }
 
 static void dma_rx_callback(void *data)
@@ -483,7 +500,7 @@ static void dma_rx_callback(void *data)
 
 	spin_lock_irqsave(&sport->port.lock, flags);
 
-	if (sport->dma_is_rxing) {
+	if (sport->dma_rxing == DMA_RX_INPROGRESS) {
 		/* Restart the timer if dma is not canceled by timeout */
 		mod_timer(&sport->dma_rx_timer, jiffies + MXC_DMA_RX_TIMEOUT);
 	}
@@ -540,22 +557,11 @@ fail_prep:
 static void imx_stop_dma_rx(struct imx_port *sport)
 {
 	struct dma_chan *chan = sport->dma_chan_rx;
-	unsigned long temp, flags;
+
+	dma_rx_stop(sport, 1);
 
 	dmaengine_terminate_all(chan);
 	dma_unmap_single(chan->device->dev, sport->dma_rx_buf_phys, sport->dma_rx_len, DMA_FROM_DEVICE);
-
-	spin_lock_irqsave(&sport->port.lock, flags);
-
-	/* Disable DMA on RX */
-	del_timer(&sport->dma_rx_timer);
-	sport->dma_is_rxing = 0;
-	temp = readb(sport->port.membase + MXC_UARTCR5);
-	temp &= ~MXC_UARTCR5_RDMAS;
-	writeb(temp, sport->port.membase + MXC_UARTCR5);
-
-	spin_unlock_irqrestore(&sport->port.lock, flags);
-
 }
 
 static void dma_tx_callback(void *data);
@@ -794,7 +800,8 @@ static irqreturn_t imx_rxint(int irq, void *dev_id)
 
 		spin_lock_irqsave(&sport->port.lock, flags);
 
-		if (!sport->dma_is_rxing) {
+		if (sport->dma_rxing == DMA_RX_IDLE) {
+			/* Enable DMA */
 			sport->dma_rx_timer.expires = jiffies + MXC_DMA_RX_TIMEOUT;
 			add_timer(&sport->dma_rx_timer);
 
@@ -802,12 +809,16 @@ static irqreturn_t imx_rxint(int irq, void *dev_id)
 			temp |= MXC_UARTCR5_RDMAS;
 			writeb(temp, sport->port.membase + MXC_UARTCR5);
 
-			sport->dma_is_rxing = 1;
+			sport->dma_rxing = DMA_RX_INPROGRESS;
+
+			spin_unlock_irqrestore(&sport->port.lock, flags);
+
+			/* Handle RX in DMA callback */
+			return IRQ_HANDLED;
 		}
 
 		spin_unlock_irqrestore(&sport->port.lock, flags);
 
-		return IRQ_HANDLED;
 	}
 
 	spin_lock_irqsave(&sport->port.lock, flags);
@@ -1073,10 +1084,11 @@ static int imx_startup(struct uart_port *port)
 		goto error_out1;
 	}
 
+	sport->dma_rxing = DMA_RX_DISABLED;
+
 	/* Enable the DMA ops for uart. */
 	if (sport->enable_dma) {
 		sport->dma_is_txing = 0;
-		sport->dma_is_rxing = 0;
 
 		/* enable DMA request generation */
 		temp = readb(sport->port.membase + MXC_UARTCR5);
@@ -1086,6 +1098,11 @@ static int imx_startup(struct uart_port *port)
 		writeb(temp, sport->port.membase + MXC_UARTCR5);
 
 		INIT_WORK(&sport->tsk_dma_tx, dma_tx_work);
+	}
+
+	if (sport->dma_chan_rx) {
+		imx_load_dma_rx(sport, sport->dma_def_rx_buf, MXC_SLAVE_BUF_SIZE);
+		sport->dma_rxing = DMA_RX_IDLE;
 	}
 
 	/*
@@ -1107,9 +1124,6 @@ static int imx_startup(struct uart_port *port)
 	 * Enable modem status interrupts
 	 */
 	spin_unlock_irqrestore(&sport->port.lock, flags);
-
-	if (sport->dma_chan_rx)
-		imx_load_dma_rx(sport, sport->dma_def_rx_buf, MXC_SLAVE_BUF_SIZE);
 
 	return 0;
 
@@ -1586,10 +1600,7 @@ static int serial_imx_suspend(struct device *dev)
 		if (may_wakeup) {
 			if (sport->dma_chan_rx) {
 				/* Disable DMA on RX */
-				unsigned long temp;
-				temp = readb(sport->port.membase + MXC_UARTCR5);
-				temp &= ~MXC_UARTCR5_RDMAS;
-				writeb(temp, sport->port.membase + MXC_UARTCR5);
+				dma_rx_stop(sport, 1);
 			}
 		} else {
 			if (console_suspend_enabled ||
@@ -1611,11 +1622,11 @@ static int serial_imx_resume(struct device *dev)
 
 		if (may_wakeup) {
 			if (sport->dma_chan_rx) {
-				/* Restore DMA settings */
-				unsigned long temp;
-				temp = readb(sport->port.membase + MXC_UARTCR5);
-				temp |= MXC_UARTCR5_RDMAS;
-				writeb(temp, sport->port.membase + MXC_UARTCR5);
+				/* Enable DMA RX state machine */
+				unsigned long flags;
+				spin_lock_irqsave(&sport->port.lock, flags);
+				sport->dma_rxing = DMA_RX_IDLE;
+				spin_unlock_irqrestore(&sport->port.lock, flags);
 			}
 		} else {
 			if (console_suspend_enabled ||
