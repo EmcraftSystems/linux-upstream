@@ -46,6 +46,7 @@ static const struct {
 	{ "out2", TIOCM_OUT2, true, },
 };
 
+#ifdef CONFIG_GPIOLIB
 void mctrl_gpio_set(struct mctrl_gpios *gpios, unsigned int mctrl)
 {
 	enum mctrl_gpio_idx i;
@@ -249,3 +250,4 @@ void mctrl_gpio_disable_ms(struct mctrl_gpios *gpios)
 	}
 }
 EXPORT_SYMBOL_GPL(mctrl_gpio_disable_ms);
+#endif
