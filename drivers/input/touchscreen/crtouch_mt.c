@@ -201,6 +201,8 @@ slide:
 
 #define DEFAULT_POLLING_PERIOD	20
 
+#define CRTOUCH_I2C_SLEEP_RETRIES	10
+
 struct crtouch_data {
 	int x;
 	int y;
@@ -384,6 +386,7 @@ static int crtouch_probe(struct i2c_client *client,
 	struct device_node *node = client->dev.of_node;
 	struct crtouch_data *crtouch;
 	struct gpio_desc *wakeup_gpio = NULL;
+	int retries = CRTOUCH_I2C_SLEEP_RETRIES;
 
 	wakeup_gpio = devm_gpiod_get_optional(&client->dev,
 							 "wakeup", GPIOD_OUT_HIGH);
@@ -394,6 +397,12 @@ static int crtouch_probe(struct i2c_client *client,
 		dev_info(&client->dev, "Operating without wakeup gpio: %li\n",
 			 PTR_ERR(wakeup_gpio));
 		wakeup_gpio = NULL;
+	}
+
+	if (wakeup_gpio) {
+		/* the device might stay in the sleep mode, wake it up */
+		gpiod_set_value_cansleep(wakeup_gpio, 0);
+		udelay(11);
 	}
 
 	crtouch = devm_kzalloc(&client->dev, sizeof(*crtouch), GFP_KERNEL);
@@ -410,7 +419,7 @@ static int crtouch_probe(struct i2c_client *client,
 	crtouch->input_dev = input_dev;
 	crtouch->client = client;
 	i2c_set_clientdata(client, crtouch);
-	crtouch->workqueue = create_singlethread_workqueue("crtouch");
+	crtouch->workqueue = create_freezable_workqueue("crtouch");
 	INIT_WORK(&crtouch->work, report_MT);
 
 	if (crtouch->workqueue == NULL) {
@@ -421,25 +430,36 @@ static int crtouch_probe(struct i2c_client *client,
 
 	crtouch->is_capacitive = of_property_read_bool(node, "is-capacitive");
 
+	/* 1st read may fail if crtouch is in the sleep mode */
+	crtouch->configuration = i2c_smbus_read_byte_data(client, CONFIGURATION);
+	if (crtouch->configuration < 0) {
+		while ((crtouch->configuration = i2c_smbus_read_byte_data(client,
+				CONFIGURATION)) < 0 && retries--);
+		if (crtouch->configuration < 0) {
+			dev_err(&client->dev, "failed to read CRTOUCH configuration\n");
+			result = -EIO;
+			goto err_free_wq;
+		}
+	}
+	if (crtouch->configuration & SLEEP_MODE) {
+		dev_info(&client->dev, "Sleep Mode is not supported, disabling\n");
+	}
+	crtouch->configuration &= ~(CLEAN_SLIDE_EVENTS | SET_MULTITOUCH | SLEEP_MODE);
+	retries = CRTOUCH_I2C_SLEEP_RETRIES;
+	while ((result = i2c_smbus_write_byte_data(client, CONFIGURATION,
+			crtouch->configuration)) < 0 && retries--);
+
+	if (result < 0) {
+		dev_err(&client->dev, "failed to write CRTOUCH configuration\n");
+		goto err_free_wq;
+	}
+
 	error = read_resolution(crtouch);
 	if (error < 0) {
 		dev_err(&client->dev, "failed to read size of screen\n");
 		result = -EIO;
 		goto err_free_wq;
 	}
-
-	crtouch->configuration = i2c_smbus_read_byte_data(client, CONFIGURATION);
-	if (crtouch->configuration < 0) {
-		dev_err(&client->dev, "failed to read CRTOUCH configuration\n");
-		goto err_free_wq;
-	}
-	crtouch->configuration &= CLEAN_SLIDE_EVENTS;
-	if (crtouch->configuration & SLEEP_MODE) {
-		dev_info(&client->dev, "Sleep Mode is not supported, disabling\n");
-		crtouch->configuration &= ~SLEEP_MODE;
-	}
-	crtouch->configuration &= ~SET_MULTITOUCH;
-	i2c_smbus_write_byte_data(client, CONFIGURATION, crtouch->configuration);
 
 	mask_trigger = i2c_smbus_read_byte_data(client, TRIGGER_EVENTS);
 	mask_trigger |= SET_TRIGGER_RESISTIVE;
@@ -529,12 +549,21 @@ static int crtouch_resume(struct device *dev)
 {
 	struct crtouch_data *crtouch = dev_get_drvdata(dev);
 	struct i2c_client *client = crtouch->client;
+	int retries = CRTOUCH_I2C_SLEEP_RETRIES;
 
 	if (crtouch->wakeup_gpio) {
 		/* The way to come out of Shutdown mode is to */
 		/* asserting the wakeup signal for more than 10 usecs. */
 		gpiod_set_value_cansleep(crtouch->wakeup_gpio, 0);
 		udelay(11);
+	}
+
+	/* 1st read/write will fail if wakeup_gpio isn't used */
+	i2c_smbus_read_byte_data(client, CONFIGURATION);
+	while (i2c_smbus_write_byte_data(client, CONFIGURATION,
+					crtouch->configuration) < 0 && retries--);
+
+	if (crtouch->wakeup_gpio) {
 		gpiod_set_value_cansleep(crtouch->wakeup_gpio, 1);
 	}
 
@@ -552,18 +581,30 @@ static int crtouch_suspend(struct device *dev)
 {
 	struct crtouch_data *crtouch = dev_get_drvdata(dev);
 	struct i2c_client *client = crtouch->client;
-	s32 data_to_read;
+	s32 data_to_write;
 
-	data_to_read = i2c_smbus_read_byte_data(client, CONFIGURATION);
-	data_to_read |= SHUTDOWN_CRICS;
-	i2c_smbus_write_byte_data(client, CONFIGURATION , data_to_read);
+	data_to_write = crtouch->configuration;
+
+	data_to_write |= SLEEP_MODE;
 
 	if (client->irq) {
 		if (device_may_wakeup(&client->dev))
 			enable_irq_wake(client->irq);
-		else
+		else {
 			disable_irq(client->irq);
+
+			if (crtouch->wakeup_gpio)
+				data_to_write |= SHUTDOWN_CRICS;
+		}
 	}
+
+	if (crtouch->wakeup_gpio) {
+		gpiod_set_value_cansleep(crtouch->wakeup_gpio, 1);
+		udelay(11);
+	}
+
+	i2c_smbus_write_byte_data(client, CONFIGURATION, data_to_write);
+	udelay(100);
 
 	return 0;
 }
