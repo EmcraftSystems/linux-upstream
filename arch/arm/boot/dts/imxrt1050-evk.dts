@@ -302,6 +302,42 @@
 				reg = <0x402e0800 0x200>;
 				clocks = <&usb_clk>;
 			};
+
+			lpspi1: lpspi@40394000 {
+				compatible = "fsl,imx7ulp-spi";
+				reg = <0x40394000 0x4000>;
+				interrupts = <32>;
+				clocks = <&ipg_clk>;
+				clock-names = "ipg";
+				status = "disabled";
+			};
+
+			lpspi2: lpspi@40398000 {
+				compatible = "fsl,imx7ulp-spi";
+				reg = <0x40398000 0x4000>;
+				interrupts = <33>;
+				clocks = <&ipg_clk>;
+				clock-names = "ipg";
+				status = "disabled";
+			};
+
+			lpspi3: lpspi@4039c000 {
+				compatible = "fsl,imx7ulp-spi";
+				reg = <0x4039c000 0x4000>;
+				interrupts = <34>;
+				clocks = <&ipg_clk>;
+				clock-names = "ipg";
+				status = "disabled";
+			};
+
+			lpspi4: lpspi@403a0000 {
+				compatible = "fsl,imx7ulp-spi";
+				reg = <0x403a0000 0x4000>;
+				interrupts = <35>;
+				clocks = <&ipg_clk>;
+				clock-names = "ipg";
+				status = "disabled";
+			};
 		};
 	};
 
