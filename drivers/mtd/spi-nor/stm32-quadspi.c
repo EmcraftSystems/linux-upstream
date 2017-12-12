@@ -128,13 +128,14 @@ struct flash_info {
 	size_t				write_size;
 	size_t				erase_size;
 	u32				program_cmd;
+	u32				program_admode;
 	struct dummy_cycles_table	dummy_cycles_table[STM32_DUMMY_TABLE_MAX_SIZE];
 };
 
 static const struct flash_info stm32_qspiflash_info[] = {
 	{
 		/* 2^26 = 64MiB */
-		"mt25ql512abb", 1 << 26, 256, 64 * 1024, SPINOR_OP_FAST_PROG_4B,
+		"mt25ql512abb", 1 << 26, 256, 64 * 1024, SPINOR_OP_PP_1_4_4_4B, QSPI_CCR_ADMODE_FOUR_LINES,
 		{
 			{44000000,	2},
 			{61000000,	3},
@@ -149,7 +150,7 @@ static const struct flash_info stm32_qspiflash_info[] = {
 	},
 	{
 		/* 2^24 = 16MiB */
-		"n25q128a", 1 << 24, 256, 64 * 1024, SPINOR_OP_PP_4B,
+		"n25q128a", 1 << 24, 256, 64 * 1024, SPINOR_OP_PP_4B, QSPI_CCR_ADMODE_FOUR_LINES,
 		{
 			{30000000,	3},
 			{40000000,	4},
@@ -164,7 +165,7 @@ static const struct flash_info stm32_qspiflash_info[] = {
 	},
 	{
 		/* 2^25 = 32MiB */
-		"mt25q256a", 1 << 25, 256, 64 * 1024, SPINOR_OP_PP_4B,
+		"mt25q256a", 1 << 25, 256, 64 * 1024, SPINOR_OP_PP_4B, QSPI_CCR_ADMODE_FOUR_LINES,
 		{
 			{30000000,	3},
 			{40000000,	4},
@@ -174,6 +175,21 @@ static const struct flash_info stm32_qspiflash_info[] = {
 			{80000000,	8},
 			{86000000,	9},
 			{95000000,	10},
+			{0, 0 /* sentinel */},
+		},
+	},
+	{
+		/* 2^25 = 32MiB */
+		"w25q256jv", 1 << 25, 256, 64 * 1024, SPINOR_OP_PP_1_1_4_4B, QSPI_CCR_ADMODE_SINGLE_LINE,
+		{
+			{30000000,	6},
+			{40000000,	6},
+			{50000000,	6},
+			{60000000,	6},
+			{70000000,	6},
+			{80000000,	6},
+			{86000000,	6},
+			{95000000,	6},
 			{0, 0 /* sentinel */},
 		},
 	},
@@ -508,7 +524,7 @@ static int stm32_qspi_switch_to_memory_mapped(struct stm32_qspi_priv *priv)
 
 	writel(QSPI_CCR_FMODE_MEMORY_MAP
 	       | (priv->support_4bytes
-		  ? SPINOR_OP_FAST_READ_4B
+		  ? SPINOR_OP_READ4_1_4_4
 		  : SPINOR_OP_FAST_READ)
 	       | QSPI_CCR_IMODE_SINGLE_LINE
 	       | QSPI_CCR_ADMODE_FOUR_LINES
@@ -644,7 +660,7 @@ static int stm32_qspi_write_page(struct stm32_qspi_priv *priv, u32 address, cons
 	writel(QSPI_CCR_FMODE_INDIRECT_WRITE
 	       | priv->flash->program_cmd
 	       | QSPI_CCR_IMODE_SINGLE_LINE
-	       | QSPI_CCR_ADMODE_FOUR_LINES
+	       | priv->flash->program_admode
 	       | (priv->support_4bytes
 		  ? QSPI_CCR_ADSIZE_FOUR_BYTES
 		  : QSPI_CCR_ADSIZE_THREE_BYTES)
