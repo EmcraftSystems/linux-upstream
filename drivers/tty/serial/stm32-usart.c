@@ -269,9 +269,6 @@ static void stm32_tx_work(struct work_struct *work)
 	struct uart_port *port = &stm32_port->port;
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
 
-	if (stm32_port->de)
-		mutex_lock(&stm32_port->rs_de_mutex);
-
 	if (!stm32_port->tx_busy) {
 		if (port->rs485.flags & SER_RS485_ENABLED) {
 			if (stm32_port->de) {
@@ -291,15 +288,10 @@ static void stm32_tx_work(struct work_struct *work)
 	}
 
 	stm32_transmit_chars(port);
-
-	if (stm32_port->de)
-		mutex_unlock(&stm32_port->rs_de_mutex);
 }
 
-static void stm32_rs_de_work(struct work_struct *work)
+static void stm32_rs_de_process(struct stm32_port *stm32_port)
 {
-	struct stm32_port *stm32_port = container_of(work,
-					struct stm32_port, rs_de_work);
 	struct uart_port *port = &stm32_port->port;
 	u32 tot_us = 1000000;
 	u32 slp_us = 10;
@@ -307,13 +299,9 @@ static void stm32_rs_de_work(struct work_struct *work)
 	int v;
 	struct stm32_usart_offsets *ofs = &stm32_port->info->ofs;
 
-	if (stm32_port->de)
-		mutex_lock(&stm32_port->rs_de_mutex);
-
 	if (stm32_port->tx_ch) {
 		ktime_t timeout = ktime_add_us(ktime_get(),
 					       tot_us);
-		might_sleep_if(slp_us);
 		v = 0;
 		while (1) {
 			if (!stm32_port->tx_dma_busy)
@@ -325,7 +313,7 @@ static void stm32_rs_de_work(struct work_struct *work)
 				break;
 			}
 
-			usleep_range((slp_us >> 2) + 1, slp_us);
+			udelay(slp_us);
 		}
 	} else {
 		v = readl_relaxed_poll_timeout_atomic(
@@ -349,9 +337,6 @@ static void stm32_rs_de_work(struct work_struct *work)
 	}
 
 	stm32_port->tx_busy = false;
-
-	if (stm32_port->de)
-		mutex_unlock(&stm32_port->rs_de_mutex);
 }
 
 static void stm32_rx_dma_complete(void *arg)
@@ -616,7 +601,7 @@ static void stm32_stop_tx(struct uart_port *port)
 
 	if (stm32_port->tx_busy) {
 		if (port->rs485.flags & SER_RS485_ENABLED)
-			schedule_work(&stm32_port->rs_de_work);
+			stm32_rs_de_process(stm32_port);
 		else
 			stm32_port->tx_busy = false;
 	}
@@ -1062,8 +1047,6 @@ static int stm32_of_dma_rx_probe(struct stm32_port *stm32port,
 
 	INIT_WORK(&stm32port->rx_work, stm32_rx_dma_work);
 	INIT_WORK(&stm32port->tx_work, stm32_tx_work);
-	INIT_WORK(&stm32port->rs_de_work, stm32_rs_de_work);
-	mutex_init(&stm32port->rs_de_mutex);
 	desc->callback = stm32_rx_dma_complete;
 	desc->callback_param = port;
 
