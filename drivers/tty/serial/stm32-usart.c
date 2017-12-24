@@ -493,8 +493,8 @@ static void stm32_transmit_chars(struct uart_port *port)
 	if (stm32_port->tx_ch)
 		stm32_transmit_chars_dma(port);
 	else if (!stm32_port->tx_started) {
-		stm32_transmit_chars_pio(port);
 		stm32_port->tx_started = true;
+		stm32_transmit_chars_pio(port);
 	}
 
 	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
