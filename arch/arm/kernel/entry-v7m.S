@@ -21,9 +21,6 @@
 #endif
 
 __invalid_entry:
-#ifndef CONFIG_ARMV7M_SYSTICK
-__systick_entry:
-#endif
 	v7m_exception_entry
 #ifdef CONFIG_PRINTK
 	adr	r0, strerr
@@ -93,23 +90,6 @@ __pendsv_entry:
 	mov	why, #0
 	b	ret_to_user
 ENDPROC(__pendsv_entry)
-
-#ifdef CONFIG_ARMV7M_SYSTICK
-	.align	2
-__systick_entry:
-	v7m_exception_entry
-
-	@ Invoke the SysTick handler
-	stmdb	sp!, {lr}
-	bl	do_systick
-	pop	{lr}
-
-	ldmia	sp!, {r0-r11}
-	add	sp, #S_FRAME_SIZE-S_IP
-	cpsie	i
-	bx	lr
-ENDPROC(__systick_entry)
-#endif
 
 	.align  2
 __hardfault_entry:
@@ -232,7 +212,7 @@ ENTRY(vector_table)
 	.long	__invalid_entry		@ 12 - Debug Monitor
 	.long	__invalid_entry		@ 13 - Reserved
 	.long	__pendsv_entry		@ 14 - PendSV
-	.long	__systick_entry		@ 15 - SysTick
+	.long	__invalid_entry		@ 15 - SysTick
 	.rept	CONFIG_CPU_V7M_NUM_IRQ
 	.long	__irq_entry		@ External Interrupts
 	.endr
