@@ -95,3 +95,4 @@ obj-$(CONFIG_TOUCHSCREEN_CRTOUCH_MT)	+= crtouch_mt.o
 obj-$(CONFIG_TOUCHSCREEN_FT5X46)	+= focaltech_ctl.o ft5x46_ts.o
 obj-$(CONFIG_TOUCHSCREEN_COLIBRI_VF50)	+= colibri-vf50-ts.o
 obj-$(CONFIG_TOUCHSCREEN_ROHM_BU21023)	+= rohm_bu21023.o
+obj-$(CONFIG_TOUCHSCREEN_SILEAD)	+= silead.o
