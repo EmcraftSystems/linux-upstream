@@ -17,6 +17,7 @@
 		serial3 = &uart3;
 		serial4 = &uart4;
 		serial5 = &uart5;
+		esdhc0 = &esdhc0;
 		gpio0 = &gpioA;
 		gpio1 = &gpioB;
 		gpio2 = &gpioC;
@@ -41,6 +42,12 @@
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
 		clock-frequency = <50000000>;
+	};
+
+	sdhc_clk: sdhc_clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <150000000>;
 	};
 
 	usbhs_clk: ulpi_clk {
@@ -326,6 +333,15 @@
 			interrupts = <95>;
 			clocks = <&nfc_clk>;
 			clock-names = "nfc";
+			status = "disabled";
+		};
+
+		esdhc0: esdhc@400b1000 {
+			compatible = "fsl,kinetis-esdhc";
+			reg = <0x400b1000 0x1000>;
+			interrupts = <80>;
+			clocks = <&sdhc_clk>, <&sdhc_clk>, <&sdhc_clk>;
+			clock-names = "ipg", "ahb", "per";
 			status = "disabled";
 		};
 

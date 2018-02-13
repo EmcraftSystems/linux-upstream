@@ -194,6 +194,10 @@ static struct esdhc_soc_data usdhc_imxrt105x_data = {
 			| ESDHC_FLAG_ERR004536 | ESDHC_FLAG_HS400,
 };
 
+static struct esdhc_soc_data esdhc_kinetis_data = {
+	.flags = ESDHC_FLAG_MULTIBLK_NO_INT | ESDHC_FLAG_MULTIBLOCK_ACMD12,
+};
+
 struct pltfm_imx_data {
 	u32 scratchpad;
 	struct pinctrl *pinctrl;
@@ -240,6 +244,7 @@ static const struct of_device_id imx_esdhc_dt_ids[] = {
 	{ .compatible = "fsl,imx7d-usdhc", .data = &usdhc_imx7d_data, },
 	{ .compatible = "fsl,vf610-esdhc", .data = &esdhc_vf610_data, },
 	{ .compatible = "fsl,imxrt105x-usdhc", .data = &usdhc_imxrt105x_data, },
+	{ .compatible = "fsl,kinetis-esdhc", .data = &esdhc_kinetis_data, },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, imx_esdhc_dt_ids);
@@ -974,6 +979,9 @@ static struct sdhci_ops sdhci_esdhc_ops = {
 
 static const struct sdhci_pltfm_data sdhci_esdhc_imx_pdata = {
 	.quirks = ESDHC_DEFAULT_QUIRKS | SDHCI_QUIRK_NO_HISPD_BIT
+#if defined(CONFIG_ARCH_KINETIS)
+			| SDHCI_QUIRK_BROKEN_DMA | SDHCI_QUIRK_BROKEN_ADMA
+#endif
 			| SDHCI_QUIRK_NO_ENDATTR_IN_NOPDESC
 			| SDHCI_QUIRK_BROKEN_ADMA_ZEROLEN_DESC
 			| SDHCI_QUIRK_BROKEN_CARD_DETECTION,
