@@ -88,6 +88,8 @@ struct imx_pcie {
 	u32			tx_swing_low;
 	u32			dma_unroll_offset;
 	int			link_gen;
+	int			clk2_gen;
+	struct regmap		*ccm_base;
 	struct regmap		*reg_src;
 	struct regmap		*reg_gpc;
 	void __iomem		*phy_base;
@@ -267,6 +269,20 @@ struct imx_pcie {
 #define IMX8MQ_GPC_PGC_PCIE2_BIT_OFFSET		12
 #define IMX8MQ_GPC_PCG_PCIE_CTRL_PCR		BIT(0)
 #define IMX8MQ_GPR_PCIE_REF_USE_PAD		BIT(9)
+
+/* iMX8 CCM registers */
+#define IMX8MQ_CCM_ANALOG_PLLOUT_MONITOR_CFG_OFFSET	0x74
+#define IMX8MQ_CCM_PLLOUT_MONITOR_CKE			BIT(4)
+#define IMX8MQ_CCM_PLLOUT_MONITOR_CLK_SEL(x)		((x) & 0xF)
+#define IMX8MQ_CCM_PLLOUT_MONITOR_CLK_SEL_CLK2		\
+					IMX8MQ_CCM_PLLOUT_MONITOR_CLK_SEL(0xB)
+#define IMX8MQ_CCM_PLLOUT_MONITOR_CLK_SEL_MSK		\
+					IMX8MQ_CCM_PLLOUT_MONITOR_CLK_SEL(0xF)
+
+#define IMX8MQ_CCM_ANALOG_SCCG_PLLOUT_DIV_CFG_OFFSET	0x7C
+#define IMX8MQ_CCM_SYSTEM_PLL1_DIV_VAL(x)		((((x) - 1) & 7) <<  0)
+#define IMX8MQ_CCM_SYSTEM_PLL1_DIV_MSK			\
+					IMX8MQ_CCM_SYSTEM_PLL1_DIV_VAL(8)
 
 static int pcie_phy_poll_ack(struct imx_pcie *imx_pcie, int exp_val)
 {
@@ -1064,9 +1080,11 @@ static void imx_pcie_init_phy(struct imx_pcie *imx_pcie)
 		else
 			val = IOMUXC_GPR16;
 
+		/* Use internal clk if we should generate PCIe clock on CLK2 */
 		regmap_update_bits(imx_pcie->iomuxc_gpr, val,
 				IMX8MQ_GPR_PCIE_REF_USE_PAD,
-				IMX8MQ_GPR_PCIE_REF_USE_PAD);
+				imx_pcie->clk2_gen ?
+					0 : IMX8MQ_GPR_PCIE_REF_USE_PAD);
 	} else if (imx_pcie->variant == IMX7D) {
 		/* Enable PCIe PHY 1P0D */
 		regulator_set_voltage(imx_pcie->pcie_phy_regulator,
@@ -2218,6 +2236,30 @@ static int imx_pcie_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev,
 				"imx8mq pcie phy src missing or invalid\n");
 			return PTR_ERR(imx_pcie->reg_gpc);
+		}
+		imx_pcie->clk2_gen = of_property_read_bool(node, "clk2-gen");
+		if (imx_pcie->clk2_gen) {
+			/* Generate 100MHz PCIe clock on CLK2_P/N */
+			imx_pcie->ccm_base =
+				syscon_regmap_lookup_by_compatible(
+						"fsl,imx8mq-anatop");
+			if (IS_ERR(imx_pcie->ccm_base)) {
+				dev_err(&pdev->dev,
+					"imx8mq  ccm src missing or invalid\n");
+				return PTR_ERR(imx_pcie->ccm_base);
+			}
+
+			regmap_update_bits(imx_pcie->ccm_base,
+				IMX8MQ_CCM_ANALOG_PLLOUT_MONITOR_CFG_OFFSET,
+				IMX8MQ_CCM_PLLOUT_MONITOR_CKE |
+				IMX8MQ_CCM_PLLOUT_MONITOR_CLK_SEL_MSK,
+				IMX8MQ_CCM_PLLOUT_MONITOR_CKE |
+				IMX8MQ_CCM_PLLOUT_MONITOR_CLK_SEL_CLK2);
+
+			regmap_update_bits(imx_pcie->ccm_base,
+				IMX8MQ_CCM_ANALOG_SCCG_PLLOUT_DIV_CFG_OFFSET,
+				IMX8MQ_CCM_SYSTEM_PLL1_DIV_MSK,
+				IMX8MQ_CCM_SYSTEM_PLL1_DIV_VAL(8));
 		}
 	} else if (imx_pcie->variant == IMX6SX) {
 		imx_pcie->pcie_inbound_axi = devm_clk_get(&pdev->dev,
