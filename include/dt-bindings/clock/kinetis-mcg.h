@@ -35,6 +35,7 @@
 #define CLOCK_CAN1		31
 #define CLOCK_ENET		32
 #define CLOCK_LCDC		33
-#define CLOCK_END		34
+#define CLOCK_ESDHC		34
+#define CLOCK_END		35
 
 #endif /* _DT_BINDINGS_CLOCK_KINETIS_MCG_H */

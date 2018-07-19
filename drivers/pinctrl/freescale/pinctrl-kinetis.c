@@ -758,7 +758,7 @@ void kinetis_pinctrl_set_irqc(int port, int pin, int mask)
 	if (port < 0 || port > 5)
 		return;
 
-	if (pin < 0 || pin > 5)
+	if (pin < 0 || pin > 31)
 		return;
 
 	val = KINETIS_PORT_RD(kpdev->base + 0x1000 * port, pcr[pin]);

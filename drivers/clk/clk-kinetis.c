@@ -278,6 +278,13 @@ static void __init kinetis_mcg_init(struct device_node *np)
 			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_LCDC)]),
 			KINETIS_CG_IDX(KINETIS_CG_LCDC), 0, NULL);
 
+	/*
+	 * ESDHC clock
+	 */
+	clk[CLOCK_ESDHC] = clk_register_gate(NULL, "ESDHC", "MCGOUTCLK", 0,
+			KINETIS_SIM_PTR(scgc[KINETIS_CG_REG(KINETIS_CG_ESDHC)]),
+			KINETIS_CG_IDX(KINETIS_CG_ESDHC), 0, NULL);
+
 	of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data);
 }
 
