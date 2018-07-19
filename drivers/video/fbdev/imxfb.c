@@ -34,6 +34,7 @@
 #include <linux/math64.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/of_gpio.h>
 
 #include <linux/regulator/consumer.h>
 
@@ -42,6 +43,10 @@
 #include <video/videomode.h>
 
 #include <linux/platform_data/video-imxfb.h>
+
+#if defined(CONFIG_ARCH_KINETIS)
+#include <mach/clock.h>
+#endif
 
 /*
  * Complain if VAR is out of range.
@@ -134,6 +139,7 @@ struct imxfb_rgb {
 enum imxfb_type {
 	IMX1_FB,
 	IMX21_FB,
+	KINETIS_FB,
 };
 
 struct imxfb_info {
@@ -178,6 +184,9 @@ static const struct platform_device_id imxfb_devtype[] = {
 		.name = "imx21-fb",
 		.driver_data = IMX21_FB,
 	}, {
+		.name = "kinetis-fb",
+		.driver_data = KINETIS_FB,
+	}, {
 		/* sentinel */
 	}
 };
@@ -191,6 +200,9 @@ static const struct of_device_id imxfb_of_dev_id[] = {
 		.compatible = "fsl,imx21-fb",
 		.data = &imxfb_devtype[IMX21_FB],
 	}, {
+		.compatible = "fsl,kinetis-fb",
+		.data = &imxfb_devtype[KINETIS_FB],
+	}, {
 		/* sentinel */
 	}
 };
@@ -199,6 +211,11 @@ MODULE_DEVICE_TABLE(of, imxfb_of_dev_id);
 static inline int is_imx1_fb(struct imxfb_info *fbi)
 {
 	return fbi->devtype == IMX1_FB;
+}
+
+static inline int is_kinetis_fb(struct imxfb_info *fbi)
+{
+	return fbi->devtype == KINETIS_FB;
 }
 
 #define IMX_NAME	"IMX"
@@ -378,7 +395,12 @@ static int imxfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 
 	pr_debug("var->bits_per_pixel=%d\n", var->bits_per_pixel);
 
+#if defined(CONFIG_ARCH_KINETIS)
+	/* FIXME: Do this via the clk framework */
+	lcd_clk = kinetis_lcdc_clk_get_rate(fbi->clk_per);
+#else
 	lcd_clk = clk_get_rate(fbi->clk_per);
+#endif
 
 	tmp = var->pixclock * (unsigned long long)lcd_clk;
 
@@ -397,7 +419,10 @@ static int imxfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 
 	switch (var->bits_per_pixel) {
 	case 32:
-		pcr |= PCR_BPIX_18;
+		if (is_kinetis_fb(fbi))
+			pcr |= PCR_BPIX_24;
+		else
+			pcr |= PCR_BPIX_18;
 		rgb = &def_rgb_18;
 		break;
 	case 16:
@@ -499,6 +524,11 @@ static void imxfb_enable_controller(struct imxfb_info *fbi)
 	clk_prepare_enable(fbi->clk_ipg);
 	clk_prepare_enable(fbi->clk_ahb);
 	clk_prepare_enable(fbi->clk_per);
+
+#if defined(CONFIG_ARCH_KINETIS)
+	kinetis_lcdc_start();
+#endif
+
 	fbi->enabled = true;
 }
 
@@ -817,6 +847,9 @@ static int imxfb_probe(struct platform_device *pdev)
 	const struct of_device_id *of_id;
 	int ret, i;
 	int bytes_per_pixel;
+	int enable_gpios;
+	int flags;
+	enum of_gpio_flags of_flags;
 
 	dev_info(&pdev->dev, "i.MX Framebuffer driver\n");
 
@@ -827,6 +860,23 @@ static int imxfb_probe(struct platform_device *pdev)
 	of_id = of_match_device(imxfb_of_dev_id, &pdev->dev);
 	if (of_id)
 		pdev->id_entry = of_id->data;
+
+	enable_gpios = of_get_named_gpio_flags(pdev->dev.of_node,
+					       "enable-gpios", 0, &of_flags);
+	if (gpio_is_valid(enable_gpios)) {
+		/* active low translates to initially low */
+		flags = (of_flags & OF_GPIO_ACTIVE_LOW) ?
+			GPIOF_OUT_INIT_LOW : GPIOF_OUT_INIT_HIGH;
+		ret = devm_gpio_request_one(&pdev->dev, enable_gpios, flags,
+					    "GPIO_ENABLE_LCD");
+		if (ret) {
+			dev_err(&pdev->dev,
+				"failed to request enable gpio %d: %d\n",
+				enable_gpios, ret);
+			return -ENODEV;
+		}
+		gpio_free(enable_gpios);
+	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res)
@@ -915,7 +965,10 @@ static int imxfb_probe(struct platform_device *pdev)
 	ret = clk_prepare_enable(fbi->clk_ipg);
 	if (ret)
 		goto failed_getclock;
+#if !defined(CONFIG_ARCH_KINETIS)
+	/* Registers are not readable on Kinetis with the clock disabled */
 	clk_disable_unprepare(fbi->clk_ipg);
+#endif
 
 	fbi->clk_ahb = devm_clk_get(&pdev->dev, "ahb");
 	if (IS_ERR(fbi->clk_ahb)) {
@@ -928,6 +981,15 @@ static int imxfb_probe(struct platform_device *pdev)
 		ret = PTR_ERR(fbi->clk_per);
 		goto failed_getclock;
 	}
+
+#if defined(CONFIG_ARCH_KINETIS)
+	/*
+	 * Adjust the LCDC clock divider values
+	 * FIXME: Do this via the clk framework
+	 */
+	kinetis_lcdc_clk_set_rate(fbi->clk_per,
+		PICOS2KHZ(fbi->mode[0].mode.pixclock) * 1000);
+#endif
 
 	fbi->regs = ioremap(res->start, resource_size(res));
 	if (fbi->regs == NULL) {
@@ -965,7 +1027,11 @@ static int imxfb_probe(struct platform_device *pdev)
 	 */
 	imxfb_check_var(&info->var, info);
 
+#if defined(CONFIG_ARCH_KINETIS)
+	ret = fb_alloc_cmap(&info->cmap, 256, 0);
+#else
 	ret = fb_alloc_cmap(&info->cmap, 1 << info->var.bits_per_pixel, 0);
+#endif
 	if (ret < 0)
 		goto failed_cmap;
 

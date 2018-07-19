@@ -209,6 +209,7 @@ struct crtouch_data {
 	struct input_dev 	*input_dev;
 	struct i2c_client 	*client;
 	int is_capacitive;
+	int disable_pressure_events;
 	int polling_period;
 	struct timer_list tsc_poll_timer;
 	s32 configuration;
@@ -223,7 +224,8 @@ void report_single_touch(struct crtouch_data *crtouch, int x, int y)
 	input_event(crtouch->input_dev, EV_ABS, ABS_X, x);
 	input_event(crtouch->input_dev, EV_ABS, ABS_Y, y);
 	input_event(crtouch->input_dev, EV_KEY, BTN_TOUCH, 1);
-	input_report_abs(crtouch->input_dev, ABS_PRESSURE, 1);
+	if (!crtouch->disable_pressure_events)
+		input_report_abs(crtouch->input_dev, ABS_PRESSURE, 1);
 	input_sync(crtouch->input_dev);
 
 	crtouch->status_pressed = CRICS_TOUCHED;
@@ -232,7 +234,8 @@ void report_single_touch(struct crtouch_data *crtouch, int x, int y)
 void free_touch(struct crtouch_data *crtouch)
 {
 	input_event(crtouch->input_dev, EV_KEY, BTN_TOUCH, 0);
-	input_report_abs(crtouch->input_dev, ABS_PRESSURE, 0);
+	if (!crtouch->disable_pressure_events)
+		input_report_abs(crtouch->input_dev, ABS_PRESSURE, 0);
 	input_sync(crtouch->input_dev);
 
 	crtouch->status_pressed = CRICS_RELEASED;
@@ -383,6 +386,9 @@ static int crtouch_probe(struct i2c_client *client,
 	s32 mask_trigger = 0;
 	struct device_node *node = client->dev.of_node;
 	struct crtouch_data *crtouch;
+	int reset_gpios;
+	int flags;
+	enum of_gpio_flags of_flags;
 
 	crtouch = devm_kzalloc(&client->dev, sizeof(*crtouch), GFP_KERNEL);
 
@@ -408,6 +414,31 @@ static int crtouch_probe(struct i2c_client *client,
 	}
 
 	crtouch->is_capacitive = of_property_read_bool(node, "is-capacitive");
+	crtouch->disable_pressure_events =
+		of_property_read_bool(node, "disable-pressure-events");
+
+	reset_gpios =
+		of_get_named_gpio_flags(node, "reset-gpios", 0, &of_flags);
+	if (gpio_is_valid(reset_gpios)) {
+		/* active low translates to initially low */
+		flags = (of_flags & OF_GPIO_ACTIVE_LOW) ?
+			GPIOF_OUT_INIT_LOW : GPIOF_OUT_INIT_HIGH;
+		result = devm_gpio_request_one(&client->dev, reset_gpios, flags,
+					       "GPIO_RESET_CRTOUCH");
+		if (result) {
+			dev_err(&client->dev,
+				"failed to request reset gpio %d: %d\n",
+				reset_gpios, result);
+			result = -ENODEV;
+			goto err_free_wq;
+		}
+
+		mdelay(20);
+		gpio_set_value(reset_gpios, (of_flags & OF_GPIO_ACTIVE_LOW) ? 1 : 0);
+		mdelay(20);
+
+		gpio_free(reset_gpios);
+	}
 
 	error = read_resolution(crtouch);
 	if (error < 0) {

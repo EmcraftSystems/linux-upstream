@@ -29,6 +29,7 @@
 		spi2 = &dspi2;
 		i2c0 = &i2c0;
 		i2c1 = &i2c1;
+		lcdc = &lcdc;
 	};
 
 	osc0erclk: osc0erclk {
@@ -406,6 +407,16 @@
 			clocks = <&mcg CLOCK_CAN1>,
 				<&mcg CLOCK_PCLK>;
 			clock-names = "ipg", "per";
+			status = "disabled";
+		};
+
+		lcdc: lcdc@400b6000 {
+			compatible = "fsl,kinetis-fb";
+			reg = <0x400b6000 0x1000>;
+			clocks = <&mcg CLOCK_LCDC>,
+				 <&mcg CLOCK_LCDC>,
+				 <&mcg CLOCK_LCDC>;
+			clock-names = "ipg", "ahb", "per";
 			status = "disabled";
 		};
 	};
