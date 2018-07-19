@@ -1205,6 +1205,13 @@ choice
 		  Say Y here if you want kernel low-level debugging support
 		  on Vybrid based platforms.
 
+	config DEBUG_KINETIS_UART
+		bool "Kinetis UART"
+		depends on ARCH_KINETIS
+		help
+		  Say Y here if you want kernel low-level debugging support
+		  on Kinetis based platforms.
+
 	config DEBUG_VT8500_UART0
 		bool "Use UART0 on VIA/Wondermedia SoCs"
 		depends on ARCH_VT8500
@@ -1359,6 +1366,15 @@ config DEBUG_VF_UART_PORT
 	  Choose UART port on which kernel low-level debug messages
 	  should be output.
 
+config DEBUG_KINETIS_UART_PORT
+	int "Kinetis Debug UART Port Selection" if DEBUG_KINETIS_UART
+	default 2
+	range 0 4
+	depends on ARCH_KINETIS
+	help
+	  Choose UART port on which kernel low-level debug messages
+	  should be output.
+
 config DEBUG_TEGRA_UART
 	bool
 	depends on ARCH_TEGRA
@@ -1418,6 +1434,7 @@ config DEBUG_LL_INCLUDE
 	default "debug/ux500.S" if DEBUG_UX500_UART
 	default "debug/vexpress.S" if DEBUG_VEXPRESS_UART0_DETECT
 	default "debug/vf.S" if DEBUG_VF_UART
+	default "debug/kinetis.S" if DEBUG_KINETIS_UART
 	default "debug/vt8500.S" if DEBUG_VT8500_UART0
 	default "debug/zynq.S" if DEBUG_ZYNQ_UART0 || DEBUG_ZYNQ_UART1
 	default "debug/bcm63xx.S" if DEBUG_BCM63XX_UART
