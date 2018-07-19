@@ -67,3 +67,12 @@ int drop_caches_sysctl_handler(struct ctl_table *table, int write,
 	}
 	return 0;
 }
+
+void drop_caches(void)
+{
+	iterate_supers(drop_pagecache_sb, NULL);
+	count_vm_event(DROP_PAGECACHE);
+
+	drop_slab();
+	count_vm_event(DROP_SLAB);
+}

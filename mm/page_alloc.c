@@ -69,6 +69,18 @@
 #include <asm/div64.h>
 #include "internal.h"
 
+#if !defined(CONFIG_MMU)
+/*
+ * Try to drop caches in case of a memory allocation fault.
+ * This is expensive but still better than permanent memory allocation faults.
+ */
+#define EMERGENCY_CACHEDROPS
+
+#if defined(EMERGENCY_CACHEDROPS) && !defined(CONFIG_SYSCTL)
+#error EMERGENCY_CACHEDROPS depends on CONFIG_SYSCTL
+#endif
+#endif /* CONFIG_MMU */
+
 /* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
 static DEFINE_MUTEX(pcp_batch_high_lock);
 #define MIN_PERCPU_PAGELIST_FRACTION	(8)
@@ -261,6 +273,10 @@ EXPORT_SYMBOL(nr_online_nodes);
 #endif
 
 int page_group_by_mobility_disabled __read_mostly;
+
+#if !defined(CONFIG_MMU) && defined(CONFIG_SYSCTL)
+int sysctl_nr_emergency_cachedrops = 0;
+#endif
 
 #ifdef CONFIG_DEFERRED_STRUCT_PAGE_INIT
 static inline void reset_deferred_meminit(pg_data_t *pgdat)
@@ -2990,6 +3006,9 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	enum migrate_mode migration_mode = MIGRATE_ASYNC;
 	bool deferred_compaction = false;
 	int contended_compaction = COMPACT_CONTENDED_NONE;
+#if !defined(CONFIG_MMU) && defined(CONFIG_SYSCTL) && defined(EMERGENCY_CACHEDROPS)
+	int drop_caches_count = 0;
+#endif
 
 	/*
 	 * In the slowpath, we sanity check order to avoid ever trying to
@@ -3179,6 +3198,18 @@ noretry:
 					    &deferred_compaction);
 	if (page)
 		goto got_pg;
+#if !defined(CONFIG_MMU) && defined(CONFIG_SYSCTL) && defined(EMERGENCY_CACHEDROPS)
+	if (drop_caches_count == 0) {
+		drop_caches_count++;
+		sysctl_nr_emergency_cachedrops++;
+		/*
+		 * Drop clean caches, reclaimable slab objects, and try again.
+		 * FIXME: Consider doing a "sync" to get rid of the dirty pages.
+		 */
+		drop_caches();
+		goto retry;
+	}
+#endif
 nopage:
 	warn_alloc_failed(gfp_mask, order, NULL);
 got_pg:
