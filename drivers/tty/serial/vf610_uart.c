@@ -887,13 +887,16 @@ static void imx_set_mctrl(struct uart_port *port, unsigned int mctrl)
 	if (sport->gpios)
 		mctrl_gpio_set(sport->gpios, mctrl);
 
-	temp = readb(sport->port.membase + MXC_UARTMODEM) &
-		~(MXC_UARTMODEM_RXRTSE | MXC_UARTMODEM_TXRTSE);
+	/* Make sure MODEM bits are not touched when RS485 is enabled */
+	if (!(sport->port.rs485.flags & SER_RS485_ENABLED)) {
+		temp = readb(sport->port.membase + MXC_UARTMODEM) &
+			~(MXC_UARTMODEM_RXRTSE | MXC_UARTMODEM_TXRTSE);
 
-	if (mctrl & TIOCM_RTS)
-		temp |= MXC_UARTMODEM_TXRTSE;
+		if (mctrl & TIOCM_RTS)
+			temp |= MXC_UARTMODEM_TXRTSE;
 
-	writeb(temp, sport->port.membase + MXC_UARTMODEM);
+		writeb(temp, sport->port.membase + MXC_UARTMODEM);
+	}
 }
 
 /*
@@ -1107,17 +1110,23 @@ imx_set_termios(struct uart_port *port, struct ktermios *termios,
 		cr1 |= MXC_UARTCR1_M;
 	}
 
-	modem &= ~(MXC_UARTMODEM_RXRTSE | MXC_UARTMODEM_TXRTSE | MXC_UARTMODEM_TXCTSE);
-	if (sport->have_rts) {
-		modem |= MXC_UARTMODEM_TXRTSE;
-		if (sport->rts_inverted)
-			modem |= MXC_UARTMODEM_TXRTSPOL;
-		else
-			modem &= ~MXC_UARTMODEM_TXRTSPOL;
-	}
+	/*
+	 * When auto RS-485 RTS mode is enabled,
+	 * do not enable hardware flow control (CTS/RTS handshaking)
+	 */
+	if (!(sport->port.rs485.flags & SER_RS485_ENABLED)) {
+		modem &= ~(MXC_UARTMODEM_RXRTSE | MXC_UARTMODEM_TXRTSE | MXC_UARTMODEM_TXCTSE);
+		if (sport->have_rts) {
+			modem |= MXC_UARTMODEM_TXRTSE;
+			if (sport->rts_inverted)
+				modem |= MXC_UARTMODEM_TXRTSPOL;
+			else
+				modem &= ~MXC_UARTMODEM_TXRTSPOL;
+		}
 
-	if (sport->have_cts)
-		modem |= MXC_UARTMODEM_TXCTSE;
+		if (sport->have_cts)
+			modem |= MXC_UARTMODEM_TXCTSE;
+	}
 
 	if (termios->c_cflag & CSTOPB)
 		termios->c_cflag &= ~CSTOPB;
@@ -1262,6 +1271,50 @@ imx_verify_port(struct uart_port *port, struct serial_struct *ser)
 	if (ser->hub6 != 0)
 		ret = -EINVAL;
 	return ret;
+}
+
+static void
+imx_rs485_config (struct uart_port *port, struct serial_rs485 *rs485)
+{
+	struct imx_port *sport = (struct imx_port *)port;
+	unsigned long modem;
+
+	if (rs485->flags & SER_RS485_ENABLED) {
+		/* Enable auto RS-485 RTS mode */
+		modem = MXC_UARTMODEM_TXRTSE;
+
+		/*
+		 * RTS needs to be active either during transer _or_ after
+		 * transfer, other variants are not supported by the hardware.
+		 */
+		if (!(rs485->flags & (SER_RS485_RTS_ON_SEND |
+				SER_RS485_RTS_AFTER_SEND)))
+			rs485->flags |= SER_RS485_RTS_ON_SEND;
+
+		if (rs485->flags & SER_RS485_RTS_ON_SEND &&
+				rs485->flags & SER_RS485_RTS_AFTER_SEND)
+			rs485->flags &= ~SER_RS485_RTS_AFTER_SEND;
+
+		/*
+		 * The hardware defaults to RTS logic LOW while transfer.
+		 * Switch polarity in case RTS shall be logic LOW
+		 * after transfer.
+		 */
+		if (rs485->flags & SER_RS485_RTS_AFTER_SEND)
+			modem |= MXC_UARTMODEM_TXRTSPOL;
+	} else {
+                /* Not sure why you're moving out of 485 mode.
+                 * But, you're going to have to call termios to get
+                 * your rts/cts behavior back
+                */
+                modem = 0;
+	}
+
+	/* Store the new configuration */
+	sport->port.rs485 = *rs485;
+
+	writeb(modem, sport->port.membase + MXC_UARTMODEM);
+	return 0;
 }
 
 static int imx_uart_ioctl(struct uart_port *uport, unsigned int cmd,
@@ -1591,6 +1644,7 @@ static int serial_imx_probe(struct platform_device *pdev)
 	sport->port.irq		= platform_get_irq(pdev, 0);
 	sport->port.fifosize	= 32;
 	sport->port.ops		= &imx_pops;
+	sport->port.rs485_config = imx_rs485_config;
 	sport->port.flags	= UPF_BOOT_AUTOCONF;
 	sport->fifo_en		= 1;
 	sport->tx_done		= 1;
@@ -1647,7 +1701,7 @@ static int serial_imx_probe(struct platform_device *pdev)
 	if (IS_ERR_OR_NULL(sport->rs485_ctrl_gpio)) {
 		int cts_err = sport->rs485_ctrl_gpio ? PTR_ERR(sport->rs485_ctrl_gpio) : -EINVAL;
 		sport->rs485_ctrl_gpio = NULL;
-		dev_info(&pdev->dev, "No gpio for RS-485 mode: err %d\n", cts_err);
+		dev_info(&pdev->dev, "No gpio for RS-485 mode\n");
 	}
 
 	platform_set_drvdata(pdev, &sport->port);
