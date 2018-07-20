@@ -174,6 +174,7 @@ struct vf610_nfc {
 	u32 ecc_mode;
 	int last_page;
 	bool use_read_cache_cmd;
+	bool read_cache_in_progress;
 };
 
 static inline struct vf610_nfc *mtd_to_nfc(struct mtd_info *mtd)
@@ -362,6 +363,24 @@ static inline void vf610_nfc_transfer_size(struct vf610_nfc *nfc, int size)
 	vf610_nfc_write(nfc, NFC_SECTOR_SIZE, size);
 }
 
+/*
+ * Some chips require the Read with Data Cache command to be finished
+ * with the Read Start for Last Page in Read Cycle with Data Cache command
+ */
+static void vf610_nfc_abort_read_cache(struct vf610_nfc *nfc)
+{
+	if (nfc->read_cache_in_progress) {
+		vf610_nfc_set_field(nfc, NFC_FLASH_CMD2, CMD_BYTE1_MASK,
+				CMD_BYTE1_SHIFT, NAND_CMD_READ_CACHED_LAST);
+		vf610_nfc_set_field(nfc, NFC_FLASH_CMD2, CMD_CODE_MASK,
+				CMD_CODE_SHIFT, READ_PAGE_CACHED_CMD_CODE);
+		vf610_nfc_set_field(nfc, NFC_FLASH_CMD2, BUFNO_MASK,
+			BUFNO_SHIFT, 0);
+		vf610_nfc_done(nfc);
+		nfc->read_cache_in_progress = 0;
+	}
+}
+
 static void vf610_nfc_do_read_page(struct mtd_info *mtd, int column, int page)
 {
 	struct vf610_nfc *nfc = mtd_to_nfc(mtd);
@@ -370,6 +389,10 @@ static void vf610_nfc_do_read_page(struct mtd_info *mtd, int column, int page)
 	vf610_nfc_ecc_mode(nfc, nfc->ecc_mode);
 	page_sz += mtd->writesize + mtd->oobsize;
 	vf610_nfc_transfer_size(nfc, page_sz);
+
+	if (nfc->use_read_cache_cmd && nfc->last_page != page - 1) {
+		vf610_nfc_abort_read_cache(nfc);
+	}
 
 	/*
 	 * If the last read page is not the previous page or if the current
@@ -399,9 +422,16 @@ static void vf610_nfc_do_read_page(struct mtd_info *mtd, int column, int page)
 			BUFNO_SHIFT, 0);
 
 		vf610_nfc_addr_cycle(nfc, column, page);
+		nfc->read_cache_in_progress = 1;
 	} else {
-		vf610_nfc_set_field(nfc, NFC_FLASH_CMD2, CMD_BYTE1_MASK,
-			CMD_BYTE1_SHIFT, NAND_CMD_READ_CACHED);
+		if ((page + 1) % (mtd->erasesize / mtd->writesize) != 0) {
+			vf610_nfc_set_field(nfc, NFC_FLASH_CMD2, CMD_BYTE1_MASK,
+					CMD_BYTE1_SHIFT, NAND_CMD_READ_CACHED);
+		} else {
+			vf610_nfc_set_field(nfc, NFC_FLASH_CMD2, CMD_BYTE1_MASK,
+					CMD_BYTE1_SHIFT, NAND_CMD_READ_CACHED_LAST);
+			nfc->read_cache_in_progress = 0;
+		}
 		vf610_nfc_set_field(nfc, NFC_FLASH_CMD2, BUFNO_MASK,
 			BUFNO_SHIFT, 0);
 		vf610_nfc_set_field(nfc, NFC_FLASH_CMD2, CMD_CODE_MASK,
@@ -420,8 +450,10 @@ static void vf610_nfc_command(struct mtd_info *mtd, unsigned command,
 	nfc->buf_offset = max(column, 0);
 	nfc->alt_buf = ALT_BUF_DATA;
 
-	if (command != NAND_CMD_READ0)
+	if (command != NAND_CMD_READ0) {
+		vf610_nfc_abort_read_cache(nfc);
 		nfc->last_page = -1;
+	}
 
 	switch (command) {
 	case NAND_CMD_SEQIN:
@@ -782,6 +814,7 @@ static int vf610_nfc_probe(struct platform_device *pdev)
 
 	nfc->use_read_cache_cmd = of_property_read_bool(nfc->dev->of_node,
 		"nand-use-read-cache");
+	nfc->read_cache_in_progress = 0;
 
 	chip->dev_ready = vf610_nfc_dev_ready;
 	chip->cmdfunc = vf610_nfc_command;
