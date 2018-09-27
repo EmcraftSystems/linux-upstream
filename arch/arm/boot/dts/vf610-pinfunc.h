@@ -69,7 +69,7 @@
 				 PAD_CTL_PUE |		\
 				 PAD_CTL_OBE_IBE_ENABLE)
 
-#define VF610_ENET_PAD_CTRL	(PAD_CTL_DSE_75ohm |	\
+#define VF610_ENET_PAD_CTRL	(PAD_CTL_DSE_20ohm |	\
 				 PAD_CTL_SPEED_HIGH |	\
 				 PAD_CTL_SRE_FAST)
 
