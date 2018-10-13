@@ -883,6 +883,7 @@ static void stm32_spi_dma_rx_done(void *arg)
 	dma_sync_single_for_cpu(dev, dma->buf_dma, dma->len_dma, DMA_FROM_DEVICE);
 	dma_unmap_single(dev, dma->buf_dma, dma->len_dma, DMA_FROM_DEVICE);
 
+	stm32_spi_transfer_done(c);
 	stm32_spi_dma_xf_done(c);
 }
 
@@ -993,6 +994,7 @@ static void stm32_spi_dma_tx_done(void *arg)
 	dma->dsc = NULL;
 	dma_unmap_single(dev, dma->buf_dma, dma->len_dma, DMA_TO_DEVICE);
 
+	stm32_spi_transfer_done(c);
 	stm32_spi_dma_xf_done(c);
 }
 
