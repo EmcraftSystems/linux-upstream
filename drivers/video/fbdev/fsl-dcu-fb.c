@@ -177,6 +177,7 @@ struct mfb_info {
 	int y_layer_d;	/* layer display y offset to physical screen */
 	struct dcu_fb_data *parent;
 	unsigned int reserved_memory;
+	unsigned int reserved_size;
 };
 
 enum mfb_index {
@@ -540,6 +541,8 @@ static int map_video_memory(struct fb_info *info)
 	info->screen_base = NULL;
 
 	if (mfbi->reserved_memory) {
+		if (info->fix.smem_len > mfbi->reserved_size)
+			info->fix.smem_len = mfbi->reserved_size;
 		info->fix.smem_start = mfbi->reserved_memory;
 		info->screen_base = (void*)virt_to_phys((void*)info->fix.smem_start);
 	}
@@ -1280,10 +1283,12 @@ static int fsl_dcu_probe(struct platform_device *pdev)
 
 		if (0 == i) {
 			struct device_node *memory = of_parse_phandle(dcufb->dev->of_node, "memory-region", 0);
-
-			if (memory)
+			if (memory) {
+				u64 size;
 				mfbi->reserved_memory =
-					of_translate_address(memory, of_get_address(memory, 0, NULL, NULL));
+					of_translate_address(memory, of_get_address(memory, 0, &size, NULL));
+				mfbi->reserved_size = size;
+			}
 		} else {
 			mfbi->reserved_memory = 0;
 		}
