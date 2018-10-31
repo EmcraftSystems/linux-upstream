@@ -1354,6 +1354,11 @@ static ssize_t fuse_dev_read(struct kiocb *iocb, struct iov_iter *to)
 	if (!fud)
 		return -EPERM;
 
+#ifndef CONFIG_MMU
+	/* override iovec_iter type for getting FUSE to work on uclinux */
+	to->type &= ~ITER_KVEC;
+#endif
+
 	if (!iter_is_iovec(to))
 		return -EINVAL;
 
@@ -1962,6 +1967,11 @@ static ssize_t fuse_dev_write(struct kiocb *iocb, struct iov_iter *from)
 
 	if (!fud)
 		return -EPERM;
+
+#ifndef CONFIG_MMU
+	/* override iovec_iter type for getting FUSE to work on uclinux */
+	from->type &= ~ITER_KVEC;
+#endif
 
 	if (!iter_is_iovec(from))
 		return -EINVAL;
