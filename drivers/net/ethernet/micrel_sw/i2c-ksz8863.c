@@ -518,7 +518,7 @@ static const struct file_operations state_fops = {
  *
  * Create the debugfs entries for the specific device.
  */
-static void __devinit create_debugfs(struct sw_priv *ks)
+static void __init create_debugfs(struct sw_priv *ks)
 {
 	struct dentry *root;
 	char root_name[32];
@@ -539,7 +539,7 @@ static void __devinit create_debugfs(struct sw_priv *ks)
 		pr_err("cannot create debugfs state file\n");
 }
 
-static void __devexit delete_debugfs(struct sw_priv *ks)
+static void __exit delete_debugfs(struct sw_priv *ks)
 {
 	debugfs_remove(ks->debug_file);
 	debugfs_remove(ks->debug_root);
@@ -997,7 +997,7 @@ static int ksz_mii_write(struct mii_bus *bus, int phy_id, int regnum, u16 val)
 	return 0;
 }  /* ksz_mii_write */
 
-static int __devinit ksz_mii_init(struct sw_priv *ks)
+static int ksz_mii_init(struct sw_priv *ks)
 {
 	struct platform_device *pdev;
 	struct mii_bus *bus;
@@ -1086,7 +1086,7 @@ mii_init_reg:
 	return err;
 }  /* ksz_mii_init */
 
-static void __devexit ksz_mii_exit(struct sw_priv *ks)
+static void ksz_mii_exit(struct sw_priv *ks)
 {
 	int i;
 	struct platform_device *pdev = ks->pdev;
@@ -1256,7 +1256,7 @@ static int intr_mode;
 
 static int sw_device_present;
 
-static int __devinit ksz8863_probe(struct i2c_client *i2c,
+static int ksz8863_probe(struct i2c_client *i2c,
 	const struct i2c_device_id *i2c_id)
 {
 	struct i2c_hw_priv *hw_priv;
@@ -1448,7 +1448,7 @@ err_sw:
 	return ret;
 }
 
-static int __devexit ksz8863_remove(struct i2c_client *i2c)
+static int ksz8863_remove(struct i2c_client *i2c)
 {
 	struct sw_priv *ks = dev_get_drvdata(&i2c->dev);
 	struct ksz_sw *sw = &ks->sw;

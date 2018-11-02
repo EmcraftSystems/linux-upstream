@@ -6551,7 +6551,7 @@ static int sw_port_vlan_rx(struct ksz_sw *sw, struct net_device *dev,
 	if (!vlan_skb)
 		return false;
 	skb_reset_mac_header(vlan_skb);
-	vlan_skb = __vlan_hwaccel_put_tag(vlan_skb, tag);
+	__vlan_hwaccel_put_tag(vlan_skb, htons(ETH_P_8021Q), tag);
 #ifdef CONFIG_1588_PTP
 	do {
 		struct ptp_info *ptp = ptr;
@@ -7261,7 +7261,7 @@ static void sw_setup_dev(struct ksz_sw *sw, struct net_device *dev,
 	}
 	INIT_WORK(&port->link_update, link_update_work);
 	if (sw->features & VLAN_PORT)
-		dev->features |= NETIF_F_HW_VLAN_FILTER;
+		dev->features |= NETIF_F_HW_VLAN_CTAG_FILTER;
 }
 
 static u8 sw_get_priv_state(struct net_device *dev)
