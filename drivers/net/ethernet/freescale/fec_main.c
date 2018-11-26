@@ -3478,6 +3478,8 @@ fec_probe(struct platform_device *pdev)
 		}
 	} else {
 		fep->reg_phy = NULL;
+		dev_err(&pdev->dev, "No phy regulator found\n");
+		return -EPROBE_DEFER;
 	}
 
 	pm_runtime_set_autosuspend_delay(&pdev->dev, FEC_MDIO_PM_TIMEOUT);
