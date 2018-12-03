@@ -1636,13 +1636,18 @@ config MFD_STW481X
 	  in various ST Microelectronics and ST-Ericsson embedded
 	  Nomadik series.
 
-config MFD_BD71837
-	bool "BD71837 Power Management chip"
+config MFD_ROHM_BD718XX
+	tristate "ROHM BD71837 Power Management IC"
 	depends on I2C=y
+	depends on OF
+	select REGMAP_I2C
+	select REGMAP_IRQ
 	select MFD_CORE
 	help
-	  if you say yes here you get support for the BD71837
-	  Power Management chips.
+	  Select this option to get support for the ROHM BD71837
+	  Power Management ICs. BD71837 is designed to power processors like
+	  NXP i.MX8. It contains 8 BUCK outputs and 7 LDOs, voltage monitoring
+	  and emergency shut down as well as 32,768KHz clock output.
 
 menu "Multimedia Capabilities Port drivers"
 	depends on ARCH_SA1100
