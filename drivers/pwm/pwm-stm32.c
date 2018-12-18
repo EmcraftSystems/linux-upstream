@@ -58,6 +58,14 @@
 #define CCER_CCxE(c)		((1 << 0) << ((c) << 2))
 #define CCER_CCxP(c)		((1 << 1) << ((c) << 2))
 
+enum stm32_timertype {
+	tim1_8,
+	tim2_5,
+	tim6_7,
+	tim9_12,
+	tim10_14,
+};
+
 /*
  * STM32 PWM descriptor
  */
@@ -208,6 +216,7 @@ static int stm_pwm_probe(struct platform_device *pdev)
 	struct stm_pwm_chip *pc = NULL;
 	unsigned int val, ofs;
 	int rv, tmr, chan;
+	enum stm32_timertype timtype;
 
 	rv = of_parse_phandle_with_fixed_args(dev->of_node, "timer", 2, 0,
 					      &spec);
@@ -222,16 +231,37 @@ static int stm_pwm_probe(struct platform_device *pdev)
 	tmr = spec.args[0];
 	chan = spec.args[1];
 
-	/*
-	 * Supported for now:
-	 *  - TIM2-5 timers with 1-4 channels
-	 *  - TIM9,12 timers with 1-2 channels
-	 */
-	if ((tmr < 2 || tmr > 5 || chan < 1 || chan > 4)
-	    && ((tmr != 9 && tmr != 12) || (chan != 1 && chan != 2))) {
-		dev_err(dev, "not supported timer/channel %d/%d\n",
-			tmr, chan);
-		rv = -EINVAL;
+	switch (tmr) {
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+		timtype = tim2_5;
+		break;
+	case 6:
+	case 7:
+		timtype = tim6_7;
+		break;
+	case 12:
+		timtype = tim9_12;
+		break;
+	case 13:
+	case 14:
+		timtype = tim10_14;
+		break;
+	case 1:
+	case 8:
+		timtype = tim1_8;
+		break;
+	case 9:
+		timtype = tim9_12;
+		break;
+	case 10:
+	case 11:
+		timtype = tim10_14;
+		break;
+	default:
+		rv = -ENODEV;
 		goto out;
 	}
 
@@ -302,29 +332,69 @@ static int stm_pwm_probe(struct platform_device *pdev)
 
 	/*
 	 * Configure the specified timer channel
+	 * Supported for now:
+	 *  - TIM2-5 timers with 1-4 channels
+	 *  - TIM9,12 timers with 1-2 channels
+	 *  - TIM10,11,13,14 timers with 1 channel
 	 */
-	ofs = TIM_CCMR1 + ((pc->chan / 2) << 2);
-	val = readl(pc->regs + ofs);
-	if (chan % 2) {
-		val &= ~CCMR_OCxM_ODD(CCMR_OCxM_MASK);
-		val |= CCMR_OCxM_ODD(CCMR_OCxM_PWM);
-		val |= CCMR_OCxM_ODD(CCMR_OCxM_OCPE);
+
+	if (timtype == tim2_5 || timtype == tim9_12) {
+		ofs = TIM_CCMR1 + ((pc->chan / 2) << 2);
+		val = readl(pc->regs + ofs);
+		if (chan % 2) {
+			val &= ~CCMR_OCxM_ODD(CCMR_OCxM_MASK);
+			val |= CCMR_OCxM_ODD(CCMR_OCxM_PWM);
+			val |= CCMR_OCxM_ODD(CCMR_OCxM_OCPE);
+		} else {
+			val &= ~CCMR_OCxM_EVE(CCMR_OCxM_MASK);
+			val |= CCMR_OCxM_EVE(CCMR_OCxM_PWM);
+			val |= CCMR_OCxM_EVE(CCMR_OCxM_OCPE);
+		}
+
+		writel(val, pc->regs + ofs);
+
+		val = readl(pc->regs + TIM_CCER);
+
+		val |= CCER_CCxE(pc->chan);
+
+		if (pc->high_on_init)
+			val |= CCER_CCxP(pc->chan);
+
+
+		writel(val, pc->regs + TIM_CCER);
+
+		val = readl(pc->regs + TIM_CR1);
+		val |= CR1_ARPE;
+		writel(val, pc->regs + TIM_CR1);
 	} else {
-		val &= ~CCMR_OCxM_EVE(CCMR_OCxM_MASK);
-		val |= CCMR_OCxM_EVE(CCMR_OCxM_PWM);
-		val |= CCMR_OCxM_EVE(CCMR_OCxM_OCPE);
+		if (timtype == tim10_14) { /* TIM10 */
+			ofs = TIM_CCMR1 ;
+			val = readl(pc->regs + ofs);
+			val &= ~CCMR_OCxM_ODD(CCMR_OCxM_MASK);
+			val |= CCMR_OCxM_ODD(CCMR_OCxM_PWM);
+			val |= CCMR_OCxM_ODD(CCMR_OCxM_OCPE);
+
+			writel(val, pc->regs + ofs);
+
+			val = readl(pc->regs + TIM_CCER);
+
+			val |= 1;
+
+			if (pc->high_on_init)
+				val |= 2;
+
+
+			writel(val, pc->regs + TIM_CCER);
+
+			val = readl(pc->regs + TIM_CR1);
+			val |= CR1_ARPE;
+			writel(val, pc->regs + TIM_CR1);
+		} else {
+			dev_err(dev, "Unsupported timer\n");
+			rv = -ENODEV;
+			goto out;
+		}
 	}
-	writel(val, pc->regs + ofs);
-
-	val = readl(pc->regs + TIM_CCER);
-	val |= CCER_CCxE(pc->chan);
-	if (pc->high_on_init)
-		val |= CCER_CCxP(pc->chan);
-	writel(val, pc->regs + TIM_CCER);
-
-	val = readl(pc->regs + TIM_CR1);
-	val |= CR1_ARPE;
-	writel(val, pc->regs + TIM_CR1);
 
 	rv = pwmchip_add(&pc->chip);
 	if (rv < 0) {
