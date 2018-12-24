@@ -338,7 +338,7 @@ static int stm_pwm_probe(struct platform_device *pdev)
 	 *  - TIM10,11,13,14 timers with 1 channel
 	 */
 
-	if (timtype == tim2_5 || timtype == tim9_12) {
+	if (timtype == tim2_5 || timtype == tim9_12 || timtype == tim10_14) {
 		ofs = TIM_CCMR1 + ((pc->chan / 2) << 2);
 		val = readl(pc->regs + ofs);
 		if (chan % 2) {
@@ -367,33 +367,9 @@ static int stm_pwm_probe(struct platform_device *pdev)
 		val |= CR1_ARPE;
 		writel(val, pc->regs + TIM_CR1);
 	} else {
-		if (timtype == tim10_14) { /* TIM10 */
-			ofs = TIM_CCMR1 ;
-			val = readl(pc->regs + ofs);
-			val &= ~CCMR_OCxM_ODD(CCMR_OCxM_MASK);
-			val |= CCMR_OCxM_ODD(CCMR_OCxM_PWM);
-			val |= CCMR_OCxM_ODD(CCMR_OCxM_OCPE);
-
-			writel(val, pc->regs + ofs);
-
-			val = readl(pc->regs + TIM_CCER);
-
-			val |= 1;
-
-			if (pc->high_on_init)
-				val |= 2;
-
-
-			writel(val, pc->regs + TIM_CCER);
-
-			val = readl(pc->regs + TIM_CR1);
-			val |= CR1_ARPE;
-			writel(val, pc->regs + TIM_CR1);
-		} else {
-			dev_err(dev, "Unsupported timer\n");
-			rv = -ENODEV;
-			goto out;
-		}
+		dev_err(dev, "Unsupported timer\n");
+		rv = -ENODEV;
+		goto out;
 	}
 
 	rv = pwmchip_add(&pc->chip);
