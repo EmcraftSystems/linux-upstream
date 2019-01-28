@@ -44,7 +44,7 @@ struct vfp_hard_struct {
 	__u32 cpu;
 #endif
 #ifdef CONFIG_VFPM
-	__u32 fpcar;
+	__u32 used;
 #endif
 };
 

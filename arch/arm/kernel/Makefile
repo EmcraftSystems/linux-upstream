@@ -78,6 +78,10 @@ obj-$(CONFIG_ARM_CPU_TOPOLOGY)  += topology.o
 obj-$(CONFIG_VDSO)		+= vdso.o
 obj-$(CONFIG_EFI)		+= efi.o
 obj-$(CONFIG_VFPM)		+= vfp-m.o
+ifeq ($(CONFIG_VFPM),y)
+# -mfpu is already set by the upper level Makefile
+CFLAGS_vfp-m.o			:= -mfloat-abi=softfp
+endif
 
 ifneq ($(CONFIG_ARCH_EBSA110),y)
   obj-y		+= io.o
