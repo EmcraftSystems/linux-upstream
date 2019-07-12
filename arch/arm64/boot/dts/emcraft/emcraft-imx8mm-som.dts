@@ -120,7 +120,11 @@
 			no-map;
 			reg = <0 0x58000000 0 0x100000>;
 		};
+		linux,cma { /* Reduce CMA size to fit 1GB memory */
+			size = <0 0x26000000>;
+		};
 	};
+
 };
 
 &clk {
