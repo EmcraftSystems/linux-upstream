@@ -169,6 +169,8 @@
 #define STM32_RCC_BDCR_LSEDRV_MEDHI	(1 << STM32_RCC_BDCR_LSEDRV_BITS)
 #define STM32_RCC_BDCR_LSEDRV_MEDLO	(2 << STM32_RCC_BDCR_LSEDRV_BITS)
 #define STM32_RCC_BDCR_LSEDRV_HIGH	STM32_RCC_BDCR_LSEDRV_MSK
+/* External low-speed oscillator bypass */
+#define STM32_RCC_BDCR_LSEBYP_MSK	(1 << 2)
 /* External low-speed oscillator ready */
 #define STM32_RCC_BDCR_LSERDY_MSK	(1 << 1)
 /*  External low-speed oscillator enable */
@@ -811,7 +813,12 @@ static int stm32fx_rtc_init(struct stm32_rtc *rtc, struct device *dev)
 	} while (v & STM32_RCC_BDCR_LSERDY_MSK);
 
 	/* Enable the low-speed external oscillator */
-	regmap_write(reg, STM32_RCC_BDCR, STM32_RCC_BDCR_LSEON_MSK);
+	if (!of_property_read_bool(dev->of_node, "st,lse-bypass")) {
+		regmap_write(reg, STM32_RCC_BDCR, STM32_RCC_BDCR_LSEON_MSK);
+	} else {
+		regmap_write(reg, STM32_RCC_BDCR,
+			STM32_RCC_BDCR_LSEBYP_MSK | STM32_RCC_BDCR_LSEON_MSK);
+	}
 	/* Wait till LSE is ready */
 	do {
 		regmap_read(reg, STM32_RCC_BDCR, &v);
