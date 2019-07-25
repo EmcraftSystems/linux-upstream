@@ -248,6 +248,7 @@ static inline int stm_op_wait(struct stm_flh_iface *iface, u32 tout)
 	 * per-byte/per-word interrupt overheads
 	 */
 	if (iface->reg->cr & STM_FLH_CR_PG) {
+		udelay(1);
 		for (i = 0; i < tout; i++) {
 			if (!(iface->reg->sr & STM_FLH_SR_BSY)) {
 				iface->status = 0;
