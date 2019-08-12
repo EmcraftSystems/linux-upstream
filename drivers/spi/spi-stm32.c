@@ -1433,7 +1433,7 @@ static int stm32_spi_probe(struct platform_device *pdev)
 		}
 		c->cs_gpio[i] = ret;
 		ret = devm_gpio_request_one(dev, c->cs_gpio[i],
-					    GPIOF_OUT_INIT_LOW, DRIVER_NAME);
+					    GPIOF_OUT_INIT_HIGH, DRIVER_NAME);
 		if (ret < 0) {
 			dev_err(dev, "failed to configure csgpio#%u (%d)\n",
 				i, ret);
