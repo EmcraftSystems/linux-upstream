@@ -238,4 +238,5 @@ struct stm32_port {
 	bool tx_busy;		 /* tx busy                   */
 	bool tx_started;
 	bool hw_flow_control;
+	int rdr_mask;		/* receive data register mask */
 };
