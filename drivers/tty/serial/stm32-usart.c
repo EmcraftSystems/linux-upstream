@@ -172,9 +172,10 @@ static unsigned long stm32_get_char(struct uart_port *port)
 			stm32_port->rx_rd_cur = RX_BUF_L;
 	} else {
 		c = readl_relaxed(port->membase + ofs->rdr);
-		/* apply RDR data mask */
-		c &= stm32_port->rdr_mask;
 	}
+
+	/* apply RDR data mask */
+	c &= stm32_port->rdr_mask;
 
 	return c;
 }
