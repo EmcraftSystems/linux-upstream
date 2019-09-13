@@ -1082,11 +1082,13 @@ int spi_nor_scan(struct spi_nor *nor, const char *name, enum read_mode mode)
 	mtd->_erase = spi_nor_erase;
 	mtd->_read = spi_nor_read;
 
+#if 0 /* this old stm_lock implementation is absolutely wrong: disable it */
 	/* nor protection support for STmicro chips */
 	if (JEDEC_MFR(info) == CFI_MFR_ST) {
 		nor->flash_lock = stm_lock;
 		nor->flash_unlock = stm_unlock;
 	}
+#endif
 
 	if (nor->flash_lock && nor->flash_unlock) {
 		mtd->_lock = spi_nor_lock;
