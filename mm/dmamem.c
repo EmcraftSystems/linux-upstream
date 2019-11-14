@@ -68,7 +68,7 @@ static const struct file_operations dm_proc_fops = {
 /*
  * Early fetch of `dmamem` node from device-tree
  */
-static int early_init_dt_scan_dmamem(unsigned long node, const char *uname,
+static int __init early_init_dt_scan_dmamem(unsigned long node, const char *uname,
 				     int depth, void *data)
 {
 	const char *comp = of_get_flat_dt_prop(node, "compatible", NULL);
@@ -104,7 +104,7 @@ out:
 	return 1;
 }
 
-static void dm_early_init(void)
+static void __init dm_early_init(void)
 {
 	of_scan_flat_dt(early_init_dt_scan_dmamem, NULL);
 	if (!dm_of_found)
@@ -162,7 +162,7 @@ __initcall(dm_sys_init);
 /*
  * Reserve memory for dmamem
  */
-void dmamem_init(void)
+void __init dmamem_init(void)
 {
 	dm_early_init();
 
