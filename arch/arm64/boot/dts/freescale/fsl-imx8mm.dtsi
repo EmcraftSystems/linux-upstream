@@ -602,7 +602,7 @@
 	};
 
 	dispmix_gpr: display-gpr@32e28000 {
-		compatible = "fsl, imx8mm-iomuxc-gpr", "syscon";
+		compatible = "fsl,imx8mm-iomuxc-gpr", "syscon";
 		reg = <0x0 0x32e28000 0x0 0x100>;
 	};
 
@@ -1169,7 +1169,7 @@
 	gpu: gpu@38000000 {
 		compatible ="fsl,imx8mm-gpu", "fsl,imx6q-gpu";
 		reg = <0x0 0x38000000 0x0 0x8000>, <0x0 0x38008000 0x0 0x8000>,
-                        <0x0 0x40000000 0x0 0x80000000>, <0x0 0x0 0x0 0x8000000>;
+                        <0x0 0x40000000 0x0 0xC0000000>, <0x0 0x0 0x0 0x8000000>;
 		reg-names = "iobase_3d", "iobase_2d",
                         "phys_baseaddr", "contiguous_mem";
 		interrupts = <GIC_SPI 3 IRQ_TYPE_LEVEL_HIGH>,
