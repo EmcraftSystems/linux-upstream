@@ -62,7 +62,7 @@ stm32_suspend_to_ram:
 	 * Back-up GPIOs, and configure as Analog Inputs
 	 */
 	ldr r0, gpioa
-	ldr r1, backup
+	ldr r1, =backup
 	ldr r2, =stm32_suspend_moder
 	mov r3, #0x0
 2:
@@ -92,7 +92,7 @@ stm32_suspend_to_ram:
 	 * Restore GPIOs
 	 */
 	ldr r0, gpioa
-	ldr r1, backup
+	ldr r1, =backup
 	mov r3, #0x0
 3:
 	ldr r12, [r1]
