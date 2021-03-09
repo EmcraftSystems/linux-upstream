@@ -123,6 +123,13 @@ config PINCTRL_IMXRT105X
 	help
 	  Say Y here to enable the NXP i.MX RT105X pinctrl driver
 
+config PINCTRL_IMXRT117X
+	bool "NXP i.MX RT117x pinctrl driver"
+	depends on ARCH_IMXRT105X
+	select PINCTRL_IMX
+	help
+	  Say Y here to enable the NXP i.MX RT117X pinctrl driver
+
 config PINCTRL_MXS
 	bool
 	select PINMUX

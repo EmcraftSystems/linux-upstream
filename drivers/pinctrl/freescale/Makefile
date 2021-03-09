@@ -21,3 +21,4 @@ obj-$(CONFIG_PINCTRL_IMX23)	+= pinctrl-imx23.o
 obj-$(CONFIG_PINCTRL_IMX25)	+= pinctrl-imx25.o
 obj-$(CONFIG_PINCTRL_IMX28)	+= pinctrl-imx28.o
 obj-$(CONFIG_PINCTRL_IMXRT105X)	+= pinctrl-imxrt105x.o
+obj-$(CONFIG_PINCTRL_IMXRT117X)	+= pinctrl-imxrt117x.o
